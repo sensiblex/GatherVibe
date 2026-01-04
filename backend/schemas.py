@@ -1,3 +1,4 @@
+# backend/schemas.py
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
@@ -9,6 +10,19 @@ class UserCreate(BaseModel):
     city: Optional[str] = None
     interests: Optional[str] = None
 
+# Схема для входа
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+# Схема для ответа с токеном
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+    user_id: int
+    username: str
+    email: str
+
 # Схема для ответа (без пароля)
 class UserResponse(BaseModel):
     id: int
@@ -19,4 +33,4 @@ class UserResponse(BaseModel):
     is_active: bool
     
     class Config:
-        from_attributes = True  # для совместимости с SQLAlchemy
+        from_attributes = True

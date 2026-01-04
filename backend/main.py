@@ -1,11 +1,16 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from database import engine, SessionLocal
 from models.user import User
 from schemas import UserCreate, UserResponse
+from schemas import UserLogin, Token
 from auth import hash_password
+from auth import authenticate_user, create_user_token
 import models.user
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 # Создаем таблицы в БД (если их нет)
 models.user.Base.metadata.create_all(bind=engine)
@@ -32,6 +37,55 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# Добавь этот endpoint ПЕРЕД существующими
+@app.post("/login", response_model=Token)
+def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
+    """
+    Вход пользователя.
+    Возвращает JWT токен для аутентификации.
+    """
+    # Аутентифицируем пользователя
+    user = authenticate_user(user_credentials.email, user_credentials.password, db)
+    
+    if not user:
+        raise HTTPException(
+            status_code=401,
+            detail="Неверный email или пароль",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="Пользователь заблокирован")
+    
+    # Создаем токен
+    token_data = create_user_token(user)
+    return token_data
+
+# Добавь endpoint для получения текущего пользователя
+@app.get("/users/me", response_model=UserResponse)
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
+    """Получить текущего пользователя по токену"""
+    from jwt_handler import verify_token
+    
+    payload = verify_token(token)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Неверный токен")
+    
+    email = payload.get("sub")
+    if email is None:
+        raise HTTPException(status_code=401, detail="Неверный токен")
+    
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    
+    return user
+
 
 @app.get("/")
 def read_root():
