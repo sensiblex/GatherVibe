@@ -38,8 +38,3 @@ GatherVibe - это социальная платформа, которая по
 - Python 3.11+
 - Node.js 18+
 - Git
-
-### 1. Клонирование репозитория:
-```bash
-git clone https://github.com/ваш-username/gathervibe.git
-cd gathervibe
