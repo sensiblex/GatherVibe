@@ -9,11 +9,19 @@ from schemas import UserLogin, Token
 from auth import hash_password
 from auth import authenticate_user, create_user_token
 import models.user
+import models.event
+from typing import Optional, List
+from datetime import datetime
+from models.event import Event
+from schemas import EventCreate, EventResponse, EventUpdate
+
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 # Создаем таблицы в БД (если их нет)
 models.user.Base.metadata.create_all(bind=engine)
+models.event.Base.metadata.create_all(bind=engine)
+
 
 app = FastAPI(title="GatherVibe API")
 
@@ -85,6 +93,95 @@ def get_current_user(
         raise HTTPException(status_code=404, detail="Пользователь не найден")
     
     return user
+
+# ===== EVENTS ENDPOINTS =====
+
+# Получить все события
+@app.get("/events", response_model=List[EventResponse])
+def get_events(
+    skip: int = 0,
+    limit: int = 20,
+    city: Optional[str] = None,
+    category: Optional[str] = None,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Получить список событий с фильтрами"""
+    query = db.query(Event).filter(Event.is_active == True)
+    
+    # Фильтр по городу
+    if city:
+        query = query.filter(Event.city.ilike(f"%{city}%"))
+    
+    # Фильтр по категории
+    if category:
+        query = query.filter(Event.category == category)
+    
+    # Поиск по названию/описанию/месту
+    if search:
+        query = query.filter(
+            (Event.title.ilike(f"%{search}%")) |
+            (Event.description.ilike(f"%{search}%")) |
+            (Event.location.ilike(f"%{search}%"))
+        )
+    
+    # Сортировка по дате (ближайшие сначала)
+    query = query.order_by(Event.date_time)
+    
+    # Пагинация
+    events = query.offset(skip).limit(limit).all()
+    return events
+
+# Получить событие по ID
+@app.get("/events/{event_id}", response_model=EventResponse)
+def get_event(event_id: int, db: Session = Depends(get_db)):
+    """Получить событие по ID"""
+    event = db.query(Event).filter(Event.id == event_id, Event.is_active == True).first()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Событие не найдено")
+    return event
+
+# Создать событие (только для авторизованных)
+@app.post("/events", response_model=EventResponse)
+def create_event(
+    event: EventCreate,
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme)
+):
+    """Создать новое событие"""
+    # Проверяем токен
+    from jwt_handler import verify_token
+    payload = verify_token(token)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Неверный токен")
+    
+    user_id = payload.get("id")
+    
+    # Создаем событие
+    db_event = Event(
+        **event.dict(),
+        created_by=user_id,
+        current_participants=0
+    )
+    
+    db.add(db_event)
+    db.commit()
+    db.refresh(db_event)
+    return db_event
+
+# Получить категории событий
+@app.get("/events/categories")
+def get_categories(db: Session = Depends(get_db)):
+    """Получить список уникальных категорий"""
+    categories = db.query(Event.category).distinct().all()
+    return {"categories": [cat[0] for cat in categories if cat[0]]}
+
+# Получить города
+@app.get("/events/cities")
+def get_cities(db: Session = Depends(get_db)):
+    """Получить список уникальных городов"""
+    cities = db.query(Event.city).distinct().all()
+    return {"cities": [city[0] for city in cities if city[0]]}
 
 
 @app.get("/")

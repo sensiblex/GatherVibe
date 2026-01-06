@@ -1,6 +1,7 @@
 # backend/schemas.py
 from pydantic import BaseModel, EmailStr
 from typing import Optional
+from datetime import datetime
 
 # Схема для создания пользователя
 class UserCreate(BaseModel):
@@ -31,6 +32,48 @@ class UserResponse(BaseModel):
     city: Optional[str]
     interests: Optional[str]
     is_active: bool
+    
+    class Config:
+        from_attributes = True
+
+
+class EventBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    date_time: datetime
+    location: str
+    address: Optional[str] = None
+    city: str
+    category: str
+    price: float = 0.0
+    max_participants: Optional[int] = None
+    image_url: Optional[str] = None
+    external_link: Optional[str] = None
+
+class EventCreate(EventBase):
+    pass
+
+class EventUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    date_time: Optional[datetime] = None
+    location: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    category: Optional[str] = None
+    price: Optional[float] = None
+    max_participants: Optional[int] = None
+    image_url: Optional[str] = None
+    external_link: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class EventResponse(EventBase):
+    id: int
+    created_by: int
+    current_participants: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
     
     class Config:
         from_attributes = True
