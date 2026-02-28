@@ -141,25 +141,18 @@ export default function Home() {
 
       <footer className="bg-white mt-16 py-8 border-t">
         <div className="container mx-auto px-4 text-center text-gray-600">
-          <p>Курсовой проект • GatherVibe • {new Date().getFullYear()}</p>
-          <div className="mt-4">
-            <span className="inline-block px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">
-              Бэкенд: FastAPI + SQLite
-            </span>
-            <span className="inline-block px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm ml-2">
-              Фронтенд: Next.js + TypeScript
-            </span>
-            <span className="inline-block px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm ml-2">
-              JWT Аутентификация
-            </span>
+          <p className="font-semibold text-gray-800">GatherVibe</p>
+          <p className="text-sm mt-1">Платформа для поиска компании на мероприятия</p>
+          <div className="mt-4 flex justify-center gap-6 text-sm">
+            <a href="/register" className="hover:text-blue-600 transition">Регистрация</a>
+            <a href="/login" className="hover:text-blue-600 transition">Войти</a>
+            <a href="/events" className="hover:text-blue-600 transition">События</a>
           </div>
-          <div className="mt-4 text-sm">
-            <p>Статус: {isLoggedIn ? '✅ Вошел в систему' : '❌ Не авторизован'}</p>
-          </div>
+          <p className="mt-6 text-xs text-gray-400">© {new Date().getFullYear()} GatherVibe.</p>
         </div>
       </footer>
 
-      {/* ← ОБЩИЙ ЧАТ (добавлен здесь) */}
+      {}
       <SiteChat />
     </div>
   );
