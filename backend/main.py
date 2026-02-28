@@ -32,9 +32,6 @@ sio = socketio.AsyncServer(
     cors_allowed_origins=['http://localhost:3000', 'http://127.0.0.1:3000', '*']
 )
 
-# ⚠️ Запускать: uvicorn main:socket_app --reload --port 8000
-socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
-
 
 @sio.event
 async def connect(sid, environ):
@@ -91,6 +88,8 @@ def get_db():
     finally:
         db.close()
 
+# ⚠️ socket_app — ГЛАВНОЕ ASGI-приложение для uvicorn
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 # Добавь этот endpoint ПЕРЕД существующими
 @app.post("/login", response_model=Token)
@@ -305,21 +304,3 @@ def delete_test_user(db: Session = Depends(get_db)):
     db.query(User).filter(User.email == "test@example.com").delete()
     db.commit()
     return {"ok": True}
-
-@sio.on('send_message')
-async def send_message(sid, data: dict):
-    event_id = data['eventId']
-    room = f'event_{event_id}'
-    print(f"📨 send_message от {sid}, eventId={event_id}, room={room}")
-
-    # Покажем кто в комнате
-    participants = sio.manager.get_participants('/', room)
-    print(f"👥 В комнате {room}: {list(participants)}")
-
-    msg = {
-        'message': data['message'],
-        'userId': data.get('userId', sid),
-        'timestamp': datetime.now().isoformat()
-    }
-    await sio.emit('receive_message', msg, room=room)
-    print(f"✅ Отправлено в {room}")

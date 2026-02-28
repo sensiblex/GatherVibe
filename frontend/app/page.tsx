@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import SiteChat from './components/SiteChat';  // ← ДОБАВЛЕН ИМПОРТ ЧАТА
 
 export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -157,6 +158,9 @@ export default function Home() {
           </div>
         </div>
       </footer>
+
+      {/* ← ОБЩИЙ ЧАТ (добавлен здесь) */}
+      <SiteChat />
     </div>
   );
 }
