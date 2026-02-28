@@ -1,3 +1,4 @@
+import socketio
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
@@ -13,7 +14,7 @@ import models.event
 from typing import Optional, List
 from datetime import datetime
 from models.event import Event
-from schemas import EventCreate, EventResponse, EventUpdate
+from schemas import EventCreate, EventResponse
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -24,6 +25,50 @@ models.event.Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI(title="GatherVibe API")
+
+# ===== SOCKET.IO =====
+sio = socketio.AsyncServer(
+    async_mode='asgi',
+    cors_allowed_origins=['http://localhost:3000', 'http://127.0.0.1:3000', '*']
+)
+
+# ⚠️ Запускать: uvicorn main:socket_app --reload --port 8000
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
+
+
+@sio.event
+async def connect(sid, environ):
+    print(f"Client {sid} connected")
+
+
+@sio.event
+async def disconnect(sid):
+    print(f"Client {sid} disconnected")
+
+
+@sio.on('join_event_chat')
+async def join_event_chat(sid, event_id: str):
+    await sio.enter_room(sid, f'event_{event_id}')
+    await sio.emit('user_joined', {'sid': sid}, room=f'event_{event_id}')
+    print(f"User {sid} joined event_{event_id}")
+
+
+@sio.on('send_message')
+async def send_message(sid, data: dict):
+    event_id = data['eventId']
+    msg = {
+        'message': data['message'],
+        'userId': data.get('userId', sid),
+        'timestamp': datetime.now().isoformat()
+    }
+    await sio.emit('receive_message', msg, room=f'event_{event_id}')
+
+
+@sio.on('leave_event_chat')
+async def leave_event_chat(sid, event_id: str):
+    await sio.leave_room(sid, f'event_{event_id}')
+
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -210,7 +255,7 @@ def create_test_user(db: Session = Depends(get_db)):
     test_user = User(
         email="test@example.com",
         username="ТестовыйПользователь",
-        hashed_password="заглушка",  # позже хешировать будем
+        hashed_password=hash_password("123456"),  # позже хешировать будем
         city="Москва",
         interests="музыка,кино,искусство"
     )
@@ -254,3 +299,27 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
     if user is None:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
     return user
+
+@app.delete("/test-user")
+def delete_test_user(db: Session = Depends(get_db)):
+    db.query(User).filter(User.email == "test@example.com").delete()
+    db.commit()
+    return {"ok": True}
+
+@sio.on('send_message')
+async def send_message(sid, data: dict):
+    event_id = data['eventId']
+    room = f'event_{event_id}'
+    print(f"📨 send_message от {sid}, eventId={event_id}, room={room}")
+
+    # Покажем кто в комнате
+    participants = sio.manager.get_participants('/', room)
+    print(f"👥 В комнате {room}: {list(participants)}")
+
+    msg = {
+        'message': data['message'],
+        'userId': data.get('userId', sid),
+        'timestamp': datetime.now().isoformat()
+    }
+    await sio.emit('receive_message', msg, room=room)
+    print(f"✅ Отправлено в {room}")
