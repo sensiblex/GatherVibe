@@ -152,8 +152,7 @@ export default function Home() {
         </div>
       </footer>
 
-
-      {/* ← ОБЩИЙ ЧАТ (добавлен здесь) */}
+      {}
       <SiteChat />
     </div>
   );
