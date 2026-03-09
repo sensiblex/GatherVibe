@@ -69,6 +69,20 @@ def _parse_images(raw_images: list) -> list[dict]:
     return result
 
 
+def _parse_categories(raw_categories: list) -> list[str]:
+    """
+    KudaGo возвращает категории как объекты {id, slug, name, name_plural}.
+    Нормализуем в список строк-слагов для удобства фронтенда.
+    """
+    result = []
+    for cat in raw_categories:
+        if isinstance(cat, dict):
+            result.append(cat.get("slug") or cat.get("name", ""))
+        elif isinstance(cat, str):
+            result.append(cat)
+    return result
+
+
 # ──────────────────────────────────────────────
 # ГОРОДА
 # ──────────────────────────────────────────────
@@ -246,7 +260,6 @@ def parse_events(response: dict) -> list[dict]:
         place_coords = place.get("coords") or {}
 
         images = _parse_images(event.get("images", []))
-        # Для карточки достаточно первое фото
         cover_url = images[0]["url"] if images else None
 
         results.append({
@@ -254,18 +267,19 @@ def parse_events(response: dict) -> list[dict]:
             "title": event.get("title", ""),
             "short_title": event.get("short_title", ""),
             "description": event.get("description", ""),
-            "categories": event.get("categories", []),
+            # ← нормализуем объекты категорий в строки-слаги
+            "categories": _parse_categories(event.get("categories", [])),
             "tags": event.get("tags", []),
             "price": event.get("price", ""),
             "is_free": event.get("is_free", False),
-            "age_restriction": event.get("age_restriction", ""),
+            "age_restriction": str(event.get("age_restriction", "") or ""),
             "start_date": start_date,
             "start_time": start_time,
             "place_title": place.get("title", ""),
             "place_address": place.get("address", ""),
             "lat": place_coords.get("lat"),
             "lon": place_coords.get("lon"),
-            "cover_url": cover_url,   # одно фото для превью
+            "cover_url": cover_url,
             "site_url": event.get("site_url", ""),
         })
     return results
@@ -288,10 +302,8 @@ def parse_event_detail(event: dict) -> dict:
     place = event.get("place") or {}
     place_coords = place.get("coords") or {}
 
-    # Сразу все картинки с кредитами
     images = _parse_images(event.get("images", []))
 
-    # Все даты проведения (u события может быть несколько дат)
     all_dates = [
         {
             "start": d.get("start_date"),
@@ -304,7 +316,6 @@ def parse_event_detail(event: dict) -> dict:
         for d in event.get("dates", [])
     ]
 
-    # Участники: [{"title": ..., "agent": {"title", "images"}}]
     participants = [
         {
             "role": p.get("role", ""),
@@ -323,27 +334,24 @@ def parse_event_detail(event: dict) -> dict:
         "title": event.get("title", ""),
         "short_title": event.get("short_title", ""),
         "description": event.get("description", ""),
-        "body_text": event.get("body_text", ""),   # полный текст
-        "categories": event.get("categories", []),
+        "body_text": event.get("body_text", ""),
+        # ← нормализуем объекты категорий в строки-слаги
+        "categories": _parse_categories(event.get("categories", [])),
         "tags": event.get("tags", []),
         "price": event.get("price", ""),
         "is_free": event.get("is_free", False),
-        "age_restriction": event.get("age_restriction", ""),
-        # Галерея — весь массив картинок
-        "images": images,               # [{"url", "source_name", "source_link"}, ...]
+        "age_restriction": str(event.get("age_restriction", "") or ""),
+        "images": images,
         "cover_url": images[0]["url"] if images else None,
-        # Даты
         "all_dates": all_dates,
         "start_date": all_dates[0]["start"] if all_dates else None,
         "start_time": all_dates[0]["start_time"] if all_dates else None,
-        # Место
         "place_title": place.get("title", ""),
         "place_address": place.get("address", ""),
         "place_phone": place.get("phone", ""),
         "place_subway": place.get("subway", ""),
         "lat": place_coords.get("lat"),
         "lon": place_coords.get("lon"),
-        # Участники
         "participants": participants,
         "site_url": event.get("site_url", ""),
     }
@@ -365,7 +373,7 @@ if __name__ == "__main__":
     print(f"Всего событий: {resp.get('count')}")
     for e in events:
         print(f"  [{e['kudago_id']}] {e['title']}")
-        print(f"       Обложка: {e['cover_url']}")
+        print(f"       Категории: {e['categories']}")
         print()
 
     if events:
@@ -374,15 +382,5 @@ if __name__ == "__main__":
         raw = get_event_by_id(first_id)
         detail = parse_event_detail(raw)
         print(f"  Название:   {detail['title']}")
-        print(f"  Описание:  {detail['description'][:120]}...")
+        print(f"  Категории: {detail['categories']}")
         print(f"  Картинок: {len(detail['images'])} шт.")
-        for i, img in enumerate(detail["images"]):
-            src = f" (источник: {img['source_name']})" if img["source_name"] else ""
-            print(f"    [{i+1}] {img['url']}{src}")
-        print(f"  Даты ({len(detail['all_dates'])} шт.):")
-        for d in detail["all_dates"][:3]:
-            print(f"    → {d['start']} {d['start_time'] or ''}")
-        if detail["participants"]:
-            print(f"  Участники:")
-            for p in detail["participants"][:5]:
-                print(f"    [{p['role']}] {p['name']}")
