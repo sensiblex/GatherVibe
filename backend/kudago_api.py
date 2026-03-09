@@ -1,81 +1,53 @@
-"""
-KudaGo API Integration Module
-Docs: https://docs.kudago.com/api/
-"""
+"""KudaGo API — обёртка для работы с публичным API событий."""
 
 import httpx
 from typing import Optional
 from datetime import datetime
 
 BASE_URL = "https://kudago.com/public-api/v1.4"
-
-# Доступные города:
-# spb, msk, nsk, ekb, nnv, kzn, smr, krd, sochi, ufa, krasnoyarsk
 DEFAULT_LOCATION = "kzn"
 
-# Именно images даёт массив объектов:
-# [{"image": "url", "source": {"name": ..., "link": ...}}, ...]
 DEFAULT_FIELDS = (
     "id,title,short_title,slug,description,body_text,"
     "place,location,dates,categories,tags,"
     "price,is_free,age_restriction,images,site_url"
 )
-
-DETAIL_FIELDS = (
-    "id,title,short_title,slug,description,body_text,"
-    "place,location,dates,categories,tags,"
-    "price,is_free,age_restriction,images,site_url,"
-    "participants"
-)
+DETAIL_FIELDS = DEFAULT_FIELDS + ",participants"
 
 
-# ──────────────────────────────────────────────
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-# ──────────────────────────────────────────────
+# --- helpers ---
 
 def _get(endpoint: str, params: dict) -> dict | list:
-    """Базовый GET-запрос к KudaGo API."""
     params = {k: v for k, v in params.items() if v is not None}
     with httpx.Client(timeout=10.0) as client:
-        response = client.get(f"{BASE_URL}/{endpoint}/", params=params)
-        response.raise_for_status()
-        return response.json()
+        r = client.get(f"{BASE_URL}/{endpoint}/", params=params)
+        r.raise_for_status()
+        return r.json()
 
 
 def _to_timestamp(dt: datetime) -> int:
     return int(dt.timestamp())
 
 
-def _parse_images(raw_images: list) -> list[dict]:
-    """
-    Нормализует массив картинок из KudaGo.
-
-    KudaGo возвращает объекты вида:
-        {"image": "https://...", "source": {"name": "...", "link": "https://..."}}
-
-    Возвращает чистый список:
-        [{"url": "...", "source_name": "...", "source_link": "..."}, ...]
-    """
+def _parse_images(raw: list) -> list[dict]:
+    # KudaGo отдаёт {image: url, source: {name, link}}
     result = []
-    for img in raw_images:
+    for img in raw:
         if not img.get("image"):
             continue
-        source = img.get("source") or {}
+        src = img.get("source") or {}
         result.append({
             "url": img["image"],
-            "source_name": source.get("name", ""),
-            "source_link": source.get("link", ""),
+            "source_name": src.get("name", ""),
+            "source_link": src.get("link", ""),
         })
     return result
 
 
-def _parse_categories(raw_categories: list) -> list[str]:
-    """
-    KudaGo возвращает категории как объекты {id, slug, name, name_plural}.
-    Нормализуем в список строк-слагов для удобства фронтенда.
-    """
+def _parse_categories(raw: list) -> list[str]:
+    # KudaGo отдаёт категории как объекты {id, slug, name, ...}
     result = []
-    for cat in raw_categories:
+    for cat in raw:
         if isinstance(cat, dict):
             result.append(cat.get("slug") or cat.get("name", ""))
         elif isinstance(cat, str):
@@ -83,27 +55,15 @@ def _parse_categories(raw_categories: list) -> list[str]:
     return result
 
 
-# ──────────────────────────────────────────────
-# ГОРОДА
-# ──────────────────────────────────────────────
+# --- API ---
 
 def get_locations(lang: str = "ru") -> list:
-    """Получить список всех доступных городов."""
     return _get("locations", {"lang": lang, "fields": "slug,name,timezone"})
 
 
-# ──────────────────────────────────────────────
-# КАТЕГОРИИ
-# ──────────────────────────────────────────────
-
 def get_event_categories(lang: str = "ru") -> list:
-    """Получить список всех категорий событий."""
     return _get("event-categories", {"lang": lang})
 
-
-# ──────────────────────────────────────────────
-# СОБЫТИЯ
-# ──────────────────────────────────────────────
 
 def get_events(
     location: str = DEFAULT_LOCATION,
@@ -118,21 +78,6 @@ def get_events(
     text_format: str = "text",
     lang: str = "ru",
 ) -> dict:
-    """
-    Получить список событий с фильтрацией.
-
-    Params:
-        location     — слаг города (kzn, msk, spb, ...)
-        categories   — слаги категорий через запятую, напр. "concert,exhibition"
-        actual_since — показывать события, начавшиеся после этой даты
-        actual_until — показывать события, закончившиеся до этой даты
-        is_free      — True = только бесплатные
-        tags         — фильтр по тэгам через запятую
-        page         — номер страницы
-        page_size    — количество событий на странице (макс. 100)
-        order_by     — сортировка (напр. "-publication_date", "id", "favorites_count")
-        text_format  — "text" | "html" | "plain"
-    """
     params = {
         "location": location,
         "categories": categories,
@@ -152,10 +97,6 @@ def get_events(
 
 
 def get_event_by_id(event_id: int, lang: str = "ru") -> dict:
-    """
-    Получить детальную информацию о конкретном событии по ID.
-    Возвращает сырой ответ API, для парсинга используй parse_event_detail().
-    """
     params = {
         "lang": lang,
         "fields": DETAIL_FIELDS,
@@ -164,19 +105,14 @@ def get_event_by_id(event_id: int, lang: str = "ru") -> dict:
     }
     params = {k: v for k, v in params.items() if v is not None}
     with httpx.Client(timeout=10.0) as client:
-        response = client.get(f"{BASE_URL}/events/{event_id}/", params=params)
-        response.raise_for_status()
-        return response.json()
+        r = client.get(f"{BASE_URL}/events/{event_id}/", params=params)
+        r.raise_for_status()
+        return r.json()
 
 
 def get_events_today(location: str = DEFAULT_LOCATION) -> dict:
-    """Получить события на сегодня."""
     return _get("events-of-the-day", {"location": location, "expand": "events"})
 
-
-# ──────────────────────────────────────────────
-# МЕСТА
-# ──────────────────────────────────────────────
 
 def get_places(
     location: str = DEFAULT_LOCATION,
@@ -185,7 +121,6 @@ def get_places(
     page_size: int = 20,
     lang: str = "ru",
 ) -> dict:
-    """Получить список мест (площадок) в городе."""
     params = {
         "location": location,
         "categories": categories,
@@ -198,17 +133,11 @@ def get_places(
 
 
 def get_place_by_id(place_id: int, lang: str = "ru") -> dict:
-    """Получить детальную информацию о месте по ID."""
-    params = {"lang": lang, "expand": "location"}
     with httpx.Client(timeout=10.0) as client:
-        response = client.get(f"{BASE_URL}/places/{place_id}/", params=params)
-        response.raise_for_status()
-        return response.json()
+        r = client.get(f"{BASE_URL}/places/{place_id}/", params={"lang": lang, "expand": "location"})
+        r.raise_for_status()
+        return r.json()
 
-
-# ──────────────────────────────────────────────
-# ПОИСК
-# ──────────────────────────────────────────────
 
 def search(
     query: str,
@@ -219,15 +148,6 @@ def search(
     page_size: int = 20,
     lang: str = "ru",
 ) -> dict:
-    """
-    Полнотекстовый поиск по базе KudaGo.
-
-    Params:
-        query    — поисковый запрос
-        ctype    — тип объекта: "event" | "place" | "news" | "list"
-        location — слаг города
-        is_free  — только бесплатные
-    """
     params = {
         "q": query,
         "ctype": ctype,
@@ -241,67 +161,41 @@ def search(
     return _get("search", params)
 
 
-# ──────────────────────────────────────────────
-# ПАРСИНГ ДЛЯ СПИСКА СОБЫТИЙ
-# ──────────────────────────────────────────────
+# --- парсинг ---
 
 def parse_events(response: dict) -> list[dict]:
-    """
-    Парсит список событий для отображения на карточках/в списке.
-    В images — первая картинка для превью, полный массив не нужен.
-    """
     results = []
     for event in response.get("results", []):
         dates = event.get("dates", [])
-        start_date = dates[0].get("start_date") if dates else None
-        start_time = dates[0].get("start_time") if dates else None
-
         place = event.get("place") or {}
-        place_coords = place.get("coords") or {}
-
+        coords = place.get("coords") or {}
         images = _parse_images(event.get("images", []))
-        cover_url = images[0]["url"] if images else None
 
         results.append({
             "kudago_id": event.get("id"),
             "title": event.get("title", ""),
             "short_title": event.get("short_title", ""),
             "description": event.get("description", ""),
-            # ← нормализуем объекты категорий в строки-слаги
             "categories": _parse_categories(event.get("categories", [])),
             "tags": event.get("tags", []),
             "price": event.get("price", ""),
             "is_free": event.get("is_free", False),
             "age_restriction": str(event.get("age_restriction", "") or ""),
-            "start_date": start_date,
-            "start_time": start_time,
+            "start_date": dates[0].get("start_date") if dates else None,
+            "start_time": dates[0].get("start_time") if dates else None,
             "place_title": place.get("title", ""),
             "place_address": place.get("address", ""),
-            "lat": place_coords.get("lat"),
-            "lon": place_coords.get("lon"),
-            "cover_url": cover_url,
+            "lat": coords.get("lat"),
+            "lon": coords.get("lon"),
+            "cover_url": images[0]["url"] if images else None,
             "site_url": event.get("site_url", ""),
         })
     return results
 
 
-# ──────────────────────────────────────────────
-# ПАРСИНГ ДЛЯ СТРАНИЦЫ СОБЫТИЯ (С ГАЛЕРЕЕЙ)
-# ──────────────────────────────────────────────
-
 def parse_event_detail(event: dict) -> dict:
-    """
-    Парсит одно событие (сырой ответ get_event_by_id) для страницы события.
-
-    Отличие от parse_events():
-      - images — полный массив всех картинок [{"url", "source_name", "source_link"}, ...]
-      - all_dates — все даты проведения (not just first)
-      - body_text  — полное описание
-      - participants — участники события (артисты, спикеры и т.д.)
-    """
     place = event.get("place") or {}
-    place_coords = place.get("coords") or {}
-
+    coords = place.get("coords") or {}
     images = _parse_images(event.get("images", []))
 
     all_dates = [
@@ -321,8 +215,8 @@ def parse_event_detail(event: dict) -> dict:
             "role": p.get("role", ""),
             "name": (p.get("agent") or {}).get("title", ""),
             "image_url": (
-                _parse_images((p.get("agent") or {}).get("images", []))[0]["url"]
-                if _parse_images((p.get("agent") or {}).get("images", []))
+                _parse_images((p.get("agent") or {}).get("images", ""))[0]["url"]
+                if _parse_images((p.get("agent") or {}).get("images", ""))
                 else None
             ),
         }
@@ -335,7 +229,6 @@ def parse_event_detail(event: dict) -> dict:
         "short_title": event.get("short_title", ""),
         "description": event.get("description", ""),
         "body_text": event.get("body_text", ""),
-        # ← нормализуем объекты категорий в строки-слаги
         "categories": _parse_categories(event.get("categories", [])),
         "tags": event.get("tags", []),
         "price": event.get("price", ""),
@@ -350,37 +243,28 @@ def parse_event_detail(event: dict) -> dict:
         "place_address": place.get("address", ""),
         "place_phone": place.get("phone", ""),
         "place_subway": place.get("subway", ""),
-        "lat": place_coords.get("lat"),
-        "lon": place_coords.get("lon"),
+        "lat": coords.get("lat"),
+        "lon": coords.get("lon"),
         "participants": participants,
         "site_url": event.get("site_url", ""),
     }
 
 
-# ──────────────────────────────────────────────
-# БЫСТРЫЙ ТЕСТ (запуск: python kudago_api.py)
-# ──────────────────────────────────────────────
-
 if __name__ == "__main__":
     print("=== Города ===")
-    locations = get_locations()
-    for loc in locations:
+    for loc in get_locations():
         print(f"  {loc['slug']:20} {loc['name']}")
 
-    print("\n=== События в Казани (5 шт.) ===")
+    print("\n=== События в Казани ===")
     resp = get_events(location="kzn", page_size=5)
     events = parse_events(resp)
-    print(f"Всего событий: {resp.get('count')}")
+    print(f"Всего: {resp.get('count')}")
     for e in events:
-        print(f"  [{e['kudago_id']}] {e['title']}")
-        print(f"       Категории: {e['categories']}")
-        print()
+        print(f"  [{e['kudago_id']}] {e['title']} | {e['categories']}")
 
     if events:
-        first_id = events[0]["kudago_id"]
-        print(f"\n=== Деталь: событие #{first_id} ===")
-        raw = get_event_by_id(first_id)
-        detail = parse_event_detail(raw)
-        print(f"  Название:   {detail['title']}")
-        print(f"  Категории: {detail['categories']}")
-        print(f"  Картинок: {len(detail['images'])} шт.")
+        fid = events[0]["kudago_id"]
+        detail = parse_event_detail(get_event_by_id(fid))
+        print(f"\n=== Деталь #{fid} ===")
+        print(f"  {detail['title']}")
+        print(f"  {len(detail['images'])} фото, {len(detail['all_dates'])} дат")

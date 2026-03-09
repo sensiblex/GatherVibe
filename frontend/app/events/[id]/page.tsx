@@ -8,7 +8,6 @@ import Navbar from '../../components/Navbar';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-/** Безопасно извлекает строку из любого значения из API */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toLabel(val: any): string {
   if (!val && val !== 0) return '';
@@ -123,10 +122,7 @@ export default function EventDetailPage() {
         </nav>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-          {/* Левая колонка */}
           <div className="lg:col-span-2 space-y-6">
-
-            {/* Галерея */}
             {images.length > 0 ? (
               <div className="space-y-3">
                 <div className="relative w-full h-80 sm:h-[420px] rounded-3xl overflow-hidden bg-gray-100 shadow-lg">
@@ -174,7 +170,6 @@ export default function EventDetailPage() {
               </div>
             )}
 
-            {/* Бейджи + заголовок */}
             <div>
               <div className="flex flex-wrap gap-2 mb-3">
                 {event.is_free && (
@@ -196,7 +191,6 @@ export default function EventDetailPage() {
               <h1 className="text-3xl font-black text-gray-900 leading-tight">{event.title}</h1>
             </div>
 
-            {/* Описание */}
             {event.description && (
               <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                 <h2 className="text-base font-bold text-gray-800 mb-3">О мероприятии</h2>
@@ -207,7 +201,6 @@ export default function EventDetailPage() {
               </div>
             )}
 
-            {/* Участники */}
             {Array.isArray(event.participants) && event.participants.length > 0 && (
               <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                 <h2 className="text-base font-bold text-gray-800 mb-4">Участники</h2>
@@ -233,7 +226,6 @@ export default function EventDetailPage() {
               </div>
             )}
 
-            {/* Тэги */}
             {Array.isArray(event.tags) && event.tags.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {event.tags.map((tag, i) => {
@@ -247,7 +239,6 @@ export default function EventDetailPage() {
             )}
           </div>
 
-          {/* Правая колонка */}
           <div className="space-y-5 lg:sticky lg:top-24 self-start">
             <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
               <p className="text-xs text-gray-400 uppercase font-semibold tracking-wide mb-1">Стоимость</p>
@@ -300,8 +291,7 @@ export default function EventDetailPage() {
                   </p>
                 )}
                 {event.place_phone && (
-                  <a href={`tel:${event.place_phone}`}
-                    className="text-sm text-indigo-600 hover:text-indigo-800 mt-2 block">
+                  <a href={`tel:${event.place_phone}`} className="text-sm text-indigo-600 hover:text-indigo-800 mt-2 block">
                     {event.place_phone}
                   </a>
                 )}

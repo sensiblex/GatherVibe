@@ -23,15 +23,12 @@ export interface KudaGoEvent {
   site_url: string;
 }
 
-/** Безопасно извлекает строку из любого значения категории */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toLabel(val: any): string {
   if (!val && val !== 0) return '';
   if (typeof val === 'string') return val;
   if (typeof val === 'number') return String(val);
-  if (typeof val === 'object') {
-    return String(val.name ?? val.slug ?? val.id ?? '');
-  }
+  if (typeof val === 'object') return String(val.name ?? val.slug ?? val.id ?? '');
   return String(val);
 }
 
@@ -54,7 +51,6 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
       href={`/events/${event.kudago_id}`}
       className="group flex flex-col bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
     >
-      {/* Обложка */}
       <div className="relative w-full h-48 bg-gray-100 overflow-hidden">
         {event.cover_url ? (
           <Image src={event.cover_url} alt={event.title} fill
@@ -82,7 +78,6 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
         )}
       </div>
 
-      {/* Контент */}
       <div className="flex flex-col flex-1 p-4 gap-2">
         {event.categories?.length > 0 && (
           <div className="flex flex-wrap gap-1">

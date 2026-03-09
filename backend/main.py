@@ -20,7 +20,6 @@ import kudago_api
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-# Создаем таблицы в БД (если их нет)
 models.user.Base.metadata.create_all(bind=engine)
 models.event.Base.metadata.create_all(bind=engine)
 
@@ -67,7 +66,6 @@ async def leave_event_chat(sid, event_id: str):
     await sio.leave_room(sid, f'event_{event_id}')
 
 
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -81,7 +79,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Функция для получения сессии БД
+
 def get_db():
     db = SessionLocal()
     try:
@@ -89,53 +87,41 @@ def get_db():
     finally:
         db.close()
 
-# ⚠️ socket_app — ГЛАВНОЕ ASGI-приложение для uvicorn
+
+# ⚠️ socket_app — главное ASGI-приложение для uvicorn
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
+
 
 @app.post("/login", response_model=Token)
 def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
-    """
-    Вход пользователя.
-    Возвращает JWT токен для аутентификации.
-    """
     user = authenticate_user(user_credentials.email, user_credentials.password, db)
-    
     if not user:
         raise HTTPException(
             status_code=401,
             detail="Неверный email или пароль",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Пользователь заблокирован")
-    
-    token_data = create_user_token(user)
-    return token_data
+    return create_user_token(user)
+
 
 @app.get("/users/me", response_model=UserResponse)
-def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db)
-):
-    """Получить текущего пользователя по токену"""
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     from jwt_handler import verify_token
-    
     payload = verify_token(token)
     if payload is None:
         raise HTTPException(status_code=401, detail="Неверный токен")
-    
     email = payload.get("sub")
     if email is None:
         raise HTTPException(status_code=401, detail="Неверный токен")
-    
     user = db.query(User).filter(User.email == email).first()
     if user is None:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-    
     return user
 
-# ===== LOCAL EVENTS ENDPOINTS =====
+
+# ===== EVENTS =====
 
 @app.get("/events", response_model=List[EventResponse])
 def get_events(
@@ -146,9 +132,7 @@ def get_events(
     search: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """Получить список событий из локальной БД с фильтрами"""
     query = db.query(Event).filter(Event.is_active == True)
-    
     if city:
         query = query.filter(Event.city.ilike(f"%{city}%"))
     if category:
@@ -159,122 +143,74 @@ def get_events(
             (Event.description.ilike(f"%{search}%")) |
             (Event.location.ilike(f"%{search}%"))
         )
-    
-    query = query.order_by(Event.date_time)
-    events = query.offset(skip).limit(limit).all()
-    return events
+    return query.order_by(Event.date_time).offset(skip).limit(limit).all()
+
 
 @app.get("/events/categories")
 def get_categories(db: Session = Depends(get_db)):
-    """Получить список уникальных категорий"""
     categories = db.query(Event.category).distinct().all()
     return {"categories": [cat[0] for cat in categories if cat[0]]}
 
+
 @app.get("/events/cities")
 def get_cities(db: Session = Depends(get_db)):
-    """Получить список уникальных городов"""
     cities = db.query(Event.city).distinct().all()
     return {"cities": [city[0] for city in cities if city[0]]}
 
+
 @app.get("/events/{event_id}", response_model=EventResponse)
 def get_event(event_id: int, db: Session = Depends(get_db)):
-    """Получить событие из локальной БД по ID"""
     event = db.query(Event).filter(Event.id == event_id, Event.is_active == True).first()
     if event is None:
         raise HTTPException(status_code=404, detail="Событие не найдено")
     return event
 
+
 @app.post("/events", response_model=EventResponse)
-def create_event(
-    event: EventCreate,
-    db: Session = Depends(get_db),
-    token: str = Depends(oauth2_scheme)
-):
-    """Создать новое событие"""
+def create_event(event: EventCreate, db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)):
     from jwt_handler import verify_token
     payload = verify_token(token)
     if payload is None:
         raise HTTPException(status_code=401, detail="Неверный токен")
-    
-    user_id = payload.get("id")
-    db_event = Event(
-        **event.dict(),
-        created_by=user_id,
-        current_participants=0
-    )
-    
+    db_event = Event(**event.dict(), created_by=payload.get("id"), current_participants=0)
     db.add(db_event)
     db.commit()
     db.refresh(db_event)
     return db_event
 
 
-# ===== KUDAGO API ENDPOINTS =====
-# Реальные события из KudaGo (префикс /kudago)
+# ===== KUDAGO =====
 
 @app.get("/kudago/events")
 def kudago_get_events(
-    location: str = Query(default="kzn", description="Слаг города: kzn, msk, spb, ekb..."),
-    categories: Optional[str] = Query(default=None, description="Категории через запятую: concert,exhibition"),
-    is_free: Optional[bool] = Query(default=None, description="Только бесплатные"),
-    search: Optional[str] = Query(default=None, description="Поиск по названию"),
+    location: str = Query(default="kzn"),
+    categories: Optional[str] = Query(default=None),
+    is_free: Optional[bool] = Query(default=None),
+    search: Optional[str] = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ):
-    """
-    Карточки событий из KudaGo.
-    Если указан search — используется поиск, иначе — список событий с фильтрами.
-    """
     try:
         if search:
-            raw = kudago_api.search(
-                query=search,
-                ctype="event",
-                location=location,
-                is_free=is_free,
-                page=page,
-                page_size=page_size,
-            )
+            raw = kudago_api.search(query=search, ctype="event", location=location, is_free=is_free, page=page, page_size=page_size)
         else:
-            raw = kudago_api.get_events(
-                location=location,
-                categories=categories,
-                is_free=is_free,
-                page=page,
-                page_size=page_size,
-            )
-
+            raw = kudago_api.get_events(location=location, categories=categories, is_free=is_free, page=page, page_size=page_size)
         events = kudago_api.parse_events(raw)
-        return {
-            "count": raw.get("count", len(events)),
-            "next": raw.get("next"),
-            "previous": raw.get("previous"),
-            "page": page,
-            "page_size": page_size,
-            "results": events,
-        }
+        return {"count": raw.get("count", len(events)), "next": raw.get("next"), "previous": raw.get("previous"), "page": page, "page_size": page_size, "results": events}
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
 
 
 @app.get("/kudago/events/{event_id}")
 def kudago_get_event_detail(event_id: int):
-    """
-    Детальная страница события из KudaGo.
-    Включает полную галерею фото, все даты и участников.
-    """
     try:
-        raw = kudago_api.get_event_by_id(event_id)
-        return kudago_api.parse_event_detail(raw)
+        return kudago_api.parse_event_detail(kudago_api.get_event_by_id(event_id))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
 
 
 @app.get("/kudago/today")
-def kudago_events_today(
-    location: str = Query(default="kzn", description="Слаг города")
-):
-    """События на сегодня."""
+def kudago_events_today(location: str = Query(default="kzn")):
     try:
         return kudago_api.get_events_today(location=location)
     except Exception as e:
@@ -283,7 +219,6 @@ def kudago_events_today(
 
 @app.get("/kudago/categories")
 def kudago_categories():
-    """Список всех категорий событий KudaGo."""
     try:
         return kudago_api.get_event_categories()
     except Exception as e:
@@ -292,7 +227,6 @@ def kudago_categories():
 
 @app.get("/kudago/locations")
 def kudago_locations():
-    """Список городов, доступных в KudaGo."""
     try:
         return kudago_api.get_locations()
     except Exception as e:
@@ -305,21 +239,23 @@ def kudago_locations():
 def read_root():
     return {"message": "GatherVibe API работает!"}
 
+
 @app.get("/health")
 def health_check():
     return {"status": "ok", "service": "gathervibe-backend"}
+
 
 @app.get("/users")
 def get_users(db: Session = Depends(get_db)):
     users = db.query(User).all()
     return {"users": users, "count": len(users)}
 
+
 @app.post("/test-user")
 def create_test_user(db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.email == "test@example.com").first()
     if existing:
-        return {"message": "Тестовый пользователь уже существует", "user_id": existing.id}
-    
+        return {"message": "Тестовый пользователь уже есть", "user_id": existing.id}
     test_user = User(
         email="test@example.com",
         username="ТестовыйПользователь",
@@ -327,32 +263,28 @@ def create_test_user(db: Session = Depends(get_db)):
         city="Москва",
         interests="музыка,кино,искусство"
     )
-    
     db.add(test_user)
     db.commit()
     db.refresh(test_user)
-    
     return {"message": "Тестовый пользователь создан", "user_id": test_user.id}
+
 
 @app.post("/register", response_model=UserResponse)
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.email == user.email).first()
-    if db_user:
+    if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
-    
-    hashed_password = hash_password(user.password)
     new_user = User(
         email=user.email,
         username=user.username,
-        hashed_password=hashed_password,
+        hashed_password=hash_password(user.password),
         city=user.city,
-        interests=user.interests
+        interests=user.interests,
     )
-    
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
     return new_user
+
 
 @app.get("/users/{user_id}", response_model=UserResponse)
 def get_user(user_id: int, db: Session = Depends(get_db)):
@@ -360,6 +292,7 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
     if user is None:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
     return user
+
 
 @app.delete("/test-user")
 def delete_test_user(db: Session = Depends(get_db)):
