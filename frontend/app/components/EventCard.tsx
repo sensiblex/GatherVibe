@@ -1,12 +1,15 @@
 import Image from 'next/image';
 import Link from 'next/link';
 
+// KudaGo возвращает categories как объекты {id,slug,name,name_plural} — поддерживаем оба формата
+type RawCategory = string | { id?: number; slug: string; name: string; name_plural?: string };
+
 export interface KudaGoEvent {
   kudago_id: number;
   title: string;
   short_title: string;
   description: string;
-  categories: string[];
+  categories: RawCategory[];
   tags: string[];
   price: string;
   is_free: boolean;
@@ -21,18 +24,22 @@ export interface KudaGoEvent {
   site_url: string;
 }
 
-interface EventCardProps {
-  event: KudaGoEvent;
+function getCatLabel(cat: RawCategory): string {
+  if (typeof cat === 'string') return cat;
+  return cat.name || cat.slug;
+}
+function getCatKey(cat: RawCategory): string {
+  if (typeof cat === 'string') return cat;
+  return cat.slug;
 }
 
 function formatDate(dateStr: string | null, timeStr: string | null): string {
   if (!dateStr) return 'Дата не указана';
-  const date = new Date(dateStr);
-  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) +
+  return new Date(dateStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) +
     (timeStr ? ` в ${timeStr.slice(0, 5)}` : '');
 }
 
-export default function EventCard({ event }: EventCardProps) {
+export default function EventCard({ event }: { event: KudaGoEvent }) {
   return (
     <Link
       href={`/events/${event.kudago_id}`}
@@ -41,36 +48,25 @@ export default function EventCard({ event }: EventCardProps) {
       {/* Обложка */}
       <div className="relative w-full h-48 bg-gray-100 overflow-hidden">
         {event.cover_url ? (
-          <Image
-            src={event.cover_url}
-            alt={event.title}
-            fill
-            className="object-cover group-hover:scale-105 transition-transform duration-500"
-            unoptimized
-          />
+          <Image src={event.cover_url} alt={event.title} fill
+            className="object-cover group-hover:scale-105 transition-transform duration-500" unoptimized />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
             <span className="text-5xl opacity-30">🎭</span>
           </div>
         )}
-        {/* Градиентный оверлей снизу */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
 
         {/* Бейджи */}
         <div className="absolute top-3 left-3 flex gap-1.5">
           {event.is_free && (
-            <span className="bg-emerald-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow">
-              Бесплатно
-            </span>
+            <span className="bg-emerald-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow">Бесплатно</span>
           )}
           {event.age_restriction && (
-            <span className="bg-black/50 text-white text-xs font-bold px-2 py-0.5 rounded-full">
-              {event.age_restriction}+
-            </span>
+            <span className="bg-black/50 text-white text-xs font-bold px-2 py-0.5 rounded-full">{event.age_restriction}+</span>
           )}
         </div>
 
-        {/* Дата поверх картинки снизу */}
         {event.start_date && (
           <span className="absolute bottom-3 right-3 bg-white/90 text-gray-800 text-xs font-semibold px-2 py-1 rounded-lg shadow">
             {formatDate(event.start_date, event.start_time)}
@@ -80,24 +76,21 @@ export default function EventCard({ event }: EventCardProps) {
 
       {/* Контент */}
       <div className="flex flex-col flex-1 p-4 gap-2">
-        {/* Категории */}
         {event.categories.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {event.categories.slice(0, 2).map((cat) => (
-              <span key={cat}
+              <span key={getCatKey(cat)}
                 className="text-xs bg-indigo-50 text-indigo-600 font-medium px-2 py-0.5 rounded-full capitalize">
-                {cat}
+                {getCatLabel(cat)}
               </span>
             ))}
           </div>
         )}
 
-        {/* Заголовок */}
         <h3 className="font-bold text-gray-900 text-base leading-snug line-clamp-2 group-hover:text-indigo-600 transition-colors">
           {event.title}
         </h3>
 
-        {/* Место */}
         {event.place_title && (
           <div className="flex items-center gap-1.5 text-sm text-gray-400">
             <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -110,7 +103,6 @@ export default function EventCard({ event }: EventCardProps) {
           </div>
         )}
 
-        {/* Цена */}
         <div className="mt-auto pt-3 border-t border-gray-50 flex items-center justify-between">
           {event.is_free ? (
             <span className="text-emerald-600 font-bold text-sm">Бесплатно</span>
