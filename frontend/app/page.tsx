@@ -1,158 +1,173 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import SiteChat from './components/SiteChat';  // ← ДОБАВЛЕН ИМПОРТ ЧАТА
+import Navbar from './components/Navbar';
+import SiteChat from './components/SiteChat';
+
+const FEATURES = [
+  {
+    emoji: '🔍',
+    title: 'Находи события',
+    desc: 'Реальные мероприятия из KudaGo — концерты, выставки, мастер-классы и фестивали.',
+    gradient: 'from-indigo-500 to-blue-500',
+    bg: 'bg-indigo-50',
+  },
+  {
+    emoji: '👥',
+    title: 'Собери компанию',
+    desc: 'Общайся в чате мероприятия, находи единомышленников и планируй походы вместе.',
+    gradient: 'from-purple-500 to-pink-500',
+    bg: 'bg-purple-50',
+  },
+  {
+    emoji: '🎉',
+    title: 'Получай эмоции',
+    desc: 'Впечатления становятся ярче, когда рядом свои. Не ходи один — ходи с GatherVibe!',
+    gradient: 'from-orange-500 to-rose-500',
+    bg: 'bg-orange-50',
+  },
+];
+
+const STATS = [
+  { value: '11', label: 'городов' },
+  { value: '1000+', label: 'событий' },
+  { value: 'Бесплатно', label: 'для пользователей' },
+];
 
 export default function Home() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [username, setUsername] = useState('');
-
-  useEffect(() => {
-    // Проверяем, есть ли токен в localStorage
-    const token = localStorage.getItem('token');
-    const storedUsername = localStorage.getItem('username');
-    
-    if (token && storedUsername) {
-      setIsLoggedIn(true);
-      setUsername(storedUsername);
-    }
-  }, []);
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user_id');
-    localStorage.removeItem('username');
-    localStorage.removeItem('email');
-    setIsLoggedIn(false);
-    setUsername('');
-  };
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50">
-      <nav className="bg-white shadow-sm">
-        <div className="container mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold text-blue-600">GatherVibe</h1>
-          
-          <div className="flex items-center space-x-4">
-            {isLoggedIn ? (
-              <>
-                <span className="text-gray-700">
-                  Привет, <span className="font-semibold">{username}</span>!
-                </span>
-                <Link 
-                  href="/profile" 
-                  className="text-blue-600 hover:text-blue-800 transition"
-                >
-                  Профиль
-                </Link>
-                <button 
-                  onClick={handleLogout}
-                  className="bg-red-100 text-red-600 px-4 py-2 rounded-lg hover:bg-red-200 transition"
-                >
-                  Выйти
-                </button>
-              </>
-            ) : (
-              <>
-                <Link 
-                  href="/login" 
-                  className="text-blue-600 hover:text-blue-800 transition"
-                >
-                  Войти
-                </Link>
-                <Link 
-                  href="/register" 
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
-                >
-                  Регистрация
-                </Link>
-              </>
-            )}
-          </div>
-        </div>
-      </nav>
+    <div className="min-h-screen bg-white">
+      <Navbar />
 
-      <main className="container mx-auto px-4 py-16 text-center">
-        <h1 className="text-5xl font-bold mb-6">
-          Найди компанию для <span className="text-blue-600">мероприятий</span>
-        </h1>
-        
-        <p className="text-xl text-gray-600 mb-12 max-w-2xl mx-auto">
-          Концерты, выставки, фестивали — не ходи один. 
-          Собирайся с единомышленниками и получай больше эмоций!
-        </p>
+      {/* ─── HERO ─── */}
+      <section className="relative overflow-hidden bg-gradient-to-b from-indigo-50/60 via-white to-white pt-20 pb-24">
+        {/* Декоративные блобы */}
+        <div className="pointer-events-none absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full bg-indigo-100 opacity-50 blur-3xl" />
+        <div className="pointer-events-none absolute top-40 -left-40 w-[400px] h-[400px] rounded-full bg-purple-100 opacity-40 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-0 right-1/3 w-72 h-72 rounded-full bg-pink-100 opacity-30 blur-3xl" />
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
-          <div className="bg-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-shadow">
-            <div className="text-4xl mb-4">🎭</div>
-            <h3 className="text-xl font-bold mb-2">Найди событие</h3>
-            <p className="text-gray-600">Концерты, выставки, мастер-классы</p>
-          </div>
-          
-          <div className="bg-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-shadow">
-            <div className="text-4xl mb-4">👥</div>
-            <h3 className="text-xl font-bold mb-2">Собери компанию</h3>
-            <p className="text-gray-600">Найди единомышленников</p>
-          </div>
-          
-          <div className="bg-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-shadow">
-            <div className="text-4xl mb-4">🎉</div>
-            <h3 className="text-xl font-bold mb-2">Получи эмоции</h3>
-            <p className="text-gray-600">Посещай с удовольствием</p>
-          </div>
-        </div>
+        <div className="relative container mx-auto px-4 text-center">
+          {/* Пилюля */}
+          <span className="inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 text-indigo-600 text-sm font-semibold px-4 py-1.5 rounded-full mb-8 shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+            Реальные события через KudaGo API
+          </span>
 
-        <div className="space-x-4">
-          {isLoggedIn ? (
+          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black text-gray-900 leading-tight mb-6">
+            Найди компанию{' '}
+            <span className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 bg-clip-text text-transparent">
+              для любых<br />мероприятий
+            </span>
+          </h1>
+
+          <p className="text-xl text-gray-500 mb-10 max-w-2xl mx-auto leading-relaxed">
+            Концерты, выставки, фестивали — не ходи один.
+            Собирайсь с единомышленниками и получай больше эмоций!
+          </p>
+
+          <div className="flex flex-wrap justify-center gap-4 mb-16">
             <Link
               href="/events"
-              className="inline-block bg-blue-600 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-blue-700 transition"
+              className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-8 py-4 rounded-2xl font-bold text-lg hover:opacity-90 shadow-lg shadow-indigo-200 hover:shadow-xl hover:shadow-indigo-200 hover:-translate-y-0.5 transition-all"
             >
-              Найти мероприятия
+              Смотреть события →
             </Link>
-          ) : (
-            <>
-              <Link
-                href="/register"
-                className="inline-block bg-blue-600 text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-blue-700 transition"
-              >
-                Начать бесплатно
-              </Link>
-              <Link
-                href="/events"
-                className="inline-block border-2 border-blue-600 text-blue-600 px-8 py-4 rounded-xl font-bold text-lg hover:bg-blue-50 transition"
-              >
-                Посмотреть события
-              </Link>
-            </>
-          )}
-        </div>
+            <Link
+              href="/register"
+              className="bg-white text-gray-800 px-8 py-4 rounded-2xl font-bold text-lg border border-gray-200 hover:border-indigo-200 hover:bg-indigo-50 hover:-translate-y-0.5 shadow-sm transition-all"
+            >
+              Регистрация
+            </Link>
+          </div>
 
-        {isLoggedIn && (
-          <div className="mt-12 p-6 bg-green-50 rounded-2xl border border-green-200 max-w-2xl mx-auto">
-            <h2 className="text-2xl font-bold text-green-800 mb-3">🎉 Вы вошли в систему!</h2>
-            <p className="text-green-700">
-              Теперь вы можете искать мероприятия, создавать группы и находить компанию!
+          {/* Статистика */}
+          <div className="flex flex-wrap justify-center gap-10">
+            {STATS.map((s) => (
+              <div key={s.label} className="text-center">
+                <p className="text-3xl font-black text-indigo-600">{s.value}</p>
+                <p className="text-sm text-gray-400 mt-0.5">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ─── ФИЧЕРС ─── */}
+      <section className="py-24 bg-white">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-black text-gray-900 mb-4">Как это работает</h2>
+            <p className="text-gray-500 text-lg max-w-xl mx-auto">
+              Три простых шага до ярких впечатлений
             </p>
           </div>
-        )}
-      </main>
 
-      <footer className="bg-white mt-16 py-8 border-t">
-        <div className="container mx-auto px-4 text-center text-gray-600">
-          <p className="font-semibold text-gray-800">GatherVibe</p>
-          <p className="text-sm mt-1">Платформа для поиска компании на мероприятия</p>
-          <div className="mt-4 flex justify-center gap-6 text-sm">
-            <a href="/register" className="hover:text-blue-600 transition">Регистрация</a>
-            <a href="/login" className="hover:text-blue-600 transition">Войти</a>
-            <a href="/events" className="hover:text-blue-600 transition">События</a>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+            {FEATURES.map((f, i) => (
+              <div
+                key={f.title}
+                className="group relative bg-white rounded-3xl p-8 border border-gray-100 hover:border-indigo-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all"
+              >
+                {/* Номер шага */}
+                <span className="absolute top-6 right-6 text-xs font-bold text-gray-300">
+                  0{i + 1}
+                </span>
+                {/* Иконка */}
+                <div className={`inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br ${f.gradient} text-2xl mb-6 shadow-md`}>
+                  {f.emoji}
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 mb-3">{f.title}</h3>
+                <p className="text-gray-500 leading-relaxed">{f.desc}</p>
+              </div>
+            ))}
           </div>
-          <p className="mt-6 text-xs text-gray-400">© {new Date().getFullYear()} GatherVibe.</p>
+        </div>
+      </section>
+
+      {/* ─── CTA ─── */}
+      <section className="py-20 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600">
+        <div className="container mx-auto px-4 text-center">
+          <h2 className="text-4xl font-black text-white mb-4">
+            Готов начать?  🚀
+          </h2>
+          <p className="text-indigo-100 text-lg mb-10 max-w-xl mx-auto">
+            Регистрируйся бесплатно и начни искать компанию уже сегодня
+          </p>
+          <div className="flex flex-wrap justify-center gap-4">
+            <Link
+              href="/register"
+              className="bg-white text-indigo-600 px-8 py-4 rounded-2xl font-bold text-lg hover:bg-indigo-50 shadow-lg hover:-translate-y-0.5 transition-all"
+            >
+              Создать аккаунт
+            </Link>
+            <Link
+              href="/events"
+              className="bg-white/10 border border-white/30 text-white px-8 py-4 rounded-2xl font-bold text-lg hover:bg-white/20 hover:-translate-y-0.5 transition-all"
+            >
+              Смотреть события
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ─── ФУТЕР ─── */}
+      <footer className="bg-gray-950 py-12">
+        <div className="container mx-auto px-4">
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-6">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">🎭</span>
+              <span className="text-lg font-black text-white">GatherVibe</span>
+            </div>
+            <div className="flex gap-6 text-sm text-gray-400">
+              <Link href="/events" className="hover:text-white transition">События</Link>
+              <Link href="/register" className="hover:text-white transition">Регистрация</Link>
+              <Link href="/login" className="hover:text-white transition">Войти</Link>
+            </div>
+            <p className="text-xs text-gray-600">© {new Date().getFullYear()} GatherVibe</p>
+          </div>
         </div>
       </footer>
 
-      {}
       <SiteChat />
     </div>
   );
