@@ -1,159 +1,109 @@
-"use client";
+'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import axios from 'axios';
+import Navbar from '../components/Navbar';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-  });
+  const [form, setForm]     = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
+  const [error, setError]   = useState<string | null>(null);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setMessage('');
-
+    setError(null);
     try {
-      const response = await axios.post('http://localhost:8000/login', formData);
-      
-      // Сохраняем токен в localStorage
-      localStorage.setItem('token', response.data.access_token);
-      localStorage.setItem('user_id', response.data.user_id.toString());
-      localStorage.setItem('username', response.data.username);
-      localStorage.setItem('email', response.data.email);
-      
-      setMessage('✅ Вход успешен!');
-      
-      // Через 1 секунду переходим на главную
-      setTimeout(() => {
-        router.push('/');
-      }, 1000);
-      
-    } catch (error: any) {
-      if (error.response) {
-        if (error.response.status === 401) {
-          setMessage('❌ Неверный email или пароль');
-        } else {
-          setMessage(`❌ Ошибка: ${error.response.data.detail || 'Неизвестная ошибка'}`);
-        }
-      } else {
-        setMessage('❌ Не удалось подключиться к серверу');
+      const res = await fetch(`${API_BASE}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.detail || 'Ошибка входа');
       }
+      const data = await res.json();
+      localStorage.setItem('token', data.access_token);
+      localStorage.setItem('user_id', String(data.user_id));
+      localStorage.setItem('username', data.username);
+      localStorage.setItem('email', data.email);
+      router.push('/');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Неизвестная ошибка');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex flex-col items-center justify-center p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-blue-600 mb-2">GatherVibe</h1>
-          <p className="text-gray-600">Вход в аккаунт</p>
-        </div>
-        
-        {message && (
-          <div className={`mb-6 p-4 rounded-lg ${
-            message.includes('✅') 
-              ? 'bg-green-100 text-green-800 border border-green-200' 
-              : 'bg-red-100 text-red-800 border border-red-200'
-          }`}>
-            {message}
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
+      <div className="flex items-center justify-center px-4 py-16">
+        <div className="w-full max-w-md">
+
+          <div className="text-center mb-8">
+            <span className="text-4xl">🎭</span>
+            <h1 className="text-2xl font-black text-gray-900 mt-3">Вход в аккаунт</h1>
+            <p className="text-gray-400 text-sm mt-1">Рады видеть снова!</p>
           </div>
-        )}
-        
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium mb-2">Email</label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-              placeholder="ваш@email.com"
-              required
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-2">Пароль</label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition"
-              placeholder="Введите пароль"
-              required
-            />
-          </div>
-          
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 text-white p-3 rounded-lg font-medium hover:bg-blue-700 transition duration-200 disabled:bg-blue-400 disabled:cursor-not-allowed"
-          >
-            {loading ? (
-              <span className="flex items-center justify-center">
-                <svg className="animate-spin h-5 w-5 mr-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Вход...
-              </span>
-            ) : 'Войти'}
-          </button>
-        </form>
-        
-        <div className="mt-8 space-y-4">
-          <div className="text-center">
-            <p className="text-gray-600">
-              Нет аккаунта?{' '}
-              <Link 
-                href="/register" 
-                className="text-blue-600 hover:text-blue-800 font-medium transition"
+
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-8">
+            {error && (
+              <div className="mb-5 px-4 py-3 bg-red-50 border border-red-100 text-red-600 rounded-xl text-sm">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Email</label>
+                <input
+                  type="email" name="email" value={form.email}
+                  onChange={handleChange} placeholder="ваш@email.com" required
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white transition"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Пароль</label>
+                <input
+                  type="password" name="password" value={form.password}
+                  onChange={handleChange} placeholder="Введите пароль" required
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white transition"
+                />
+              </div>
+
+              <button
+                type="submit" disabled={loading}
+                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-xl font-bold hover:opacity-90 shadow-sm shadow-indigo-100 transition disabled:opacity-60"
               >
-                Зарегистрироваться
-              </Link>
-            </p>
-          </div>
-          
-          <div className="text-center">
-            <button 
-              onClick={() => {
-                // Тестовые данные для быстрого входа
-                setFormData({
-                  email: 'test@example.com',
-                  password: 'test123'
-                });
-                setMessage('⚠️ Тестовые данные заполнены. Нажмите "Войти"');
-              }}
-              className="text-sm text-gray-500 hover:text-gray-700 transition"
+                {loading ? 'Входим...' : 'Войти'}
+              </button>
+            </form>
+
+            <button
+              type="button"
+              onClick={() => setForm({ email: 'test@example.com', password: '123456' })}
+              className="w-full mt-4 text-xs text-gray-400 hover:text-indigo-500 transition py-1.5"
             >
               Использовать тестовые данные
             </button>
           </div>
+
+          <p className="text-center text-sm text-gray-500 mt-6">
+            Нет аккаунта?{' '}
+            <Link href="/register" className="text-indigo-600 font-semibold hover:text-indigo-800 transition">
+              Зарегистрироваться
+            </Link>
+          </p>
         </div>
-      </div>
-      
-      <div className="mt-8 text-center text-gray-500 text-sm">
-        <p>Демо-аккаунт для тестирования:</p>
-        <p className="font-mono mt-1 bg-gray-100 p-2 rounded">
-          Email: test@example.com<br />
-          Пароль: test123
-        </p>
       </div>
     </div>
   );

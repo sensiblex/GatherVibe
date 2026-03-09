@@ -1,158 +1,123 @@
-"use client";
+'use client';
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import axios from 'axios';
+import Link from 'next/link';
+import Navbar from '../components/Navbar';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [formData, setFormData] = useState({
-    email: '',
-    username: '',
-    password: '',
-    city: '',
-    interests: '',
-  });
+  const [form, setForm] = useState({ email: '', username: '', password: '', city: '', interests: '' });
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
+  const [error, setError]     = useState<string | null>(null);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setMessage('');
-
+    setError(null);
     try {
-      const response = await axios.post('http://localhost:8000/register', formData);
-      setMessage(`✅ Регистрация успешна! ID: ${response.data.id}`);
-      
-      // Через 2 секунды переходим на главную
-      setTimeout(() => {
-        router.push('/');
-      }, 2000);
-      
-    } catch (error: any) {
-      if (error.response) {
-        setMessage(`❌ Ошибка: ${error.response.data.detail || 'Неизвестная ошибка'}`);
-      } else {
-        setMessage('❌ Не удалось подключиться к серверу');
+      const res = await fetch(`${API_BASE}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.detail || 'Ошибка регистрации');
       }
+      router.push('/login');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Неизвестная ошибка');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-lg w-full max-w-md">
-        <h1 className="text-3xl font-bold text-center mb-2">GatherVibe</h1>
-        <p className="text-gray-600 text-center mb-8">Регистрация</p>
-        
-        {message && (
-          <div className={`mb-4 p-3 rounded-lg ${message.includes('✅') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-            {message}
+    <div className="min-h-screen bg-gray-50">
+      <Navbar />
+      <div className="flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md">
+
+          <div className="text-center mb-8">
+            <span className="text-4xl">🎭</span>
+            <h1 className="text-2xl font-black text-gray-900 mt-3">Создать аккаунт</h1>
+            <p className="text-gray-400 text-sm mt-1">Находи компанию для любых мероприятий</p>
           </div>
-        )}
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Email *</label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="ваш@email.com"
-              required
-            />
+
+          <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-8">
+            {error && (
+              <div className="mb-5 px-4 py-3 bg-red-50 border border-red-100 text-red-600 rounded-xl text-sm">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Email *</label>
+                <input
+                  type="email" name="email" value={form.email}
+                  onChange={handleChange} placeholder="ваш@email.com" required
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white transition"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Имя пользователя *</label>
+                <input
+                  type="text" name="username" value={form.username}
+                  onChange={handleChange} placeholder="Ваш никнейм" required
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white transition"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">Пароль *</label>
+                <input
+                  type="password" name="password" value={form.password}
+                  onChange={handleChange} placeholder="Не менее 6 символов" required minLength={6}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white transition"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Город</label>
+                  <input
+                    type="text" name="city" value={form.city}
+                    onChange={handleChange} placeholder="Казань"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white transition"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Интересы</label>
+                  <input
+                    type="text" name="interests" value={form.interests}
+                    onChange={handleChange} placeholder="музыка, кино"
+                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white transition"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit" disabled={loading}
+                className="w-full mt-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-xl font-bold hover:opacity-90 shadow-sm shadow-indigo-100 transition disabled:opacity-60"
+              >
+                {loading ? 'Создаём аккаунт...' : 'Зарегистрироваться'}
+              </button>
+            </form>
           </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-1">Имя пользователя *</label>
-            <input
-              type="text"
-              name="username"
-              value={formData.username}
-              onChange={handleChange}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Придумайте имя"
-              required
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-1">Пароль *</label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Не менее 6 символов"
-              required
-              minLength={6}
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-1">Город</label>
-            <input
-              type="text"
-              name="city"
-              value={formData.city}
-              onChange={handleChange}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Москва"
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium mb-1">Интересы</label>
-            <input
-              type="text"
-              name="interests"
-              value={formData.interests}
-              onChange={handleChange}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="концерты, выставки, спорт"
-            />
-            <p className="text-sm text-gray-500 mt-1">Перечислите через запятую</p>
-          </div>
-          
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 text-white p-3 rounded-lg font-medium hover:bg-blue-700 transition disabled:bg-blue-400"
-          >
-            {loading ? 'Регистрация...' : 'Зарегистрироваться'}
-          </button>
-        </form>
-        
-        <div className="mt-6 text-center">
-          <p className="text-gray-600">
+
+          <p className="text-center text-sm text-gray-500 mt-6">
             Уже есть аккаунт?{' '}
-            <button 
-              onClick={() => router.push('/login')}
-              className="text-blue-600 hover:underline"
-            >
+            <Link href="/login" className="text-indigo-600 font-semibold hover:text-indigo-800 transition">
               Войти
-            </button>
+            </Link>
           </p>
         </div>
-      </div>
-      
-      <div className="mt-8 text-center text-gray-500 text-sm">
-        <p>После регистрации вы сможете:</p>
-        <ul className="mt-2 space-y-1">
-          <li>✅ Искать мероприятия</li>
-          <li>✅ Создавать группы</li>
-          <li>✅ Находить компанию</li>
-        </ul>
       </div>
     </div>
   );
