@@ -1,19 +1,18 @@
 import Image from 'next/image';
 import Link from 'next/link';
 
-// KudaGo возвращает categories как объекты {id,slug,name,name_plural} — поддерживаем оба формата
-type RawCategory = string | { id?: number; slug: string; name: string; name_plural?: string };
-
 export interface KudaGoEvent {
   kudago_id: number;
   title: string;
   short_title: string;
   description: string;
-  categories: RawCategory[];
-  tags: string[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  categories: any[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tags: any[];
   price: string;
   is_free: boolean;
-  age_restriction: string;
+  age_restriction: string | number | null;
   start_date: string | null;
   start_time: string | null;
   place_title: string;
@@ -24,22 +23,32 @@ export interface KudaGoEvent {
   site_url: string;
 }
 
-function getCatLabel(cat: RawCategory): string {
-  if (typeof cat === 'string') return cat;
-  return cat.name || cat.slug;
+/** Безопасно извлекает строку из любого значения категории */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toLabel(val: any): string {
+  if (!val && val !== 0) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number') return String(val);
+  if (typeof val === 'object') {
+    return String(val.name ?? val.slug ?? val.id ?? '');
+  }
+  return String(val);
 }
-function getCatKey(cat: RawCategory): string {
-  if (typeof cat === 'string') return cat;
-  return cat.slug;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toKey(val: any, idx: number): string {
+  return toLabel(val) || String(idx);
 }
 
 function formatDate(dateStr: string | null, timeStr: string | null): string {
-  if (!dateStr) return 'Дата не указана';
+  if (!dateStr) return '';
   return new Date(dateStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) +
     (timeStr ? ` в ${timeStr.slice(0, 5)}` : '');
 }
 
 export default function EventCard({ event }: { event: KudaGoEvent }) {
+  const ageLabel = event.age_restriction ? `${event.age_restriction}+` : null;
+
   return (
     <Link
       href={`/events/${event.kudago_id}`}
@@ -57,13 +66,12 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent" />
 
-        {/* Бейджи */}
         <div className="absolute top-3 left-3 flex gap-1.5">
           {event.is_free && (
             <span className="bg-emerald-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow">Бесплатно</span>
           )}
-          {event.age_restriction && (
-            <span className="bg-black/50 text-white text-xs font-bold px-2 py-0.5 rounded-full">{event.age_restriction}+</span>
+          {ageLabel && (
+            <span className="bg-black/50 text-white text-xs font-bold px-2 py-0.5 rounded-full">{ageLabel}</span>
           )}
         </div>
 
@@ -76,14 +84,18 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
 
       {/* Контент */}
       <div className="flex flex-col flex-1 p-4 gap-2">
-        {event.categories.length > 0 && (
+        {event.categories?.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            {event.categories.slice(0, 2).map((cat) => (
-              <span key={getCatKey(cat)}
-                className="text-xs bg-indigo-50 text-indigo-600 font-medium px-2 py-0.5 rounded-full capitalize">
-                {getCatLabel(cat)}
-              </span>
-            ))}
+            {event.categories.slice(0, 2).map((cat, i) => {
+              const label = toLabel(cat);
+              if (!label) return null;
+              return (
+                <span key={toKey(cat, i)}
+                  className="text-xs bg-indigo-50 text-indigo-600 font-medium px-2 py-0.5 rounded-full capitalize">
+                  {label}
+                </span>
+              );
+            })}
           </div>
         )}
 

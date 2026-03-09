@@ -8,14 +8,18 @@ import Navbar from '../../components/Navbar';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-type RawCategory = string | { id?: number; slug: string; name: string; name_plural?: string };
-function getCatLabel(cat: RawCategory): string {
-  if (typeof cat === 'string') return cat;
-  return cat.name || cat.slug;
+/** Безопасно извлекает строку из любого значения из API */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toLabel(val: any): string {
+  if (!val && val !== 0) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'number') return String(val);
+  if (typeof val === 'object') return String(val.name ?? val.slug ?? val.title ?? val.id ?? '');
+  return String(val);
 }
-function getCatKey(cat: RawCategory): string {
-  if (typeof cat === 'string') return cat;
-  return cat.slug;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toKey(val: any, idx: number): string {
+  return toLabel(val) || String(idx);
 }
 
 interface EventImage { url: string; source_name: string; source_link: string; }
@@ -25,13 +29,17 @@ interface EventDate {
   is_continuous: boolean; is_endless: boolean;
 }
 interface Participant { role: string; name: string; image_url: string | null; }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyArr = any[];
+
 interface EventDetail {
   kudago_id: number;
   title: string; short_title: string;
   description: string; body_text: string;
-  categories: RawCategory[];
-  tags: string[];
-  price: string; is_free: boolean; age_restriction: string;
+  categories: AnyArr; tags: AnyArr;
+  price: string; is_free: boolean;
+  age_restriction: string | number | null;
   images: EventImage[]; cover_url: string | null;
   all_dates: EventDate[];
   start_date: string | null; start_time: string | null;
@@ -101,7 +109,8 @@ export default function EventDetailPage() {
     </div>
   );
 
-  const images = event.images ?? [];
+  const images = Array.isArray(event.images) ? event.images : [];
+  const ageLabel = event.age_restriction ? `${event.age_restriction}+` : null;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -116,6 +125,8 @@ export default function EventDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           {/* Левая колонка */}
           <div className="lg:col-span-2 space-y-6">
+
+            {/* Галерея */}
             {images.length > 0 ? (
               <div className="space-y-3">
                 <div className="relative w-full h-80 sm:h-[420px] rounded-3xl overflow-hidden bg-gray-100 shadow-lg">
@@ -137,7 +148,7 @@ export default function EventDetailPage() {
                       </span>
                     </>
                   )}
-                  {images[activeImg].source_name && (
+                  {images[activeImg]?.source_name && (
                     <a href={images[activeImg].source_link || '#'} target="_blank" rel="noopener noreferrer"
                       className="absolute bottom-4 left-4 bg-black/40 text-white text-xs px-2.5 py-1 rounded-full hover:bg-black/60 transition">
                       © {images[activeImg].source_name}
@@ -163,19 +174,29 @@ export default function EventDetailPage() {
               </div>
             )}
 
+            {/* Бейджи + заголовок */}
             <div>
               <div className="flex flex-wrap gap-2 mb-3">
-                {event.is_free && <span className="bg-emerald-100 text-emerald-700 text-sm font-bold px-3 py-1 rounded-full">Бесплатно</span>}
-                {event.age_restriction && <span className="bg-gray-100 text-gray-700 text-sm font-bold px-3 py-1 rounded-full">{event.age_restriction}+</span>}
-                {event.categories.map(cat => (
-                  <span key={getCatKey(cat)} className="bg-indigo-50 text-indigo-600 text-sm font-medium px-3 py-1 rounded-full capitalize">
-                    {getCatLabel(cat)}
-                  </span>
-                ))}
+                {event.is_free && (
+                  <span className="bg-emerald-100 text-emerald-700 text-sm font-bold px-3 py-1 rounded-full">Бесплатно</span>
+                )}
+                {ageLabel && (
+                  <span className="bg-gray-100 text-gray-700 text-sm font-bold px-3 py-1 rounded-full">{ageLabel}</span>
+                )}
+                {Array.isArray(event.categories) && event.categories.map((cat, i) => {
+                  const label = toLabel(cat);
+                  if (!label) return null;
+                  return (
+                    <span key={toKey(cat, i)} className="bg-indigo-50 text-indigo-600 text-sm font-medium px-3 py-1 rounded-full capitalize">
+                      {label}
+                    </span>
+                  );
+                })}
               </div>
               <h1 className="text-3xl font-black text-gray-900 leading-tight">{event.title}</h1>
             </div>
 
+            {/* Описание */}
             {event.description && (
               <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                 <h2 className="text-base font-bold text-gray-800 mb-3">О мероприятии</h2>
@@ -186,7 +207,8 @@ export default function EventDetailPage() {
               </div>
             )}
 
-            {event.participants.length > 0 && (
+            {/* Участники */}
+            {Array.isArray(event.participants) && event.participants.length > 0 && (
               <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                 <h2 className="text-base font-bold text-gray-800 mb-4">Участники</h2>
                 <div className="flex flex-wrap gap-4">
@@ -198,12 +220,12 @@ export default function EventDetailPage() {
                         </div>
                       ) : (
                         <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm shrink-0">
-                          {p.name.charAt(0)}
+                          {p.name?.charAt(0) || '?'}
                         </div>
                       )}
                       <div>
                         <p className="font-semibold text-gray-800 text-sm">{p.name}</p>
-                        {p.role && <p className="text-xs text-gray-400">{p.role}</p>}
+                        {p.role && <p className="text-xs text-gray-400">{toLabel(p.role)}</p>}
                       </div>
                     </div>
                   ))}
@@ -211,11 +233,16 @@ export default function EventDetailPage() {
               </div>
             )}
 
-            {event.tags.length > 0 && (
+            {/* Тэги */}
+            {Array.isArray(event.tags) && event.tags.length > 0 && (
               <div className="flex flex-wrap gap-2">
-                {event.tags.map(tag => (
-                  <span key={tag} className="text-xs bg-gray-100 text-gray-500 px-3 py-1 rounded-full">#{tag}</span>
-                ))}
+                {event.tags.map((tag, i) => {
+                  const label = toLabel(tag);
+                  if (!label) return null;
+                  return (
+                    <span key={toKey(tag, i)} className="text-xs bg-gray-100 text-gray-500 px-3 py-1 rounded-full">#{label}</span>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -239,25 +266,27 @@ export default function EventDetailPage() {
               )}
             </div>
 
-            <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-              <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-4">📅 Даты</h2>
-              <ul className="space-y-2">
-                {event.all_dates.slice(0, 5).map((d, i) => (
-                  <li key={i} className="text-sm text-gray-600 flex items-start gap-2">
-                    <span className="text-indigo-400 mt-0.5">→</span>
-                    <span>
-                      {d.is_endless ? 'Постоянно' : formatDate(d.start, d.start_time)}
-                      {d.end && !d.is_endless && d.end !== d.start && (
-                        <span className="text-gray-400"> — {formatDate(d.end, d.end_time)}</span>
-                      )}
-                    </span>
-                  </li>
-                ))}
-                {event.all_dates.length > 5 && (
-                  <li className="text-xs text-gray-400">+{event.all_dates.length - 5} дат</li>
-                )}
-              </ul>
-            </div>
+            {Array.isArray(event.all_dates) && event.all_dates.length > 0 && (
+              <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
+                <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-4">📅 Даты</h2>
+                <ul className="space-y-2">
+                  {event.all_dates.slice(0, 5).map((d, i) => (
+                    <li key={i} className="text-sm text-gray-600 flex items-start gap-2">
+                      <span className="text-indigo-400 mt-0.5">→</span>
+                      <span>
+                        {d.is_endless ? 'Постоянно' : formatDate(d.start, d.start_time)}
+                        {d.end && !d.is_endless && d.end !== d.start && (
+                          <span className="text-gray-400"> — {formatDate(d.end, d.end_time)}</span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                  {event.all_dates.length > 5 && (
+                    <li className="text-xs text-gray-400">+{event.all_dates.length - 5} дат</li>
+                  )}
+                </ul>
+              </div>
+            )}
 
             {(event.place_title || event.place_address) && (
               <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
@@ -266,12 +295,15 @@ export default function EventDetailPage() {
                 {event.place_address && <p className="text-sm text-gray-500 mb-2">{event.place_address}</p>}
                 {event.place_subway && (
                   <p className="text-sm text-gray-500 flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block" />{event.place_subway}
+                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block" />
+                    {toLabel(event.place_subway)}
                   </p>
                 )}
                 {event.place_phone && (
                   <a href={`tel:${event.place_phone}`}
-                    className="text-sm text-indigo-600 hover:text-indigo-800 mt-2 block">{event.place_phone}</a>
+                    className="text-sm text-indigo-600 hover:text-indigo-800 mt-2 block">
+                    {event.place_phone}
+                  </a>
                 )}
                 {event.lat && event.lon && (
                   <a href={`https://yandex.ru/maps/?pt=${event.lon},${event.lat}&z=16`}
