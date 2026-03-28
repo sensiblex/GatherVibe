@@ -50,6 +50,8 @@ async def disconnect(sid):
     print(f"Client {sid} disconnected")
 
 
+# ── Event chat ──
+
 @sio.on('join_event_chat')
 async def join_event_chat(sid, event_id: str):
     await sio.enter_room(sid, f'event_{event_id}')
@@ -70,6 +72,39 @@ async def send_message(sid, data: dict):
 @sio.on('leave_event_chat')
 async def leave_event_chat(sid, event_id: str):
     await sio.leave_room(sid, f'event_{event_id}')
+
+
+# ── Party (company room) chat ──
+
+@sio.on('join_party_chat')
+async def join_party_chat(sid, data: dict):
+    party_id = data['partyId']
+    user_id = data.get('userId')
+    await sio.enter_room(sid, f'party_{party_id}')
+    await sio.emit(
+        'party_user_joined',
+        {'sid': sid, 'userId': user_id},
+        room=f'party_{party_id}'
+    )
+
+
+@sio.on('send_party_message')
+async def send_party_message(sid, data: dict):
+    party_id = data['partyId']
+    msg = {
+        'message': data['message'],
+        'userId': data.get('userId', sid),
+        'username': data.get('username', 'Аноним'),
+        'timestamp': datetime.now().isoformat(),
+        'partyId': party_id,
+    }
+    await sio.emit('receive_party_message', msg, room=f'party_{party_id}')
+
+
+@sio.on('leave_party_chat')
+async def leave_party_chat(sid, data: dict):
+    party_id = data['partyId']
+    await sio.leave_room(sid, f'party_{party_id}')
 
 
 app.add_middleware(
@@ -342,6 +377,12 @@ class PartyCreateBody(BaseModel):
     max_members: int = 4
 
 
+class PartyUpdateBody(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    max_members: Optional[int] = None
+
+
 class PartyMemberOut(BaseModel):
     user_id: int
     username: str
@@ -391,11 +432,18 @@ def _build_party_out(party: EventParty, db: Session) -> PartyOut:
 
 @app.get("/parties/{event_id}", response_model=List[PartyOut])
 def get_parties(event_id: str, db: Session = Depends(get_db)):
-    """List all parties for a given event."""
     parties = db.query(EventParty).filter(EventParty.event_id == event_id).order_by(
         EventParty.created_at.desc()
     ).all()
     return [_build_party_out(p, db) for p in parties]
+
+
+@app.get("/parties/detail/{party_id}", response_model=PartyOut)
+def get_party_detail(party_id: int, db: Session = Depends(get_db)):
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    return _build_party_out(party, db)
 
 
 @app.post("/parties/{event_id}", response_model=PartyOut)
@@ -405,7 +453,6 @@ def create_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Create a new party for an event. Creator is auto-added as accepted member."""
     user = get_current_user_from_token(token, db)
     if body.max_members < 2 or body.max_members > 20:
         raise HTTPException(status_code=400, detail="max_members must be between 2 and 20")
@@ -420,11 +467,63 @@ def create_party(
     db.add(party)
     db.commit()
     db.refresh(party)
-    # Creator is automatically accepted
     member = PartyMember(party_id=party.id, user_id=user.id, status="accepted")
     db.add(member)
     db.commit()
     return _build_party_out(party, db)
+
+
+@app.patch("/parties/{party_id}", response_model=PartyOut)
+def update_party(
+    party_id: int,
+    body: PartyUpdateBody,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_token(token, db)
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if party.creator_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Только создатель может редактировать компанию")
+    if body.title is not None:
+        if not body.title.strip():
+            raise HTTPException(status_code=400, detail="Название не может быть пустым")
+        party.title = body.title.strip()
+    if body.description is not None:
+        party.description = body.description.strip() or None
+    if body.max_members is not None:
+        if body.max_members < 2 or body.max_members > 20:
+            raise HTTPException(status_code=400, detail="max_members должно быть от 2 до 20")
+        accepted_count = db.query(PartyMember).filter(
+            PartyMember.party_id == party_id, PartyMember.status == "accepted"
+        ).count()
+        if body.max_members < accepted_count:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Нельзя уменьшить: уже принято {accepted_count} участников"
+            )
+        party.max_members = body.max_members
+    db.commit()
+    return _build_party_out(party, db)
+
+
+@app.delete("/parties/{party_id}", status_code=200)
+def delete_party(
+    party_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_token(token, db)
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if party.creator_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Только создатель может удалить компанию")
+    db.query(PartyMember).filter(PartyMember.party_id == party_id).delete()
+    db.delete(party)
+    db.commit()
+    return {"ok": True}
 
 
 @app.post("/parties/{party_id}/join", response_model=PartyOut)
@@ -433,7 +532,6 @@ def join_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Send a join request (status=pending) to a party."""
     user = get_current_user_from_token(token, db)
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
@@ -462,7 +560,6 @@ def leave_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Leave a party (remove membership)."""
     user = get_current_user_from_token(token, db)
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
@@ -483,7 +580,6 @@ def accept_member(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Creator accepts a pending join request."""
     current_user = get_current_user_from_token(token, db)
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
@@ -512,7 +608,6 @@ def reject_member(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Creator rejects a pending join request."""
     current_user = get_current_user_from_token(token, db)
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
@@ -535,7 +630,6 @@ def close_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Creator closes the party for new requests."""
     current_user = get_current_user_from_token(token, db)
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
