@@ -6,8 +6,37 @@ import Image from 'next/image';
 import Link from 'next/link';
 import Navbar from '../../components/Navbar';
 import EventAttendees from '../../components/EventAttendees';
+import EventParty from '../../components/EventParty';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+const CATEGORY_RU: Record<string, string> = {
+  concert: 'Концерт', theater: 'Театр', theatre: 'Театр',
+  exhibition: 'Выставка', movie: 'Кино', cinema: 'Кино',
+  festival: 'Фестиваль', sport: 'Спорт', sports: 'Спорт',
+  other: 'Разное', holiday: 'Праздник', 'kids-holiday': 'Детский праздник',
+  education: 'Образование', lecture: 'Лекция', business: 'Бизнес',
+  'business-events': 'Бизнес', tour: 'Экскурсия', excursion: 'Экскурсия',
+  party: 'Вечеринка', nightlife: 'Ночная жизнь',
+  'stand-up': 'Стэндап', standup: 'Стэндап', comedy: 'Комедия',
+  opera: 'Опера', ballet: 'Балет', musical: 'Мюзикл',
+  'open-air': 'Опен-эйр', art: 'Искусство', 'art-object': 'Искусство',
+  circus: 'Цирк', magic: 'Фокус',
+  'master-class': 'Мастер-класс', masterclass: 'Мастер-класс', workshop: 'Мастер-класс',
+  literature: 'Литература', food: 'Еда', 'food-wine': 'Еда и вино',
+  yoga: 'Йога', fitness: 'Фитнес', dance: 'Танцы',
+  gaming: 'Игры', quest: 'Квест', charity: 'Благотворительность',
+  science: 'Наука', technology: 'Технологии',
+  'for-kids': 'Для детей', kids: 'Для детей', family: 'Семейное',
+  outdoor: 'На улице', online: 'Онлайн',
+  'rock-music': 'Рок', jazz: 'Джаз', 'jazz-blues': 'Джаз / Блюз',
+  classical: 'Классика', 'classical-music': 'Классика',
+  electronic: 'Электронная музыка', 'hip-hop': 'Хип-хоп',
+  pop: 'Поп', metal: 'Метал', folk: 'Фольк',
+  drama: 'Драма', documentary: 'Документальный',
+  animation: 'Анимация', cartoon: 'Мультфильм',
+  networking: 'Нетворкинг', fashion: 'Мода',
+};
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toLabel(val: any): string {
@@ -21,6 +50,9 @@ function toLabel(val: any): string {
 function toKey(val: any, idx: number): string {
   return toLabel(val) || String(idx);
 }
+function translateTag(raw: string): string {
+  return CATEGORY_RU[raw.toLowerCase().trim()] ?? raw;
+}
 
 interface EventImage { url: string; source_name: string; source_link: string; }
 interface EventDate {
@@ -29,7 +61,6 @@ interface EventDate {
   is_continuous: boolean; is_endless: boolean;
 }
 interface Participant { role: string; name: string; image_url: string | null; }
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyArr = any[];
 
@@ -184,8 +215,8 @@ export default function EventDetailPage() {
                   const label = toLabel(cat);
                   if (!label) return null;
                   return (
-                    <span key={toKey(cat, i)} className="bg-indigo-50 text-indigo-600 text-sm font-medium px-3 py-1 rounded-full capitalize">
-                      {label}
+                    <span key={toKey(cat, i)} className="bg-indigo-50 text-indigo-600 text-sm font-medium px-3 py-1 rounded-full">
+                      {translateTag(label)}
                     </span>
                   );
                 })}
@@ -203,8 +234,11 @@ export default function EventDetailPage() {
               </div>
             )}
 
-            {/* ===== MATCHING BLOCK ===== */}
+            {/* ===== КТО ИДЁТ ===== */}
             <EventAttendees eventId={eventId} />
+
+            {/* ===== КОМПАНИИ ===== */}
+            <EventParty eventId={eventId} />
 
             {Array.isArray(event.participants) && event.participants.length > 0 && (
               <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
@@ -237,7 +271,9 @@ export default function EventDetailPage() {
                   const label = toLabel(tag);
                   if (!label) return null;
                   return (
-                    <span key={toKey(tag, i)} className="text-xs bg-gray-100 text-gray-500 px-3 py-1 rounded-full">#{label}</span>
+                    <span key={toKey(tag, i)} className="text-xs bg-gray-100 text-gray-500 px-3 py-1 rounded-full">
+                      #{translateTag(label)}
+                    </span>
                   );
                 })}
               </div>
