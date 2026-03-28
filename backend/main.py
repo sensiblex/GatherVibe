@@ -12,7 +12,9 @@ from auth import authenticate_user, create_user_token
 import models.user
 import models.event
 import models.attendee
+import models.party
 from models.attendee import EventAttendee
+from models.party import EventParty, PartyMember
 from typing import Optional, List
 from datetime import datetime
 from models.event import Event
@@ -26,6 +28,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 models.user.Base.metadata.create_all(bind=engine)
 models.event.Base.metadata.create_all(bind=engine)
 models.attendee.Base.metadata.create_all(bind=engine)
+models.party.Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI(title="GatherVibe API")
@@ -51,7 +54,6 @@ async def disconnect(sid):
 async def join_event_chat(sid, event_id: str):
     await sio.enter_room(sid, f'event_{event_id}')
     await sio.emit('user_joined', {'sid': sid}, room=f'event_{event_id}')
-    print(f"User {sid} joined event_{event_id}")
 
 
 @sio.on('send_message')
@@ -114,11 +116,8 @@ socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
     user = authenticate_user(user_credentials.email, user_credentials.password, db)
     if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="Неверный email или пароль",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise HTTPException(status_code=401, detail="Неверный email или пароль",
+                            headers={"WWW-Authenticate": "Bearer"})
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Пользователь заблокирован")
     return create_user_token(user)
@@ -133,12 +132,9 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 
 @app.get("/events", response_model=List[EventResponse])
 def get_events(
-    skip: int = 0,
-    limit: int = 20,
-    city: Optional[str] = None,
-    category: Optional[str] = None,
-    search: Optional[str] = None,
-    db: Session = Depends(get_db)
+    skip: int = 0, limit: int = 20,
+    city: Optional[str] = None, category: Optional[str] = None,
+    search: Optional[str] = None, db: Session = Depends(get_db)
 ):
     query = db.query(Event).filter(Event.is_active == True)
     if city:
@@ -269,39 +265,25 @@ def join_event(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Mark current user as attending (or looking for company at) this event."""
     user = get_current_user_from_token(token, db)
     existing = db.query(EventAttendee).filter(
-        EventAttendee.event_id == event_id,
-        EventAttendee.user_id == user.id
+        EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
     ).first()
     if existing:
-        # update comment / is_looking
         existing.comment = body.comment
         existing.is_looking = body.is_looking
         db.commit()
         db.refresh(existing)
         row = existing
     else:
-        row = EventAttendee(
-            event_id=event_id,
-            user_id=user.id,
-            comment=body.comment,
-            is_looking=body.is_looking,
-        )
+        row = EventAttendee(event_id=event_id, user_id=user.id,
+                            comment=body.comment, is_looking=body.is_looking)
         db.add(row)
         db.commit()
         db.refresh(row)
-    return AttendeeOut(
-        id=row.id,
-        user_id=user.id,
-        username=user.username,
-        city=user.city,
-        interests=user.interests,
-        comment=row.comment,
-        is_looking=row.is_looking,
-        created_at=row.created_at,
-    )
+    return AttendeeOut(id=row.id, user_id=user.id, username=user.username,
+                       city=user.city, interests=user.interests,
+                       comment=row.comment, is_looking=row.is_looking, created_at=row.created_at)
 
 
 @app.delete("/attendees/{event_id}", status_code=204)
@@ -310,11 +292,9 @@ def leave_event(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Remove current user from event attendees list."""
     user = get_current_user_from_token(token, db)
     db.query(EventAttendee).filter(
-        EventAttendee.event_id == event_id,
-        EventAttendee.user_id == user.id
+        EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
     ).delete()
     db.commit()
 
@@ -325,26 +305,18 @@ def get_attendees(
     only_looking: bool = Query(default=False),
     db: Session = Depends(get_db),
 ):
-    """Get list of users who plan to attend this event."""
     query = db.query(EventAttendee, User).join(User, EventAttendee.user_id == User.id).filter(
         EventAttendee.event_id == event_id
     )
     if only_looking:
         query = query.filter(EventAttendee.is_looking == True)
     rows = query.order_by(EventAttendee.created_at.desc()).all()
-    result = []
-    for attendee, user in rows:
-        result.append(AttendeeOut(
-            id=attendee.id,
-            user_id=user.id,
-            username=user.username,
-            city=user.city,
-            interests=user.interests,
-            comment=attendee.comment,
-            is_looking=attendee.is_looking,
-            created_at=attendee.created_at,
-        ))
-    return result
+    return [
+        AttendeeOut(id=a.id, user_id=u.id, username=u.username, city=u.city,
+                    interests=u.interests, comment=a.comment,
+                    is_looking=a.is_looking, created_at=a.created_at)
+        for a, u in rows
+    ]
 
 
 @app.get("/attendees/{event_id}/me")
@@ -353,15 +325,226 @@ def get_my_attendance(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Check if current user is attending this event."""
     user = get_current_user_from_token(token, db)
     row = db.query(EventAttendee).filter(
-        EventAttendee.event_id == event_id,
-        EventAttendee.user_id == user.id
+        EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
     ).first()
     if not row:
         return {"attending": False}
     return {"attending": True, "is_looking": row.is_looking, "comment": row.comment}
+
+
+# ===== PARTIES (COMPANY ROOMS) =====
+
+class PartyCreateBody(BaseModel):
+    title: str
+    description: Optional[str] = None
+    max_members: int = 4
+
+
+class PartyMemberOut(BaseModel):
+    user_id: int
+    username: str
+    city: Optional[str]
+    interests: Optional[str]
+    status: str
+    joined_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PartyOut(BaseModel):
+    id: int
+    event_id: str
+    title: str
+    description: Optional[str]
+    max_members: int
+    creator_id: int
+    creator_username: str
+    is_open: bool
+    members: List[PartyMemberOut]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+def _build_party_out(party: EventParty, db: Session) -> PartyOut:
+    creator = db.query(User).filter(User.id == party.creator_id).first()
+    members_rows = db.query(PartyMember, User).join(User, PartyMember.user_id == User.id).filter(
+        PartyMember.party_id == party.id
+    ).all()
+    members = [
+        PartyMemberOut(user_id=u.id, username=u.username, city=u.city,
+                       interests=u.interests, status=m.status, joined_at=m.joined_at)
+        for m, u in members_rows
+    ]
+    return PartyOut(
+        id=party.id, event_id=party.event_id, title=party.title,
+        description=party.description, max_members=party.max_members,
+        creator_id=party.creator_id,
+        creator_username=creator.username if creator else "?",
+        is_open=party.is_open, members=members, created_at=party.created_at,
+    )
+
+
+@app.get("/parties/{event_id}", response_model=List[PartyOut])
+def get_parties(event_id: str, db: Session = Depends(get_db)):
+    """List all parties for a given event."""
+    parties = db.query(EventParty).filter(EventParty.event_id == event_id).order_by(
+        EventParty.created_at.desc()
+    ).all()
+    return [_build_party_out(p, db) for p in parties]
+
+
+@app.post("/parties/{event_id}", response_model=PartyOut)
+def create_party(
+    event_id: str,
+    body: PartyCreateBody,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Create a new party for an event. Creator is auto-added as accepted member."""
+    user = get_current_user_from_token(token, db)
+    if body.max_members < 2 or body.max_members > 20:
+        raise HTTPException(status_code=400, detail="max_members must be between 2 and 20")
+    party = EventParty(
+        event_id=event_id,
+        title=body.title.strip(),
+        description=body.description,
+        max_members=body.max_members,
+        creator_id=user.id,
+        is_open=True,
+    )
+    db.add(party)
+    db.commit()
+    db.refresh(party)
+    # Creator is automatically accepted
+    member = PartyMember(party_id=party.id, user_id=user.id, status="accepted")
+    db.add(member)
+    db.commit()
+    return _build_party_out(party, db)
+
+
+@app.post("/parties/{party_id}/join", response_model=PartyOut)
+def join_party(
+    party_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Send a join request (status=pending) to a party."""
+    user = get_current_user_from_token(token, db)
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if not party.is_open:
+        raise HTTPException(status_code=400, detail="Набор закрыт")
+    accepted_count = db.query(PartyMember).filter(
+        PartyMember.party_id == party_id, PartyMember.status == "accepted"
+    ).count()
+    if accepted_count >= party.max_members:
+        raise HTTPException(status_code=400, detail="Компания заполнена")
+    existing = db.query(PartyMember).filter(
+        PartyMember.party_id == party_id, PartyMember.user_id == user.id
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Вы уже в этой компании или подали заявку")
+    m = PartyMember(party_id=party_id, user_id=user.id, status="pending")
+    db.add(m)
+    db.commit()
+    return _build_party_out(party, db)
+
+
+@app.delete("/parties/{party_id}/leave", status_code=200)
+def leave_party(
+    party_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Leave a party (remove membership)."""
+    user = get_current_user_from_token(token, db)
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if party.creator_id == user.id:
+        raise HTTPException(status_code=400, detail="Создатель не может покинуть компанию. Закройте её.")
+    db.query(PartyMember).filter(
+        PartyMember.party_id == party_id, PartyMember.user_id == user.id
+    ).delete()
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/parties/{party_id}/members/{user_id}/accept", response_model=PartyOut)
+def accept_member(
+    party_id: int,
+    user_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Creator accepts a pending join request."""
+    current_user = get_current_user_from_token(token, db)
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if party.creator_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Только создатель может принимать участников")
+    accepted_count = db.query(PartyMember).filter(
+        PartyMember.party_id == party_id, PartyMember.status == "accepted"
+    ).count()
+    if accepted_count >= party.max_members:
+        raise HTTPException(status_code=400, detail="Компания уже заполнена")
+    m = db.query(PartyMember).filter(
+        PartyMember.party_id == party_id, PartyMember.user_id == user_id
+    ).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    m.status = "accepted"
+    db.commit()
+    return _build_party_out(party, db)
+
+
+@app.post("/parties/{party_id}/members/{user_id}/reject", response_model=PartyOut)
+def reject_member(
+    party_id: int,
+    user_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Creator rejects a pending join request."""
+    current_user = get_current_user_from_token(token, db)
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if party.creator_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Только создатель может отклонять заявки")
+    m = db.query(PartyMember).filter(
+        PartyMember.party_id == party_id, PartyMember.user_id == user_id
+    ).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    m.status = "rejected"
+    db.commit()
+    return _build_party_out(party, db)
+
+
+@app.post("/parties/{party_id}/close", response_model=PartyOut)
+def close_party(
+    party_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Creator closes the party for new requests."""
+    current_user = get_current_user_from_token(token, db)
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if party.creator_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Только создатель может закрыть компанию")
+    party.is_open = False
+    db.commit()
+    return _build_party_out(party, db)
 
 
 # ===== SYSTEM =====
@@ -388,11 +571,8 @@ def create_test_user(db: Session = Depends(get_db)):
     if existing:
         return {"message": "Тестовый пользователь уже есть", "user_id": existing.id}
     test_user = User(
-        email="test@example.com",
-        username="ТестовыйПользователь",
-        hashed_password=hash_password("123456"),
-        city="Москва",
-        interests="музыка,кино,искусство"
+        email="test@example.com", username="ТестовыйПользователь",
+        hashed_password=hash_password("123456"), city="Москва", interests="музыка,кино,искусство"
     )
     db.add(test_user)
     db.commit()
@@ -405,11 +585,9 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
     new_user = User(
-        email=user.email,
-        username=user.username,
+        email=user.email, username=user.username,
         hashed_password=hash_password(user.password),
-        city=user.city,
-        interests=user.interests,
+        city=user.city, interests=user.interests,
     )
     db.add(new_user)
     db.commit()

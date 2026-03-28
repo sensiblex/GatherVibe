@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import Navbar from './components/Navbar';
-import SiteChat from './components/SiteChat';
 
 const FEATURES = [
   {
@@ -15,7 +14,7 @@ const FEATURES = [
   {
     emoji: '👥',
     title: 'Собери компанию',
-    desc: 'Общайся в чате мероприятия, находи единомышленников и планируй походы вместе.',
+    desc: 'Создай комнату для похода на событие, пригласи участников и управляй составом группы.',
     gradient: 'from-purple-500 to-pink-500',
     bg: 'bg-purple-50',
   },
@@ -41,13 +40,11 @@ export default function Home() {
 
       {/* ─── HERO ─── */}
       <section className="relative overflow-hidden bg-gradient-to-b from-indigo-50/60 via-white to-white pt-20 pb-24">
-        {/* Декоративные блобы */}
         <div className="pointer-events-none absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full bg-indigo-100 opacity-50 blur-3xl" />
         <div className="pointer-events-none absolute top-40 -left-40 w-[400px] h-[400px] rounded-full bg-purple-100 opacity-40 blur-3xl" />
         <div className="pointer-events-none absolute bottom-0 right-1/3 w-72 h-72 rounded-full bg-pink-100 opacity-30 blur-3xl" />
 
         <div className="relative container mx-auto px-4 text-center">
-          {/* Пилюля */}
           <span className="inline-flex items-center gap-2 bg-indigo-50 border border-indigo-100 text-indigo-600 text-sm font-semibold px-4 py-1.5 rounded-full mb-8 shadow-sm">
             <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
             Реальные события через KudaGo API
@@ -62,7 +59,7 @@ export default function Home() {
 
           <p className="text-xl text-gray-500 mb-10 max-w-2xl mx-auto leading-relaxed">
             Концерты, выставки, фестивали — не ходи один.
-            Собирайсь с единомышленниками и получай больше эмоций!
+            Создай компанию, набери участников и получай больше эмоций!
           </p>
 
           <div className="flex flex-wrap justify-center gap-4 mb-16">
@@ -80,7 +77,6 @@ export default function Home() {
             </Link>
           </div>
 
-          {/* Статистика */}
           <div className="flex flex-wrap justify-center gap-10">
             {STATS.map((s) => (
               <div key={s.label} className="text-center">
@@ -108,11 +104,7 @@ export default function Home() {
                 key={f.title}
                 className="group relative bg-white rounded-3xl p-8 border border-gray-100 hover:border-indigo-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all"
               >
-                {/* Номер шага */}
-                <span className="absolute top-6 right-6 text-xs font-bold text-gray-300">
-                  0{i + 1}
-                </span>
-                {/* Иконка */}
+                <span className="absolute top-6 right-6 text-xs font-bold text-gray-300">0{i + 1}</span>
                 <div className={`inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br ${f.gradient} text-2xl mb-6 shadow-md`}>
                   {f.emoji}
                 </div>
@@ -127,9 +119,7 @@ export default function Home() {
       {/* ─── CTA ─── */}
       <section className="py-20 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600">
         <div className="container mx-auto px-4 text-center">
-          <h2 className="text-4xl font-black text-white mb-4">
-            Готов начать?  🚀
-          </h2>
+          <h2 className="text-4xl font-black text-white mb-4">Готов начать? 🚀</h2>
           <p className="text-indigo-100 text-lg mb-10 max-w-xl mx-auto">
             Регистрируйся бесплатно и начни искать компанию уже сегодня
           </p>
@@ -167,8 +157,6 @@ export default function Home() {
           </div>
         </div>
       </footer>
-
-      <SiteChat />
     </div>
   );
 }
