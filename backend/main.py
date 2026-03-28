@@ -11,17 +11,21 @@ from auth import hash_password
 from auth import authenticate_user, create_user_token
 import models.user
 import models.event
+import models.attendee
+from models.attendee import EventAttendee
 from typing import Optional, List
 from datetime import datetime
 from models.event import Event
 from schemas import EventCreate, EventResponse
 import kudago_api
+from pydantic import BaseModel
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 models.user.Base.metadata.create_all(bind=engine)
 models.event.Base.metadata.create_all(bind=engine)
+models.attendee.Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI(title="GatherVibe API")
@@ -88,6 +92,20 @@ def get_db():
         db.close()
 
 
+def get_current_user_from_token(token: str, db: Session) -> User:
+    from jwt_handler import verify_token
+    payload = verify_token(token)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Неверный токен")
+    email = payload.get("sub")
+    if not email:
+        raise HTTPException(status_code=401, detail="Неверный токен")
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    return user
+
+
 # ⚠️ socket_app — главное ASGI-приложение для uvicorn
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
@@ -108,17 +126,7 @@ def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
 
 @app.get("/users/me", response_model=UserResponse)
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    from jwt_handler import verify_token
-    payload = verify_token(token)
-    if payload is None:
-        raise HTTPException(status_code=401, detail="Неверный токен")
-    email = payload.get("sub")
-    if email is None:
-        raise HTTPException(status_code=401, detail="Неверный токен")
-    user = db.query(User).filter(User.email == email).first()
-    if user is None:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-    return user
+    return get_current_user_from_token(token, db)
 
 
 # ===== EVENTS =====
@@ -231,6 +239,129 @@ def kudago_locations():
         return kudago_api.get_locations()
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
+
+
+# ===== MATCHING / ATTENDEES =====
+
+class AttendeeCreateBody(BaseModel):
+    comment: Optional[str] = None
+    is_looking: bool = True
+
+
+class AttendeeOut(BaseModel):
+    id: int
+    user_id: int
+    username: str
+    city: Optional[str]
+    interests: Optional[str]
+    comment: Optional[str]
+    is_looking: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@app.post("/attendees/{event_id}", response_model=AttendeeOut)
+def join_event(
+    event_id: str,
+    body: AttendeeCreateBody,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Mark current user as attending (or looking for company at) this event."""
+    user = get_current_user_from_token(token, db)
+    existing = db.query(EventAttendee).filter(
+        EventAttendee.event_id == event_id,
+        EventAttendee.user_id == user.id
+    ).first()
+    if existing:
+        # update comment / is_looking
+        existing.comment = body.comment
+        existing.is_looking = body.is_looking
+        db.commit()
+        db.refresh(existing)
+        row = existing
+    else:
+        row = EventAttendee(
+            event_id=event_id,
+            user_id=user.id,
+            comment=body.comment,
+            is_looking=body.is_looking,
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+    return AttendeeOut(
+        id=row.id,
+        user_id=user.id,
+        username=user.username,
+        city=user.city,
+        interests=user.interests,
+        comment=row.comment,
+        is_looking=row.is_looking,
+        created_at=row.created_at,
+    )
+
+
+@app.delete("/attendees/{event_id}", status_code=204)
+def leave_event(
+    event_id: str,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Remove current user from event attendees list."""
+    user = get_current_user_from_token(token, db)
+    db.query(EventAttendee).filter(
+        EventAttendee.event_id == event_id,
+        EventAttendee.user_id == user.id
+    ).delete()
+    db.commit()
+
+
+@app.get("/attendees/{event_id}", response_model=List[AttendeeOut])
+def get_attendees(
+    event_id: str,
+    only_looking: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    """Get list of users who plan to attend this event."""
+    query = db.query(EventAttendee, User).join(User, EventAttendee.user_id == User.id).filter(
+        EventAttendee.event_id == event_id
+    )
+    if only_looking:
+        query = query.filter(EventAttendee.is_looking == True)
+    rows = query.order_by(EventAttendee.created_at.desc()).all()
+    result = []
+    for attendee, user in rows:
+        result.append(AttendeeOut(
+            id=attendee.id,
+            user_id=user.id,
+            username=user.username,
+            city=user.city,
+            interests=user.interests,
+            comment=attendee.comment,
+            is_looking=attendee.is_looking,
+            created_at=attendee.created_at,
+        ))
+    return result
+
+
+@app.get("/attendees/{event_id}/me")
+def get_my_attendance(
+    event_id: str,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Check if current user is attending this event."""
+    user = get_current_user_from_token(token, db)
+    row = db.query(EventAttendee).filter(
+        EventAttendee.event_id == event_id,
+        EventAttendee.user_id == user.id
+    ).first()
+    if not row:
+        return {"attending": False}
+    return {"attending": True, "is_looking": row.is_looking, "comment": row.comment}
 
 
 # ===== SYSTEM =====

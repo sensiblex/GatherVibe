@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import Navbar from '../../components/Navbar';
+import EventAttendees from '../../components/EventAttendees';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -122,6 +123,7 @@ export default function EventDetailPage() {
         </nav>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+          {/* LEFT COLUMN */}
           <div className="lg:col-span-2 space-y-6">
             {images.length > 0 ? (
               <div className="space-y-3">
@@ -140,7 +142,7 @@ export default function EventDetailPage() {
                         &#8594;
                       </button>
                       <span className="absolute bottom-4 right-4 bg-black/50 text-white text-xs px-2.5 py-1 rounded-full">
-                        {activeImg + 1} / {images.length}
+                        {activeImg + 1} / {images.length}
                       </span>
                     </>
                   )}
@@ -201,6 +203,9 @@ export default function EventDetailPage() {
               </div>
             )}
 
+            {/* ===== MATCHING BLOCK ===== */}
+            <EventAttendees eventId={eventId} />
+
             {Array.isArray(event.participants) && event.participants.length > 0 && (
               <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
                 <h2 className="text-base font-bold text-gray-800 mb-4">Участники</h2>
@@ -239,6 +244,7 @@ export default function EventDetailPage() {
             )}
           </div>
 
+          {/* RIGHT COLUMN */}
           <div className="space-y-5 lg:sticky lg:top-24 self-start">
             <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
               <p className="text-xs text-gray-400 uppercase font-semibold tracking-wide mb-1">Стоимость</p>
