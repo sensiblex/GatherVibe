@@ -2,7 +2,7 @@
 
 import httpx
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 BASE_URL = "https://kudago.com/public-api/v1.4"
 DEFAULT_LOCATION = "kzn"
@@ -30,7 +30,6 @@ def _to_timestamp(dt: datetime) -> int:
 
 
 def _parse_images(raw: list) -> list[dict]:
-    # KudaGo отдаёт {image: url, source: {name, link}}
     result = []
     for img in raw:
         if not img.get("image"):
@@ -45,14 +44,21 @@ def _parse_images(raw: list) -> list[dict]:
 
 
 def _parse_categories(raw: list) -> list[str]:
-    # KudaGo отдаёт категории как объекты {id, slug, name, ...}
+    """Return Russian display names, never English slugs."""
     result = []
     for cat in raw:
         if isinstance(cat, dict):
-            result.append(cat.get("slug") or cat.get("name", ""))
+            # Prefer Russian name; fall back to slug only if name is absent
+            label = cat.get("name") or cat.get("slug", "")
+            if label:
+                result.append(label)
         elif isinstance(cat, str):
             result.append(cat)
     return result
+
+
+def _now_ts() -> int:
+    return int(datetime.now(timezone.utc).timestamp())
 
 
 # --- API ---
@@ -74,14 +80,16 @@ def get_events(
     tags: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
-    order_by: str = "-publication_date",
+    order_by: str = "date",
     text_format: str = "text",
     lang: str = "ru",
 ) -> dict:
+    # Always filter out past events — actual_since defaults to now
+    since_ts = _to_timestamp(actual_since) if actual_since else _now_ts()
     params = {
         "location": location,
         "categories": categories,
-        "actual_since": _to_timestamp(actual_since) if actual_since else None,
+        "actual_since": since_ts,
         "actual_until": _to_timestamp(actual_until) if actual_until else None,
         "is_free": is_free,
         "tags": tags,
@@ -165,11 +173,25 @@ def search(
 
 def parse_events(response: dict) -> list[dict]:
     results = []
+    now_ts = _now_ts()
     for event in response.get("results", []):
         dates = event.get("dates", [])
+
+        # Skip events where all dates are in the past
+        if dates:
+            max_end = max(
+                (d.get("end") or d.get("start") or 0) for d in dates
+            )
+            if max_end and max_end < now_ts:
+                continue
+
         place = event.get("place") or {}
         coords = place.get("coords") or {}
         images = _parse_images(event.get("images", []))
+
+        # Find nearest future date
+        future_dates = [d for d in dates if (d.get("end") or d.get("start") or 0) >= now_ts]
+        first_date = future_dates[0] if future_dates else (dates[0] if dates else {})
 
         results.append({
             "kudago_id": event.get("id"),
@@ -181,8 +203,8 @@ def parse_events(response: dict) -> list[dict]:
             "price": event.get("price", ""),
             "is_free": event.get("is_free", False),
             "age_restriction": str(event.get("age_restriction", "") or ""),
-            "start_date": dates[0].get("start_date") if dates else None,
-            "start_time": dates[0].get("start_time") if dates else None,
+            "start_date": first_date.get("start_date"),
+            "start_time": first_date.get("start_time"),
             "place_title": place.get("title", ""),
             "place_address": place.get("address", ""),
             "lat": coords.get("lat"),
