@@ -307,6 +307,16 @@ export default function EventsPage() {
 
   const hasActive = !!(search || category || isFree || dateFrom || dateTo);
 
+  // ── ФИКС: если выбрана дата через календарь, API вернул пусто,
+  // но в allEvents есть события на эту дату — показываем их напрямую
+  const calDateFallbackEvents: KudaGoEvent[] = (
+    calSelectedDate && !loading && events.length === 0 && !error
+      ? allEvents.filter(e => e.start_date === calSelectedDate)
+      : []
+  );
+  const displayEvents = calDateFallbackEvents.length > 0 ? calDateFallbackEvents : events;
+  const isFallback = calDateFallbackEvents.length > 0;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -479,6 +489,11 @@ export default function EventsPage() {
                   <button onClick={() => { setDateFrom(''); setDateTo(''); setCalSelectedDate(null); }}
                     className="ml-1 hover:text-red-500 transition">✕</button>
                 </span>
+                {isFallback && (
+                  <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold px-3 py-1.5 rounded-full">
+                    ⚡ Показаны события из общей выборки
+                  </span>
+                )}
               </div>
             )}
 
@@ -512,7 +527,7 @@ export default function EventsPage() {
 
             {!loading && !error && (
               <>
-                {events.length === 0 ? (
+                {displayEvents.length === 0 ? (
                   <div className="flex flex-col items-center py-24 gap-4 text-center">
                     <span className="text-6xl">🎭</span>
                     <p className="text-lg text-gray-500">Ничего не найдено</p>
@@ -525,11 +540,11 @@ export default function EventsPage() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {events.map(event => <EventCard key={event.kudago_id} event={event} />)}
+                    {displayEvents.map(event => <EventCard key={event.kudago_id} event={event} />)}
                   </div>
                 )}
 
-                {hasMore && events.length > 0 && (
+                {!isFallback && hasMore && events.length > 0 && (
                   <div className="flex justify-center mt-12">
                     <button onClick={loadMore} disabled={loadingMore}
                       className="flex items-center gap-2 bg-white border-2 border-indigo-200 text-indigo-600 px-8 py-3 rounded-2xl font-semibold hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all disabled:opacity-50">
