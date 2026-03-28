@@ -1,0 +1,44 @@
+version: '3.9'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: gathervibe_backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - backend_db:/app/db
+    environment:
+      - DATABASE_URL=sqlite:///./db/gathervibe.db
+    restart: unless-stopped
+    networks:
+      - gathervibe_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: gathervibe_frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - gathervibe_net
+
+volumes:
+  backend_db:
+
+networks:
+  gathervibe_net:
+    driver: bridge
