@@ -149,38 +149,53 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
   const [sortBy, setSortBy] = useState<'date' | 'match'>('match');
   const [filterInterest, setFilterInterest] = useState<string>('');
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  const myUserId = typeof window !== 'undefined'
-    ? (() => {
-        try {
-          return JSON.parse(atob(localStorage.getItem('token')?.split('.')[1] || '')).user_id;
-        } catch {
-          return null;
-        }
-      })()
-    : null;
+  // ✅ Токен читаем через useState после гидрации (client-only)
+  const [token, setToken] = useState<string | null>(null);
+  const [myUserId, setMyUserId] = useState<number | null>(null);
 
-  // Load my profile to get interests for matching
+  useEffect(() => {
+    const t = localStorage.getItem('token');
+    setToken(t);
+    if (t) {
+      try {
+        const payload = JSON.parse(atob(t.split('.')[1]));
+        setMyUserId(payload.user_id ?? null);
+      } catch {
+        setMyUserId(null);
+      }
+    }
+  }, []);
+
+  // Загрузка интересов профиля для матчинга
   useEffect(() => {
     if (!token) return;
     fetch(`${API_BASE}/users/me`, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) return null;
+        return r.json();
+      })
       .then((u) => {
-        if (u.interests) setMyInterests(u.interests.split(',').map((s: string) => s.trim()).filter(Boolean));
+        if (u?.interests)
+          setMyInterests(u.interests.split(',').map((s: string) => s.trim()).filter(Boolean));
       })
       .catch(() => {});
   }, [token]);
 
   const fetchAttendees = useCallback(async () => {
     try {
-      const url = `${API_BASE}/attendees/${eventId}${onlyLooking ? '?only_looking=true' : ''}`;
+      const url = `${API_BASE}/attendees/${eventId}${
+        onlyLooking ? '?only_looking=true' : ''
+      }`;
       const res = await fetch(url);
       if (res.ok) setAttendees(await res.json());
     } catch {}
   }, [eventId, onlyLooking]);
 
   const fetchMyStatus = useCallback(async () => {
-    if (!token) { setMyStatus({ attending: false }); return; }
+    if (!token) {
+      setMyStatus({ attending: false });
+      return;
+    }
     try {
       const res = await fetch(`${API_BASE}/attendees/${eventId}/me`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -196,9 +211,16 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
     } catch {}
   }, [eventId, token]);
 
+  // Запускаем загрузку только после того, как токен инициализирован
+  const [tokenReady, setTokenReady] = useState(false);
   useEffect(() => {
+    setTokenReady(true);
+  }, [token]);
+
+  useEffect(() => {
+    if (!tokenReady) return;
     Promise.all([fetchAttendees(), fetchMyStatus()]).finally(() => setLoading(false));
-  }, [fetchAttendees, fetchMyStatus]);
+  }, [fetchAttendees, fetchMyStatus, tokenReady]);
 
   const getCommonInterests = useCallback(
     (attendee: Attendee): string[] => {
@@ -209,7 +231,6 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
     [myInterests, myUserId]
   );
 
-  // Collect all unique interests across attendees for filter
   const allInterests = useMemo(() => {
     const set = new Set<string>();
     attendees.forEach((a) => {
@@ -220,29 +241,25 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
 
   const processedAttendees = useMemo(() => {
     let list = [...attendees];
-
-    // Filter by interest
     if (filterInterest) {
       list = list.filter((a) =>
         a.interests?.split(',').map((s) => s.trim()).includes(filterInterest)
       );
     }
-
-    // Sort
     if (sortBy === 'match') {
       list.sort((a, b) => {
         const scoreA = getCommonInterests(a).length;
         const scoreB = getCommonInterests(b).length;
         if (scoreB !== scoreA) return scoreB - scoreA;
-        // Me always first
         if (a.user_id === myUserId) return -1;
         if (b.user_id === myUserId) return 1;
         return 0;
       });
     } else {
-      list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      list.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
     }
-
     return list;
   }, [attendees, sortBy, filterInterest, getCommonInterests, myUserId]);
 
@@ -252,7 +269,10 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
     try {
       const res = await fetch(`${API_BASE}/attendees/${eventId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ comment: comment.trim() || null, is_looking: isLooking }),
       });
       if (res.ok) {
@@ -298,12 +318,13 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Sort toggle */}
           <div className="flex rounded-xl border border-gray-200 overflow-hidden text-xs font-semibold">
             <button
               onClick={() => setSortBy('match')}
               className={`px-3 py-1.5 transition ${
-                sortBy === 'match' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                sortBy === 'match'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-white text-gray-500 hover:bg-gray-50'
               }`}
             >
               🎯 По совпадению
@@ -311,7 +332,9 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
             <button
               onClick={() => setSortBy('date')}
               className={`px-3 py-1.5 transition ${
-                sortBy === 'date' ? 'bg-indigo-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
+                sortBy === 'date'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-white text-gray-500 hover:bg-gray-50'
               }`}
             >
               🕐 По дате
@@ -331,7 +354,9 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
 
           {!myStatus.attending ? (
             <button
-              onClick={() => (token ? setShowForm((v) => !v) : (window.location.href = '/login'))}
+              onClick={() =>
+                token ? setShowForm((v) => !v) : (window.location.href = '/login')
+              }
               className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-bold px-4 py-1.5 rounded-full hover:opacity-90 shadow-sm shadow-indigo-100 transition"
             >
               + Иду!
@@ -415,7 +440,11 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
               disabled={joining}
               className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-bold py-2 rounded-xl hover:opacity-90 transition disabled:opacity-60"
             >
-              {joining ? 'Сохранение...' : myStatus.attending ? 'Обновить' : 'Подтвердить участие'}
+              {joining
+                ? 'Сохранение...'
+                : myStatus.attending
+                ? 'Обновить'
+                : 'Подтвердить участие'}
             </button>
             {myStatus.attending && (
               <button
@@ -453,10 +482,14 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
           <div className="text-center py-10">
             <p className="text-4xl mb-3">🎭</p>
             <p className="text-gray-500 font-medium">
-              {filterInterest ? `Никого с интересом «${filterInterest}»` : 'Пока никто не отметился'}
+              {filterInterest
+                ? `Никого с интересом «${filterInterest}»`
+                : 'Пока никто не отметился'}
             </p>
             <p className="text-sm text-gray-400 mt-1">
-              {filterInterest ? 'Попробуй другой фильтр' : 'Будь первым — нажми «Иду!»'}
+              {filterInterest
+                ? 'Попробуй другой фильтр'
+                : 'Будь первым — нажми «Иду!»'}
             </p>
           </div>
         ) : (
