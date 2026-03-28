@@ -9,11 +9,6 @@ const PAGE_SIZE = 12;
 
 interface Category { slug: string; name: string; }
 
-// ──────────────────────────────────────────────
-// Helpers — NO UTC conversion, use local date parts only
-// ──────────────────────────────────────────────
-
-/** Returns "YYYY-MM-DD" using LOCAL year/month/day (no UTC shift) */
 function localIsoDate(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -21,19 +16,16 @@ function localIsoDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-/** Unix timestamp for start of a local date (00:00:00 local time) */
 function localStartTs(dateStr: string): number {
   const [y, m, d] = dateStr.split('-').map(Number);
   return Math.floor(new Date(y, m - 1, d, 0, 0, 0).getTime() / 1000);
 }
 
-/** Unix timestamp for end of a local date (23:59:59 local time) */
 function localEndTs(dateStr: string): number {
   const [y, m, d] = dateStr.split('-').map(Number);
   return Math.floor(new Date(y, m - 1, d, 23, 59, 59).getTime() / 1000);
 }
 
-/** Format "YYYY-MM-DD" to Russian locale display without UTC shift */
 function displayDate(dateStr: string, opts: Intl.DateTimeFormatOptions): string {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString('ru-RU', opts);
@@ -44,7 +36,6 @@ function daysInMonth(year: number, month: number) {
 }
 
 function firstDayOfMonth(year: number, month: number) {
-  // Mon=0 … Sun=6
   const day = new Date(year, month, 1).getDay();
   return (day + 6) % 7;
 }
@@ -55,9 +46,6 @@ const RU_MONTHS = [
 ];
 const RU_DAYS_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
-// ──────────────────────────────────────────────
-// EventCalendar
-// ──────────────────────────────────────────────
 function EventCalendar({
   events,
   selectedDate,
@@ -73,7 +61,6 @@ function EventCalendar({
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
 
-  // Build a Set of dates that have events: "YYYY-MM-DD"
   const eventDates = new Set<string>();
   events.forEach(e => { if (e.start_date) eventDates.add(e.start_date); });
 
@@ -90,7 +77,6 @@ function EventCalendar({
   };
 
   const handleDay = (day: number) => {
-    // Use local date parts — no UTC conversion
     const y = viewYear;
     const m = String(viewMonth + 1).padStart(2, '0');
     const d = String(day).padStart(2, '0');
@@ -98,7 +84,6 @@ function EventCalendar({
     onSelectDate(selectedDate === cellStr ? null : cellStr);
   };
 
-  // Cells
   const cells: (number | null)[] = [
     ...Array(firstDay).fill(null),
     ...Array.from({ length: days }, (_, i) => i + 1),
@@ -137,7 +122,7 @@ function EventCalendar({
           const isToday = cellStr === todayStr;
           const hasEvent = eventDates.has(cellStr);
           const isSelected = selectedDate === cellStr;
-          const isPast = cellStr < todayStr; // string comparison works for ISO dates
+          const isPast = cellStr < todayStr;
 
           return (
             <button
@@ -181,9 +166,6 @@ function EventCalendar({
   );
 }
 
-// ──────────────────────────────────────────────
-// Main page
-// ──────────────────────────────────────────────
 export default function EventsPage() {
   const [events, setEvents]           = useState<KudaGoEvent[]>([]);
   const [loading, setLoading]         = useState(true);
@@ -206,6 +188,10 @@ export default function EventsPage() {
   const [calSelectedDate, setCalSelectedDate] = useState<string | null>(null);
   const [calOpen, setCalOpen]         = useState(true);
 
+  // true = single-day selection from calendar (strict client-side filter applies)
+  // false = multi-day range from quick filters or manual inputs (trust API)
+  const [isSingleDayFilter, setIsSingleDayFilter] = useState(false);
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const todayStr = localIsoDate(new Date());
 
@@ -214,17 +200,18 @@ export default function EventsPage() {
       .then(r => r.json())
       .then((d: Category[]) => { if (Array.isArray(d)) setCategories(d); })
       .catch(() => {});
-    // Load large batch for calendar dots (no date filter)
     fetch(`${API_BASE}/kudago/events?location=kzn&page=1&page_size=100`)
       .then(r => r.json())
       .then(d => setAllEvents(d.results || []))
       .catch(() => {});
   }, []);
 
+  // Calendar single-day click
   const handleCalendarDate = (d: string | null) => {
     setCalSelectedDate(d);
     setDateFrom(d ?? '');
     setDateTo(d ?? '');
+    setIsSingleDayFilter(!!d);
   };
 
   const load = useCallback(async (
@@ -235,6 +222,7 @@ export default function EventsPage() {
     from: string,
     to: string,
     append: boolean,
+    singleDay: boolean,
   ) => {
     append ? setLoadingMore(true) : setLoading(true);
     setError(null);
@@ -247,8 +235,6 @@ export default function EventsPage() {
       if (s.trim()) params.set('search', s.trim());
       if (cat)      params.set('categories', cat);
       if (free)     params.set('is_free', 'true');
-
-      // Use local timestamps to avoid UTC off-by-one
       if (from) params.set('actual_since', String(localStartTs(from)));
       if (to)   params.set('actual_until', String(localEndTs(to)));
 
@@ -259,8 +245,11 @@ export default function EventsPage() {
       setTotal(data.count ?? null);
       setHasMore(!!data.next || incoming.length === PAGE_SIZE);
 
-      // Client-side date guard: filter out events outside selected range
-      const filtered = (from || to)
+      // Client-side start_date guard ONLY for single-day calendar picks.
+      // For multi-day ranges (week/month/manual) we trust the API — filtering
+      // by start_date would incorrectly drop events whose actual period spans
+      // the selected range but whose start_date is outside it.
+      const filtered = singleDay && (from || to)
         ? incoming.filter(e => {
             if (!e.start_date) return false;
             if (from && e.start_date < from) return false;
@@ -280,8 +269,8 @@ export default function EventsPage() {
 
   useEffect(() => {
     setPage(1);
-    load(1, search, category, isFree, dateFrom, dateTo, false);
-  }, [search, category, isFree, dateFrom, dateTo, load]);
+    load(1, search, category, isFree, dateFrom, dateTo, false, isSingleDayFilter);
+  }, [search, category, isFree, dateFrom, dateTo, isSingleDayFilter, load]);
 
   const onSearchChange = (val: string) => {
     setSearchInput(val);
@@ -292,7 +281,7 @@ export default function EventsPage() {
   const loadMore = () => {
     const next = page + 1;
     setPage(next);
-    load(next, search, category, isFree, dateFrom, dateTo, true);
+    load(next, search, category, isFree, dateFrom, dateTo, true, isSingleDayFilter);
   };
 
   const clearFilters = () => {
@@ -303,12 +292,12 @@ export default function EventsPage() {
     setDateFrom('');
     setDateTo('');
     setCalSelectedDate(null);
+    setIsSingleDayFilter(false);
   };
 
   const hasActive = !!(search || category || isFree || dateFrom || dateTo);
 
-  // ── ФИКС: если выбрана дата через календарь, API вернул пусто,
-  // но в allEvents есть события на эту дату — показываем их напрямую
+  // Fallback: calendar single-day picked, API returned nothing, but allEvents has items
   const calDateFallbackEvents: KudaGoEvent[] = (
     calSelectedDate && !loading && events.length === 0 && !error
       ? allEvents.filter(e => e.start_date === calSelectedDate)
@@ -329,7 +318,6 @@ export default function EventsPage() {
           )}
 
           <div className="mt-5 flex flex-wrap gap-3 items-center">
-            {/* Search */}
             <div className="relative flex-1 min-w-[200px] max-w-sm">
               <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
                 fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -341,7 +329,6 @@ export default function EventsPage() {
                 className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white transition" />
             </div>
 
-            {/* Category */}
             {categories.length > 0 && (
               <select value={category} onChange={e => setCategory(e.target.value)}
                 className="px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white transition">
@@ -350,7 +337,6 @@ export default function EventsPage() {
               </select>
             )}
 
-            {/* Free */}
             <button onClick={() => setIsFree(v => !v)}
               className={`px-4 py-2.5 rounded-xl text-sm font-medium border transition ${
                 isFree ? 'bg-emerald-500 text-white border-emerald-500 shadow-sm'
@@ -359,27 +345,29 @@ export default function EventsPage() {
               🄓 Бесплатно
             </button>
 
-            {/* Date from */}
             <div className="flex items-center gap-1.5">
               <label className="text-xs text-gray-400 font-medium whitespace-nowrap">С</label>
               <input type="date" value={dateFrom} min={todayStr}
                 onChange={e => {
                   setDateFrom(e.target.value);
                   setCalSelectedDate(null);
+                  setIsSingleDayFilter(false);
                   if (dateTo && e.target.value > dateTo) setDateTo(e.target.value);
                 }}
                 className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white transition cursor-pointer" />
             </div>
 
-            {/* Date to */}
             <div className="flex items-center gap-1.5">
               <label className="text-xs text-gray-400 font-medium whitespace-nowrap">По</label>
               <input type="date" value={dateTo} min={dateFrom || todayStr}
-                onChange={e => { setDateTo(e.target.value); setCalSelectedDate(null); }}
+                onChange={e => {
+                  setDateTo(e.target.value);
+                  setCalSelectedDate(null);
+                  setIsSingleDayFilter(false);
+                }}
                 className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 focus:bg-white transition cursor-pointer" />
             </div>
 
-            {/* Clear */}
             {hasActive && (
               <button onClick={clearFilters}
                 className="px-4 py-2.5 rounded-xl text-sm text-gray-400 border border-gray-200 hover:border-red-200 hover:text-red-500 hover:bg-red-50 transition">
@@ -393,7 +381,6 @@ export default function EventsPage() {
       <main className="container mx-auto px-4 py-8">
         <div className="flex flex-col lg:flex-row gap-8">
 
-          {/* ── LEFT: calendar sidebar ── */}
           <aside className="lg:w-72 shrink-0">
             <div className="sticky top-4 space-y-4">
               <button onClick={() => setCalOpen(v => !v)}
@@ -410,7 +397,6 @@ export default function EventsPage() {
                 />
               )}
 
-              {/* Events list for selected date */}
               {calSelectedDate && (() => {
                 const dayEvents = allEvents.filter(e => e.start_date === calSelectedDate);
                 return (
@@ -440,7 +426,6 @@ export default function EventsPage() {
                 );
               })()}
 
-              {/* Quick filters */}
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-2">
                 <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Быстрые фильтры</p>
                 {([
@@ -456,12 +441,22 @@ export default function EventsPage() {
                   const fromStr = localIsoDate(fromDate);
                   const toStr   = localIsoDate(toDate);
                   const isActive = dateFrom === fromStr && dateTo === toStr;
+                  // single-day only for Сегодня (offset=0) and Завтра (offset=1)
+                  const isSingle = offset <= 1;
 
                   return (
                     <button key={label}
                       onClick={() => {
-                        if (isActive) { setDateFrom(''); setDateTo(''); setCalSelectedDate(null); }
-                        else { setDateFrom(fromStr); setDateTo(toStr); setCalSelectedDate(offset <= 1 ? fromStr : null); }
+                        if (isActive) {
+                          setDateFrom(''); setDateTo('');
+                          setCalSelectedDate(null);
+                          setIsSingleDayFilter(false);
+                        } else {
+                          setDateFrom(fromStr);
+                          setDateTo(toStr);
+                          setCalSelectedDate(isSingle ? fromStr : null);
+                          setIsSingleDayFilter(isSingle);
+                        }
                       }}
                       className={`w-full text-left px-3 py-2 rounded-xl text-sm transition font-medium ${
                         isActive ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-indigo-50 hover:text-indigo-700'
@@ -474,7 +469,6 @@ export default function EventsPage() {
             </div>
           </aside>
 
-          {/* ── RIGHT: events grid ── */}
           <div className="flex-1 min-w-0">
             {(dateFrom || dateTo) && (
               <div className="mb-5 flex items-center gap-2 flex-wrap">
@@ -486,7 +480,7 @@ export default function EventsPage() {
                         dateFrom && `с ${displayDate(dateFrom, { day: 'numeric', month: 'short' })}`,
                         dateTo   && `по ${displayDate(dateTo,   { day: 'numeric', month: 'short' })}`,
                       ].filter(Boolean).join(' ')}
-                  <button onClick={() => { setDateFrom(''); setDateTo(''); setCalSelectedDate(null); }}
+                  <button onClick={() => { setDateFrom(''); setDateTo(''); setCalSelectedDate(null); setIsSingleDayFilter(false); }}
                     className="ml-1 hover:text-red-500 transition">✕</button>
                 </span>
                 {isFallback && (
@@ -518,7 +512,7 @@ export default function EventsPage() {
                 <span className="text-5xl">😕</span>
                 <p className="text-gray-600 text-lg">Не удалось загрузить события</p>
                 <p className="text-red-400 text-sm">{error}</p>
-                <button onClick={() => load(1, search, category, isFree, dateFrom, dateTo, false)}
+                <button onClick={() => load(1, search, category, isFree, dateFrom, dateTo, false, isSingleDayFilter)}
                   className="bg-indigo-600 text-white px-6 py-2.5 rounded-xl hover:bg-indigo-700 font-semibold transition">
                   Попробовать снова
                 </button>
