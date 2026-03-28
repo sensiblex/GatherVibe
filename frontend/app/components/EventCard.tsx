@@ -23,6 +23,115 @@ export interface KudaGoEvent {
   site_url: string;
 }
 
+// Перевод слагов / английских названий KudaGo на русский
+const CATEGORY_RU: Record<string, string> = {
+  // Категории
+  concert: 'Концерт',
+  theater: 'Театр',
+  theatre: 'Театр',
+  exhibition: 'Выставка',
+  movie: 'Кино',
+  cinema: 'Кино',
+  festival: 'Фестиваль',
+  sport: 'Спорт',
+  sports: 'Спорт',
+  other: 'Разное',
+  holiday: 'Праздник',
+  'kids-holiday': 'Детский праздник',
+  education: 'Образование',
+  lecture: 'Лекция',
+  'business-events': 'Бизнес',
+  business: 'Бизнес',
+  tour: 'Экскурсия',
+  excursion: 'Экскурсия',
+  party: 'Вечеринка',
+  nightlife: 'Ночная жизнь',
+  'stand-up': 'Стэндап',
+  standup: 'Стэндап',
+  comedy: 'Комедия',
+  opera: 'Опера',
+  ballet: 'Балет',
+  musical: 'Мюзикл',
+  'open-air': 'Опен-эйр',
+  'art-object': 'Искусство',
+  art: 'Искусство',
+  circus: 'Цирк',
+  magic: 'Фокус',
+  'master-class': 'Мастер-класс',
+  masterclass: 'Мастер-класс',
+  workshop: 'Мастер-класс',
+  'photo-video': 'Фото/Видео',
+  photography: 'Фотография',
+  literature: 'Литература',
+  book: 'Книги',
+  food: 'Еда',
+  'food-wine': 'Еда и вино',
+  yoga: 'Йога',
+  fitness: 'Фитнес',
+  dance: 'Танцы',
+  gaming: 'Игры',
+  'computer-games': 'Игры',
+  quest: 'Квест',
+  charity: 'Благотворительность',
+  fashion: 'Мода',
+  science: 'Наука',
+  technology: 'Технологии',
+  health: 'Здоровье',
+  nature: 'Природа',
+  animals: 'Животные',
+  religion: 'Религия',
+  'social-activity': 'Общество',
+  networking: 'Нетворкинг',
+  'speed-dating': 'Спид-дейтинг',
+  // Теги KudaGo
+  'rock-music': 'Рок',
+  'jazz-blues': 'Джаз / Блюз',
+  jazz: 'Джаз',
+  blues: 'Блюз',
+  'classical-music': 'Классика',
+  classical: 'Классика',
+  'electronic-music': 'Электронная музыка',
+  electronic: 'Электронная музыка',
+  'hip-hop': 'Хип-хоп',
+  pop: 'Поп',
+  'pop-music': 'Поп',
+  metal: 'Метал',
+  folk: 'Фольк',
+  reggae: 'Регги',
+  'r-n-b': 'R&B',
+  soul: 'Саул',
+  funk: 'Фанк',
+  acoustic: 'Акустика',
+  'world-music': 'Этническая музыка',
+  // Кино
+  'action-movie': 'Боевик',
+  comedy_film: 'Комедия',
+  drama: 'Драма',
+  horror: 'Ужасы',
+  thriller: 'Триллер',
+  cartoon: 'Мультфильм',
+  animation: 'Анимация',
+  documentary: 'Документальный',
+  'sci-fi': 'Фантастика',
+  fantasy: 'Фэнтези',
+  adventure: 'Приключения',
+  // Театр
+  drama_play: 'Драма',
+  puppet: 'Кукольный театр',
+  improvisation: 'Импровизация',
+  'performance-art': 'Перформанс',
+  performance: 'Перформанс',
+  // Другое
+  'for-kids': 'Для детей',
+  kids: 'Для детей',
+  children: 'Для детей',
+  family: 'Семейное',
+  free: 'Бесплатно',
+  online: 'Онлайн',
+  outdoor: 'На улице',
+  indoor: 'В помещении',
+};
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toLabel(val: any): string {
   if (!val && val !== 0) return '';
@@ -37,10 +146,17 @@ function toKey(val: any, idx: number): string {
   return toLabel(val) || String(idx);
 }
 
+function translateTag(raw: string): string {
+  const key = raw.toLowerCase().trim();
+  return CATEGORY_RU[key] ?? raw;
+}
+
 function formatDate(dateStr: string | null, timeStr: string | null): string {
   if (!dateStr) return '';
-  return new Date(dateStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) +
-    (timeStr ? ` в ${timeStr.slice(0, 5)}` : '');
+  return (
+    new Date(dateStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) +
+    (timeStr ? ` в ${timeStr.slice(0, 5)}` : '')
+  );
 }
 
 export default function EventCard({ event }: { event: KudaGoEvent }) {
@@ -53,8 +169,13 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
     >
       <div className="relative w-full h-48 bg-gray-100 overflow-hidden">
         {event.cover_url ? (
-          <Image src={event.cover_url} alt={event.title} fill
-            className="object-cover group-hover:scale-105 transition-transform duration-500" unoptimized />
+          <Image
+            src={event.cover_url}
+            alt={event.title}
+            fill
+            className="object-cover group-hover:scale-105 transition-transform duration-500"
+            unoptimized
+          />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
             <span className="text-5xl opacity-30">🎭</span>
@@ -64,10 +185,14 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
 
         <div className="absolute top-3 left-3 flex gap-1.5">
           {event.is_free && (
-            <span className="bg-emerald-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow">Бесплатно</span>
+            <span className="bg-emerald-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow">
+              Бесплатно
+            </span>
           )}
           {ageLabel && (
-            <span className="bg-black/50 text-white text-xs font-bold px-2 py-0.5 rounded-full">{ageLabel}</span>
+            <span className="bg-black/50 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+              {ageLabel}
+            </span>
           )}
         </div>
 
@@ -82,12 +207,14 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
         {event.categories?.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {event.categories.slice(0, 2).map((cat, i) => {
-              const label = toLabel(cat);
-              if (!label) return null;
+              const raw = toLabel(cat);
+              if (!raw) return null;
               return (
-                <span key={toKey(cat, i)}
-                  className="text-xs bg-indigo-50 text-indigo-600 font-medium px-2 py-0.5 rounded-full capitalize">
-                  {label}
+                <span
+                  key={toKey(cat, i)}
+                  className="text-xs bg-indigo-50 text-indigo-600 font-medium px-2 py-0.5 rounded-full"
+                >
+                  {translateTag(raw)}
                 </span>
               );
             })}
@@ -101,10 +228,18 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
         {event.place_title && (
           <div className="flex items-center gap-1.5 text-sm text-gray-400">
             <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+              />
             </svg>
             <span className="line-clamp-1">{event.place_title}</span>
           </div>
