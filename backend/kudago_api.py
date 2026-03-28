@@ -48,7 +48,6 @@ def _parse_categories(raw: list) -> list[str]:
     result = []
     for cat in raw:
         if isinstance(cat, dict):
-            # Prefer Russian name; fall back to slug only if name is absent
             label = cat.get("name") or cat.get("slug", "")
             if label:
                 result.append(label)
@@ -165,6 +164,8 @@ def search(
         "page_size": page_size,
         "lang": lang,
         "expand": "place,dates",
+        # Filter out past events in search too
+        "actual_since": _now_ts(),
     }
     return _get("search", params)
 

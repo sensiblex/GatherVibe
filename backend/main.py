@@ -383,6 +383,10 @@ class PartyUpdateBody(BaseModel):
     max_members: Optional[int] = None
 
 
+class PartyKickBody(BaseModel):
+    reason: Optional[str] = None
+
+
 class PartyMemberOut(BaseModel):
     user_id: int
     username: str
@@ -413,8 +417,10 @@ class PartyOut(BaseModel):
 
 def _build_party_out(party: EventParty, db: Session) -> PartyOut:
     creator = db.query(User).filter(User.id == party.creator_id).first()
+    # Exclude the creator from members list to avoid duplication
     members_rows = db.query(PartyMember, User).join(User, PartyMember.user_id == User.id).filter(
-        PartyMember.party_id == party.id
+        PartyMember.party_id == party.id,
+        PartyMember.user_id != party.creator_id
     ).all()
     members = [
         PartyMemberOut(user_id=u.id, username=u.username, city=u.city,
@@ -467,9 +473,7 @@ def create_party(
     db.add(party)
     db.commit()
     db.refresh(party)
-    member = PartyMember(party_id=party.id, user_id=user.id, status="accepted")
-    db.add(member)
-    db.commit()
+    # Do NOT add creator as a PartyMember — creator is shown separately
     return _build_party_out(party, db)
 
 
@@ -496,9 +500,10 @@ def update_party(
         if body.max_members < 2 or body.max_members > 20:
             raise HTTPException(status_code=400, detail="max_members должно быть от 2 до 20")
         accepted_count = db.query(PartyMember).filter(
-            PartyMember.party_id == party_id, PartyMember.status == "accepted"
+            PartyMember.party_id == party_id, PartyMember.status == "accepted",
+            PartyMember.user_id != party.creator_id
         ).count()
-        if body.max_members < accepted_count:
+        if body.max_members < accepted_count + 1:  # +1 for creator
             raise HTTPException(
                 status_code=400,
                 detail=f"Нельзя уменьшить: уже принято {accepted_count} участников"
@@ -541,13 +546,19 @@ def join_party(
     accepted_count = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.status == "accepted"
     ).count()
-    if accepted_count >= party.max_members:
+    # +1 for creator who is not in members table
+    if accepted_count + 1 >= party.max_members:
         raise HTTPException(status_code=400, detail="Компания заполнена")
     existing = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.user_id == user.id
     ).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Вы уже в этой компании или подали заявку")
+        if existing.status == 'rejected':
+            # Allow re-applying after rejection by deleting old entry
+            db.delete(existing)
+            db.commit()
+        else:
+            raise HTTPException(status_code=400, detail="Вы уже в этой компании или подали заявку")
     m = PartyMember(party_id=party_id, user_id=user.id, status="pending")
     db.add(m)
     db.commit()
@@ -566,9 +577,15 @@ def leave_party(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id == user.id:
         raise HTTPException(status_code=400, detail="Создатель не может покинуть компанию. Закройте её.")
-    db.query(PartyMember).filter(
+    member = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.user_id == user.id
-    ).delete()
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Вы не состоите в этой компании")
+    # Only accepted members can leave; rejected ones cannot
+    if member.status == 'rejected':
+        raise HTTPException(status_code=400, detail="Вы не являетесь участником компании")
+    db.delete(member)
     db.commit()
     return {"ok": True}
 
@@ -589,7 +606,8 @@ def accept_member(
     accepted_count = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.status == "accepted"
     ).count()
-    if accepted_count >= party.max_members:
+    # +1 for creator
+    if accepted_count + 1 >= party.max_members:
         raise HTTPException(status_code=400, detail="Компания уже заполнена")
     m = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.user_id == user_id
@@ -622,6 +640,32 @@ def reject_member(
     m.status = "rejected"
     db.commit()
     return _build_party_out(party, db)
+
+
+@app.post("/parties/{party_id}/members/{user_id}/kick")
+def kick_member(
+    party_id: int,
+    user_id: int,
+    body: PartyKickBody,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_token(token, db)
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if party.creator_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Только создатель может исключать участников")
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Нельзя исключить себя")
+    m = db.query(PartyMember).filter(
+        PartyMember.party_id == party_id, PartyMember.user_id == user_id
+    ).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="Участник не найден")
+    db.delete(m)
+    db.commit()
+    return {"ok": True, "kicked_user_id": user_id, "reason": body.reason}
 
 
 @app.post("/parties/{party_id}/close", response_model=PartyOut)
