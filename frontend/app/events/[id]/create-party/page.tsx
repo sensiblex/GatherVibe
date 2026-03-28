@@ -43,7 +43,6 @@ export default function CreatePartyPage() {
         setCreating(false);
         return;
       }
-      // После создания возвращаемся на страницу события
       router.push(`/events/${eventId}`);
     } catch {
       setError('Ошибка сети');
@@ -55,7 +54,6 @@ export default function CreatePartyPage() {
     <div className="min-h-screen bg-gray-50">
       <Navbar />
       <main className="container mx-auto px-4 py-10 max-w-lg">
-        {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-sm text-gray-400 mb-8">
           <Link href="/events" className="hover:text-indigo-600 transition">События</Link>
           <span>/</span>
@@ -65,7 +63,6 @@ export default function CreatePartyPage() {
         </nav>
 
         <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-          {/* Header */}
           <div className="px-8 py-6 bg-gradient-to-r from-purple-600 to-pink-600">
             <div className="flex items-center gap-3">
               <span className="text-4xl">🎉</span>
@@ -76,7 +73,6 @@ export default function CreatePartyPage() {
             </div>
           </div>
 
-          {/* Form */}
           <div className="px-8 py-6 flex flex-col gap-5">
             {error && (
               <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
@@ -92,7 +88,7 @@ export default function CreatePartyPage() {
                 type="text"
                 value={form.title}
                 onChange={e => setForm(f => ({ ...f, title: e.target.value.slice(0, 60) }))}
-                placeholder="Например: "Приятная компания на вечер""
+                placeholder="Например: Приятная компания на вечер"
                 className="rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 transition"
               />
               <span className="text-xs text-gray-400 text-right">{form.title.length}/60</span>
@@ -139,7 +135,6 @@ export default function CreatePartyPage() {
             </div>
           </div>
 
-          {/* Footer */}
           <div className="px-8 pb-8 flex gap-3">
             <button
               onClick={handleCreate}
