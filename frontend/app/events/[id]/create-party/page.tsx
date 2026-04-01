@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '../../../components/Navbar';
+import { useAuth } from '../../../context/AuthContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -11,17 +12,18 @@ export default function CreatePartyPage() {
   const params  = useParams();
   const router  = useRouter();
   const eventId = params?.id as string;
+  const { token } = useAuth();
 
-  const [token, setToken]       = useState<string | null>(null);
   const [form, setForm]         = useState({ title: '', description: '', max_members: 4 });
   const [creating, setCreating] = useState(false);
   const [error, setError]       = useState<string | null>(null);
 
   useEffect(() => {
-    const t = localStorage.getItem('token');
-    if (!t) { router.replace('/login'); return; }
-    setToken(t);
-  }, [router]);
+    if (token === null) {
+      // token is null only after hydration when user is truly not logged in
+      router.replace('/login');
+    }
+  }, [token, router]);
 
   const handleCreate = async () => {
     if (!token) return;
