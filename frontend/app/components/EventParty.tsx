@@ -31,19 +31,21 @@ export interface Party {
   created_at: string;
 }
 
+const cardStyle = {
+  background: 'var(--card-bg, var(--surface))',
+  border: '1px solid var(--border)',
+};
+
 function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) {
   const { user, token } = useAuth();
   const myId = user?.id ?? null;
-
   const [loading, setLoading] = useState(false);
 
   const isCreator = myId !== null && party.creator_id === myId;
   const myMembership = party.members.find(m => m.user_id === myId);
   const acceptedCount = party.members.filter(m => m.status === 'accepted').length;
   const isFull = acceptedCount + 1 >= party.max_members;
-  // Can join: logged in, not creator, no active membership, open, not full
   const canJoin = !!token && !isCreator && !myMembership && party.is_open && !isFull;
-  // Can leave: logged in, not creator, accepted member only
   const canLeave = !!token && !isCreator && myMembership?.status === 'accepted';
 
   const handleJoinRequest = async () => {
@@ -84,53 +86,96 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
   const pendingCount = party.members.filter(m => m.status === 'pending').length;
 
   return (
-    <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden hover:shadow-md transition">
+    <div
+      className="rounded-2xl shadow-sm overflow-hidden hover:shadow-md transition"
+      style={cardStyle}
+    >
       <div className="px-5 py-4 flex items-start gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-lg shrink-0">🎉</div>
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-lg shrink-0">
+          🎉
+        </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-bold text-gray-900 text-sm">{party.title}</h3>
-            {isCreator && <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-semibold">👑 Вы создатель</span>}
-            {myMembership?.status === 'accepted' && !isCreator && <span className="text-xs bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full font-semibold">✅ Участник</span>}
-            {myMembership?.status === 'pending' && <span className="text-xs bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full font-semibold">⏳ Ожидает</span>}
-            {!party.is_open && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">🔒 Закрыта</span>}
-            {isFull && party.is_open && <span className="text-xs bg-orange-50 text-orange-500 px-2 py-0.5 rounded-full">👥 Заполнена</span>}
+            <h3 className="font-bold text-sm" style={{ color: 'var(--text)' }}>{party.title}</h3>
+            {isCreator && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                style={{ background: 'var(--badge-bg, #eef2ff)', color: 'var(--accent, #4f46e5)' }}
+              >
+                👑 Вы создатель
+              </span>
+            )}
+            {myMembership?.status === 'accepted' && !isCreator && (
+              <span className="text-xs bg-emerald-500/20 text-emerald-500 px-2 py-0.5 rounded-full font-semibold">✅ Участник</span>
+            )}
+            {myMembership?.status === 'pending' && (
+              <span className="text-xs bg-amber-500/20 text-amber-500 px-2 py-0.5 rounded-full font-semibold">⏳ Ожидает</span>
+            )}
+            {!party.is_open && (
+              <span
+                className="text-xs px-2 py-0.5 rounded-full"
+                style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
+              >
+                🔒 Закрыта
+              </span>
+            )}
+            {isFull && party.is_open && (
+              <span className="text-xs bg-orange-500/15 text-orange-500 px-2 py-0.5 rounded-full">👥 Заполнена</span>
+            )}
           </div>
-          <p className="text-xs text-gray-400 mt-0.5">
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
             {party.creator_username} · {acceptedCount + 1}/{party.max_members} участников
-            {pendingCount > 0 && isCreator && <span className="ml-2 text-amber-500 font-semibold">⏳ {pendingCount} ожидают</span>}
+            {pendingCount > 0 && isCreator && (
+              <span className="ml-2 text-amber-500 font-semibold">⏳ {pendingCount} ожидают</span>
+            )}
           </p>
-          {party.description && <p className="text-xs text-gray-500 mt-1 line-clamp-1">{party.description}</p>}
+          {party.description && (
+            <p className="text-xs mt-1 line-clamp-1" style={{ color: 'var(--text-muted)' }}>
+              {party.description}
+            </p>
+          )}
         </div>
-        {/* Link to separate party detail page */}
         <Link
           href={`/parties/${party.id}`}
-          className="shrink-0 text-xs px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition font-semibold"
+          className="shrink-0 text-xs px-3 py-1.5 rounded-lg font-semibold transition hover:opacity-80"
+          style={{ background: 'var(--badge-bg, #eef2ff)', color: 'var(--accent, #4f46e5)' }}
         >
           Подробнее →
         </Link>
       </div>
+
       <div className="px-5 pb-4 flex gap-2 flex-wrap">
         {canJoin && (
-          <button onClick={handleJoinRequest} disabled={loading}
-            className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-bold py-2 rounded-xl hover:opacity-90 transition disabled:opacity-60">
+          <button
+            onClick={handleJoinRequest} disabled={loading}
+            className="flex-1 text-white text-sm font-bold py-2 rounded-xl hover:opacity-90 transition disabled:opacity-60"
+            style={{ background: 'linear-gradient(135deg,#9333ea,#ec4899)' }}
+          >
             {loading ? 'Отправка...' : '🙋 Подать заявку'}
           </button>
         )}
         {canLeave && (
-          <button onClick={handleLeave} disabled={loading}
-            className="text-sm px-4 py-2 text-red-500 border border-red-200 rounded-xl hover:bg-red-50 transition disabled:opacity-60">
+          <button
+            onClick={handleLeave} disabled={loading}
+            className="text-sm px-4 py-2 rounded-xl transition disabled:opacity-60"
+            style={{
+              color: '#ef4444',
+              border: '1px solid color-mix(in oklch, #ef4444 40%, transparent)',
+            }}
+          >
             {loading ? '...' : 'Покинуть'}
           </button>
         )}
         {!isCreator && !canJoin && !canLeave && !party.is_open && (
-          <p className="text-xs text-gray-400 py-2">Набор в эту компанию закрыт</p>
+          <p className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>
+            Набор в эту компанию закрыт
+          </p>
         )}
         {!isCreator && isFull && party.is_open && !myMembership && (
-          <p className="text-xs text-orange-400 py-2">Компания уже заполнена</p>
+          <p className="text-xs py-2 text-orange-400">Компания уже заполнена</p>
         )}
         {myMembership?.status === 'pending' && (
-          <p className="text-xs text-amber-500 py-2">⏳ Ваша заявка рассматривается</p>
+          <p className="text-xs py-2 text-amber-500">⏳ Ваша заявка рассматривается</p>
         )}
       </div>
     </div>
@@ -159,11 +204,9 @@ export default function EventParty({ eventId }: { eventId: string }) {
             if (!oldParty) return;
             const oldMe = oldParty.members.find(m => m.user_id === myId);
             const newMe = newParty.members.find(m => m.user_id === myId);
-            // accepted
             if (oldMe?.status === 'pending' && newMe?.status === 'accepted') {
               toast(`🎉 Вас приняли в компанию «${newParty.title}»!`, 'success');
             }
-            // rejected — oldMe existed, newMe gone (record deleted)
             if (oldMe?.status === 'pending' && !newMe) {
               toast(`Заявка в «${newParty.title}» отклонена`, 'error');
             }
@@ -186,34 +229,55 @@ export default function EventParty({ eventId }: { eventId: string }) {
   }, [fetchParties]);
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between gap-3">
+    <div
+      className="rounded-2xl shadow-sm overflow-hidden"
+      style={cardStyle}
+    >
+      <div
+        className="px-6 py-5 flex items-center justify-between gap-3"
+        style={{ borderBottom: '1px solid var(--border)' }}
+      >
         <div>
-          <h2 className="font-bold text-gray-900 text-base">
+          <h2 className="font-bold text-base" style={{ color: 'var(--text)' }}>
             🎉 Компании на событие
-            {parties.length > 0 && <span className="ml-2 text-sm font-normal text-gray-400">{parties.length} шт.</span>}
+            {parties.length > 0 && (
+              <span className="ml-2 text-sm font-normal" style={{ color: 'var(--text-muted)' }}>
+                {parties.length} шт.
+              </span>
+            )}
           </h2>
-          <p className="text-xs text-gray-400 mt-0.5">Создай компанию или вступи в готовую</p>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+            Создай компанию или вступи в готовую
+          </p>
         </div>
         <button
           onClick={() => token
             ? router.push(`/events/${eventId}/create-party`)
             : (window.location.href = '/login')
           }
-          className="bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-bold px-4 py-1.5 rounded-full hover:opacity-90 shadow-sm transition">
+          className="text-white text-sm font-bold px-4 py-1.5 rounded-full hover:opacity-90 shadow-sm transition"
+          style={{ background: 'linear-gradient(135deg,#9333ea,#ec4899)' }}
+        >
           + Создать
         </button>
       </div>
+
       <div className="p-6">
         {loading ? (
           <div className="space-y-3">
-            {[1, 2].map(i => <div key={i} className="h-20 bg-gray-100 rounded-2xl animate-pulse" />)}
+            {[1, 2].map(i => (
+              <div
+                key={i}
+                className="h-20 rounded-2xl animate-pulse"
+                style={{ background: 'var(--surface-2)' }}
+              />
+            ))}
           </div>
         ) : parties.length === 0 ? (
           <div className="text-center py-10">
             <p className="text-4xl mb-3">🎊</p>
-            <p className="text-gray-500 font-medium">Компаний пока нет</p>
-            <p className="text-sm text-gray-400 mt-1">Создай первую — нажми «+ Создать»</p>
+            <p className="font-medium" style={{ color: 'var(--text-muted)' }}>Компаний пока нет</p>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Создай первую — нажми «+ Создать»</p>
           </div>
         ) : (
           <div className="space-y-3">
