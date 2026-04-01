@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
 import Link from 'next/link';
 import Navbar from '../../components/Navbar';
 import EventAttendees from '../../components/EventAttendees';
 import EventParty from '../../components/EventParty';
+import EventChat from '../../components/EventChat';
+import { useAuth } from '../../context/AuthContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -88,15 +90,216 @@ function formatDate(dateStr: string | null, timeStr: string | null): string {
   }) + (timeStr ? ` в ${timeStr.slice(0, 5)}` : '');
 }
 
-// Переиспользуемый стиль «карточка» через CSS-переменные
 const cardStyle: React.CSSProperties = {
   background: 'var(--card-bg, var(--surface, #ffffff))',
   border: '1px solid var(--border, #e5e7eb)',
 };
 
+// ── WantToGo button & modal ──────────────────────────────────────────────────
+
+interface WantToGoState {
+  attending: boolean;
+  is_looking: boolean;
+  comment: string;
+}
+
+function WantToGoButton({ eventId, token, userId }: { eventId: string; token: string | null; userId: number | null }) {
+  const [state, setState] = useState<WantToGoState>({
+    attending: false,
+    is_looking: true,
+    comment: '',
+  });
+  const [modalOpen, setModalOpen] = useState(false);
+  const [comment, setComment] = useState('');
+  const [isLooking, setIsLooking] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Load current status
+  useEffect(() => {
+    if (!token) { setFetching(false); return; }
+    fetch(`${API_BASE}/attendees/${eventId}/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d?.attending) {
+          setState({ attending: true, is_looking: d.is_looking ?? true, comment: d.comment || '' });
+          setComment(d.comment || '');
+          setIsLooking(d.is_looking ?? true);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setFetching(false));
+  }, [eventId, token]);
+
+  // Close modal on outside click
+  useEffect(() => {
+    if (!modalOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
+        setModalOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [modalOpen]);
+
+  const handleClick = () => {
+    if (!token) { window.location.href = '/login'; return; }
+    setModalOpen(true);
+  };
+
+  const handleSubmit = async () => {
+    if (!token) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/attendees/${eventId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ comment: comment.trim() || null, is_looking: isLooking }),
+      });
+      if (res.ok) {
+        setState({ attending: true, is_looking: isLooking, comment: comment.trim() });
+        setModalOpen(false);
+      }
+    } catch {}
+    setLoading(false);
+  };
+
+  const handleLeave = async () => {
+    if (!token) return;
+    setLoading(true);
+    try {
+      await fetch(`${API_BASE}/attendees/${eventId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setState({ attending: false, is_looking: true, comment: '' });
+      setComment('');
+      setIsLooking(true);
+      setModalOpen(false);
+    } catch {}
+    setLoading(false);
+  };
+
+  if (fetching) return <div className="h-10 w-32 rounded-xl animate-pulse" style={{ background: 'var(--surface-2)' }} />;
+
+  return (
+    <>
+      {state.attending ? (
+        <div className="flex gap-2">
+          <button
+            onClick={() => setModalOpen(true)}
+            className="flex-1 py-3 rounded-xl font-bold text-sm transition hover:opacity-80"
+            style={{ background: '#22c55e', color: '#fff' }}
+          >
+            ✓ Ты идёшь
+          </button>
+          <button
+            onClick={handleLeave}
+            disabled={loading}
+            className="px-4 py-3 rounded-xl text-sm font-medium transition disabled:opacity-50"
+            style={{
+              border: '1px solid color-mix(in oklch, #ef4444 40%, transparent)',
+              color: '#ef4444',
+            }}
+          >
+            {loading ? '...' : 'Отменить'}
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={handleClick}
+          className="w-full py-3 rounded-xl font-bold text-sm text-white hover:opacity-90 transition shadow-md"
+          style={{ background: 'var(--accent-gradient, linear-gradient(135deg,#4f46e5,#7c3aed))' }}
+        >
+          🎟 Хочу пойти
+        </button>
+      )}
+
+      {/* Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'oklch(0 0 0 / 0.5)' }}>
+          <div
+            ref={modalRef}
+            className="w-full max-w-sm rounded-3xl p-6 shadow-2xl"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+          >
+            <h3 className="font-black text-lg mb-4" style={{ color: 'var(--text)' }}>
+              {state.attending ? '✏️ Обновить участие' : '🎟 Я иду на событие!'}
+            </h3>
+
+            <div className="mb-4">
+              <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>
+                Расскажи о себе
+              </label>
+              <textarea
+                value={comment}
+                onChange={e => setComment(e.target.value.slice(0, 100))}
+                placeholder="Расскажи о себе — чем интересуешься?"
+                rows={3}
+                className="w-full px-4 py-2.5 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                style={{
+                  background: 'var(--surface-2)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text)',
+                }}
+              />
+              <p className="text-xs text-right mt-1" style={{ color: 'var(--text-muted)' }}>
+                {comment.length}/100
+              </p>
+            </div>
+
+            <label className="flex items-center gap-3 cursor-pointer mb-5">
+              <div
+                onClick={() => setIsLooking(v => !v)}
+                className="w-11 h-6 rounded-full relative transition-colors shrink-0"
+                style={{ background: isLooking ? '#22c55e' : 'var(--surface-2)' }}
+              >
+                <span
+                  className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${
+                    isLooking ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </div>
+              <span className="text-sm" style={{ color: 'var(--text)' }}>
+                {isLooking ? '🟢 Ищу компанию для похода' : '⚫ Просто отмечаюсь'}
+              </span>
+            </label>
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleSubmit}
+                disabled={loading}
+                className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white hover:opacity-90 transition disabled:opacity-60"
+                style={{ background: 'var(--accent-gradient, linear-gradient(135deg,#4f46e5,#7c3aed))' }}
+              >
+                {loading ? 'Сохранение...' : state.attending ? 'Обновить' : 'Подтвердить'}
+              </button>
+              <button
+                onClick={() => setModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl text-sm transition hover:opacity-80"
+                style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Main page ────────────────────────────────────────────────────────────────
+
 export default function EventDetailPage() {
   const params  = useParams();
   const router  = useRouter();
+  const { token, user } = useAuth();
   const eventId = params?.id as string;
   const [event, setEvent]         = useState<EventDetail | null>(null);
   const [loading, setLoading]     = useState(true);
@@ -120,16 +323,9 @@ export default function EventDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           <div className="lg:col-span-2 space-y-4">
             <div className="w-full h-96 rounded-3xl" style={{ background: 'var(--surface-2, #e5e7eb)' }} />
-            <div className="flex gap-2">
-              {[1,2,3].map(i => (
-                <div key={i} className="w-20 h-14 rounded-xl" style={{ background: 'var(--surface-2, #e5e7eb)' }} />
-              ))}
-            </div>
             <div className="h-8 rounded w-3/4" style={{ background: 'var(--surface-2, #e5e7eb)' }} />
-            {[1,2,3].map(i => <div key={i} className="h-4 rounded" style={{ background: 'var(--surface-2, #e5e7eb)' }} />)}
           </div>
           <div className="space-y-4">
-            <div className="h-40 rounded-3xl" style={{ background: 'var(--surface-2, #e5e7eb)' }} />
             <div className="h-40 rounded-3xl" style={{ background: 'var(--surface-2, #e5e7eb)' }} />
           </div>
         </div>
@@ -144,11 +340,9 @@ export default function EventDetailPage() {
         <span className="text-5xl">😕</span>
         <p style={{ color: 'var(--text-muted)' }}>Не удалось загрузить событие</p>
         <p className="text-red-400 text-sm">{error}</p>
-        <button
-          onClick={() => router.back()}
+        <button onClick={() => router.back()}
           className="px-6 py-2 rounded-xl font-bold hover:opacity-90 transition"
-          style={{ background: 'var(--accent, #4f46e5)', color: '#fff' }}
-        >
+          style={{ background: 'var(--accent, #4f46e5)', color: '#fff' }}>
           Назад
         </button>
       </div>
@@ -157,6 +351,7 @@ export default function EventDetailPage() {
 
   const images = Array.isArray(event.images) ? event.images : [];
   const ageLabel = event.age_restriction ? `${event.age_restriction}+` : null;
+  const kudagoId = String(event.kudago_id || eventId);
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
@@ -174,7 +369,7 @@ export default function EventDetailPage() {
         </nav>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-          {/* ── LEFT COLUMN ────────────────────────────── */}
+          {/* ── LEFT COLUMN ── */}
           <div className="lg:col-span-2 space-y-6">
 
             {/* Gallery */}
@@ -240,10 +435,8 @@ export default function EventDetailPage() {
                   </span>
                 )}
                 {ageLabel && (
-                  <span
-                    className="text-sm font-bold px-3 py-1 rounded-full"
-                    style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
-                  >
+                  <span className="text-sm font-bold px-3 py-1 rounded-full"
+                    style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
                     {ageLabel}
                   </span>
                 )}
@@ -251,11 +444,8 @@ export default function EventDetailPage() {
                   const label = toLabel(cat);
                   if (!label) return null;
                   return (
-                    <span
-                      key={toKey(cat, i)}
-                      className="text-sm font-medium px-3 py-1 rounded-full"
-                      style={{ background: 'var(--badge-bg, #eef2ff)', color: 'var(--accent, #4f46e5)' }}
-                    >
+                    <span key={toKey(cat, i)} className="text-sm font-medium px-3 py-1 rounded-full"
+                      style={{ background: 'var(--badge-bg, #eef2ff)', color: 'var(--accent, #4f46e5)' }}>
                       {translateTag(label)}
                     </span>
                   );
@@ -281,8 +471,32 @@ export default function EventDetailPage() {
               </div>
             )}
 
-            <EventAttendees eventId={eventId} />
-            <EventParty eventId={eventId} />
+            <EventAttendees eventId={kudagoId} />
+            <EventParty eventId={kudagoId} />
+
+            {/* Chat — only for authorized */}
+            {token && user ? (
+              <EventChat
+                eventId={kudagoId}
+                currentUserId={String(user.id)}
+                currentUsername={user.username}
+              />
+            ) : (
+              <div className="rounded-2xl p-6 text-center shadow-sm" style={cardStyle}>
+                <p className="text-2xl mb-2">💬</p>
+                <p className="font-medium" style={{ color: 'var(--text-muted)' }}>Чат события</p>
+                <p className="text-sm mt-1 mb-4" style={{ color: 'var(--text-muted)' }}>
+                  Войдите, чтобы участвовать в чате
+                </p>
+                <Link
+                  href="/login"
+                  className="inline-block px-5 py-2 rounded-xl font-bold text-sm text-white hover:opacity-90 transition"
+                  style={{ background: 'var(--accent-gradient, linear-gradient(135deg,#4f46e5,#7c3aed))' }}
+                >
+                  Войти
+                </Link>
+              </div>
+            )}
 
             {/* Participants */}
             {Array.isArray(event.participants) && event.participants.length > 0 && (
@@ -297,10 +511,8 @@ export default function EventDetailPage() {
                           <Image src={p.image_url} alt={p.name} fill className="object-cover" unoptimized />
                         </div>
                       ) : (
-                        <div
-                          className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0"
-                          style={{ background: 'var(--badge-bg, #eef2ff)', color: 'var(--accent, #4f46e5)' }}
-                        >
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0"
+                          style={{ background: 'var(--badge-bg, #eef2ff)', color: 'var(--accent, #4f46e5)' }}>
                           {p.name?.charAt(0) || '?'}
                         </div>
                       )}
@@ -321,11 +533,8 @@ export default function EventDetailPage() {
                   const label = toLabel(tag);
                   if (!label) return null;
                   return (
-                    <span
-                      key={toKey(tag, i)}
-                      className="text-xs px-3 py-1 rounded-full"
-                      style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
-                    >
+                    <span key={toKey(tag, i)} className="text-xs px-3 py-1 rounded-full"
+                      style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
                       #{translateTag(label)}
                     </span>
                   );
@@ -334,15 +543,13 @@ export default function EventDetailPage() {
             )}
           </div>
 
-          {/* ── RIGHT COLUMN ───────────────────────────── */}
+          {/* ── RIGHT COLUMN ── */}
           <div className="space-y-5 lg:sticky lg:top-24 self-start">
 
-            {/* Price card */}
+            {/* Price + WantToGo card */}
             <div className="rounded-2xl p-6 shadow-sm" style={cardStyle}>
-              <p
-                className="text-xs uppercase font-semibold tracking-wide mb-1"
-                style={{ color: 'var(--text-muted)' }}
-              >
+              <p className="text-xs uppercase font-semibold tracking-wide mb-1"
+                style={{ color: 'var(--text-muted)' }}>
                 Стоимость
               </p>
               {event.is_free ? (
@@ -352,13 +559,20 @@ export default function EventDetailPage() {
               ) : (
                 <p className="mb-4" style={{ color: 'var(--text-muted)' }}>Цена не указана</p>
               )}
+
+              {/* 🎟 Want to go button */}
+              <WantToGoButton eventId={kudagoId} token={token} userId={user?.id ?? null} />
+
               {event.site_url && (
                 <a
                   href={event.site_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="block w-full text-center py-3 rounded-xl font-bold hover:opacity-90 transition shadow-md"
-                  style={{ background: 'var(--accent-gradient, linear-gradient(135deg,#4f46e5,#7c3aed))', color: '#fff' }}
+                  className="mt-3 block w-full text-center py-2.5 rounded-xl font-semibold text-sm hover:opacity-80 transition"
+                  style={{
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-muted)',
+                  }}
                 >
                   Перейти на сайт ↗
                 </a>
@@ -368,12 +582,8 @@ export default function EventDetailPage() {
             {/* Dates */}
             {Array.isArray(event.all_dates) && event.all_dates.length > 0 && (
               <div className="rounded-2xl p-6 shadow-sm" style={cardStyle}>
-                <h2
-                  className="text-xs font-bold uppercase tracking-wide mb-4"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  📅 Даты
-                </h2>
+                <h2 className="text-xs font-bold uppercase tracking-wide mb-4"
+                  style={{ color: 'var(--text-muted)' }}>📅 Даты</h2>
                 <ul className="space-y-2">
                   {event.all_dates.slice(0, 5).map((d, i) => (
                     <li key={i} className="text-sm flex items-start gap-2" style={{ color: 'var(--text-muted)' }}>
@@ -400,12 +610,8 @@ export default function EventDetailPage() {
             {/* Place */}
             {(event.place_title || event.place_address) && (
               <div className="rounded-2xl p-6 shadow-sm" style={cardStyle}>
-                <h2
-                  className="text-xs font-bold uppercase tracking-wide mb-4"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  📍 Место
-                </h2>
+                <h2 className="text-xs font-bold uppercase tracking-wide mb-4"
+                  style={{ color: 'var(--text-muted)' }}>📍 Место</h2>
                 {event.place_title && (
                   <p className="font-bold mb-1" style={{ color: 'var(--text)' }}>{event.place_title}</p>
                 )}
@@ -419,22 +625,18 @@ export default function EventDetailPage() {
                   </p>
                 )}
                 {event.place_phone && (
-                  <a
-                    href={`tel:${event.place_phone}`}
+                  <a href={`tel:${event.place_phone}`}
                     className="text-sm mt-2 block hover:underline"
-                    style={{ color: 'var(--accent)' }}
-                  >
+                    style={{ color: 'var(--accent)' }}>
                     {event.place_phone}
                   </a>
                 )}
                 {event.lat && event.lon && (
                   <a
                     href={`https://yandex.ru/maps/?pt=${event.lon},${event.lat}&z=16`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    target="_blank" rel="noopener noreferrer"
                     className="mt-4 flex items-center gap-2 text-sm font-medium hover:underline"
-                    style={{ color: 'var(--accent)' }}
-                  >
+                    style={{ color: 'var(--accent)' }}>
                     🗺️ Открыть на карте
                   </a>
                 )}

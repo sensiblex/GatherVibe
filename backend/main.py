@@ -5,7 +5,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from database import engine, SessionLocal
 from models.user import User
-from schemas import UserCreate, UserResponse
+from schemas import UserCreate, UserResponse, UserUpdate
 from schemas import UserLogin, Token
 from auth import hash_password
 from auth import authenticate_user, create_user_token
@@ -25,6 +25,7 @@ import time
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
 
 models.user.Base.metadata.create_all(bind=engine)
 models.event.Base.metadata.create_all(bind=engine)
@@ -51,7 +52,7 @@ async def disconnect(sid):
     print(f"Client {sid} disconnected")
 
 
-# ── Event chat ──
+# -- Event chat --
 
 @sio.on('join_event_chat')
 async def join_event_chat(sid, event_id: str):
@@ -65,6 +66,7 @@ async def send_message(sid, data: dict):
     msg = {
         'message': data['message'],
         'userId': data.get('userId', sid),
+        'username': data.get('username', 'Аноним'),
         'timestamp': datetime.now().isoformat()
     }
     await sio.emit('receive_message', msg, room=f'event_{event_id}')
@@ -75,7 +77,7 @@ async def leave_event_chat(sid, event_id: str):
     await sio.leave_room(sid, f'event_{event_id}')
 
 
-# ── Party (company room) chat ──
+# -- Party chat --
 
 @sio.on('join_party_chat')
 async def join_party_chat(sid, data: dict):
@@ -144,7 +146,7 @@ def get_current_user_from_token(token: str, db: Session) -> User:
     return user
 
 
-# ⚠️ socket_app — главное ASGI-приложение для uvicorn
+# socket_app — главное ASGI-приложение для uvicorn
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 
@@ -162,6 +164,29 @@ def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
 @app.get("/users/me", response_model=UserResponse)
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     return get_current_user_from_token(token, db)
+
+
+@app.patch("/users/me", response_model=UserResponse)
+def update_profile(
+    data: UserUpdate,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user_from_token(token, db)
+    if data.username is not None:
+        data.username = data.username.strip()
+        if not data.username:
+            raise HTTPException(status_code=400, detail="Username не может быть пустым")
+        user.username = data.username
+    if data.city is not None:
+        user.city = data.city.strip() or None
+    if data.bio is not None:
+        user.bio = data.bio.strip()[:200] or None
+    if data.interests is not None:
+        user.interests = data.interests.strip() or None
+    db.commit()
+    db.refresh(user)
+    return user
 
 
 # ===== EVENTS =====
@@ -234,10 +259,9 @@ def kudago_get_events(
     actual_until: Optional[int] = Query(default=None),
 ):
     try:
-        # Always filter from now so past events never appear
         now_ts = int(time.time())
         effective_since = max(actual_since, now_ts) if actual_since else now_ts
-        effective_until = actual_until  # may be None (no upper bound)
+        effective_until = actual_until
 
         if search:
             raw = kudago_api.search(
@@ -317,6 +341,10 @@ class AttendeeOut(BaseModel):
         from_attributes = True
 
 
+class AttendeeMatchOut(AttendeeOut):
+    common_count: int = 0
+
+
 @app.post("/attendees/{event_id}", response_model=AttendeeOut)
 def join_event(
     event_id: str,
@@ -358,6 +386,55 @@ def leave_event(
     db.commit()
 
 
+@app.get("/attendees/{event_id}/matches", response_model=List[AttendeeMatchOut])
+def get_matches(
+    event_id: str,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Returns attendees sorted by number of common interests with the current user."""
+    user = get_current_user_from_token(token, db)
+    my_interests: set = set(
+        i.strip() for i in (user.interests or "").split(",") if i.strip()
+    )
+
+    rows = (
+        db.query(EventAttendee, User)
+        .join(User, EventAttendee.user_id == User.id)
+        .filter(EventAttendee.event_id == event_id, EventAttendee.user_id != user.id)
+        .all()
+    )
+
+    result = []
+    for a, u in rows:
+        their = set(i.strip() for i in (u.interests or "").split(",") if i.strip())
+        common = len(my_interests & their)
+        result.append(AttendeeMatchOut(
+            id=a.id, user_id=u.id, username=u.username, city=u.city,
+            interests=u.interests, comment=a.comment,
+            is_looking=a.is_looking, created_at=a.created_at,
+            common_count=common,
+        ))
+
+    result.sort(key=lambda x: x.common_count, reverse=True)
+    return result
+
+
+@app.get("/attendees/{event_id}/me")
+def get_my_attendance(
+    event_id: str,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user_from_token(token, db)
+    row = db.query(EventAttendee).filter(
+        EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
+    ).first()
+    if not row:
+        return {"attending": False}
+    return {"attending": True, "is_looking": row.is_looking, "comment": row.comment}
+
+
 @app.get("/attendees/{event_id}", response_model=List[AttendeeOut])
 def get_attendees(
     event_id: str,
@@ -376,21 +453,6 @@ def get_attendees(
                     is_looking=a.is_looking, created_at=a.created_at)
         for a, u in rows
     ]
-
-
-@app.get("/attendees/{event_id}/me")
-def get_my_attendance(
-    event_id: str,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user_from_token(token, db)
-    row = db.query(EventAttendee).filter(
-        EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
-    ).first()
-    if not row:
-        return {"attending": False}
-    return {"attending": True, "is_looking": row.is_looking, "comment": row.comment}
 
 
 # ===== PARTIES (COMPANY ROOMS) =====
@@ -441,7 +503,6 @@ class PartyOut(BaseModel):
 
 def _build_party_out(party: EventParty, db: Session) -> PartyOut:
     creator = db.query(User).filter(User.id == party.creator_id).first()
-    # Only include non-creator members to avoid duplication
     members_rows = db.query(PartyMember, User).join(User, PartyMember.user_id == User.id).filter(
         PartyMember.party_id == party.id,
         PartyMember.user_id != party.creator_id
@@ -497,7 +558,6 @@ def create_party(
     db.add(party)
     db.commit()
     db.refresh(party)
-    # Creator is NOT added as a PartyMember — shown separately as creator
     return _build_party_out(party, db)
 
 
@@ -527,7 +587,7 @@ def update_party(
             PartyMember.party_id == party_id, PartyMember.status == "accepted",
             PartyMember.user_id != party.creator_id
         ).count()
-        if body.max_members < accepted_count + 1:  # +1 for creator
+        if body.max_members < accepted_count + 1:
             raise HTTPException(
                 status_code=400,
                 detail=f"Нельзя уменьшить: уже принято {accepted_count} участников"
@@ -570,7 +630,6 @@ def join_party(
     accepted_count = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.status == "accepted"
     ).count()
-    # +1 for creator who is not in members table
     if accepted_count + 1 >= party.max_members:
         raise HTTPException(status_code=400, detail="Компания заполнена")
     existing = db.query(PartyMember).filter(
@@ -578,7 +637,6 @@ def join_party(
     ).first()
     if existing:
         if existing.status == 'rejected':
-            # Allow re-applying after rejection
             db.delete(existing)
             db.commit()
         else:
@@ -606,7 +664,6 @@ def leave_party(
     ).first()
     if not member:
         raise HTTPException(status_code=404, detail="Вы не состоите в этой компании")
-    # Rejected users are not real members — they cannot leave
     if member.status == 'rejected':
         raise HTTPException(status_code=400, detail="Вы не являетесь участником компании")
     db.delete(member)
@@ -630,7 +687,6 @@ def accept_member(
     accepted_count = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.status == "accepted"
     ).count()
-    # +1 for creator
     if accepted_count + 1 >= party.max_members:
         raise HTTPException(status_code=400, detail="Компания уже заполнена")
     m = db.query(PartyMember).filter(
@@ -661,8 +717,6 @@ def reject_member(
     ).first()
     if not m:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    # FIX: delete the record instead of setting status=rejected
-    # This ensures the user is truly NOT a member and cannot press "leave"
     db.delete(m)
     db.commit()
     return _build_party_out(party, db)

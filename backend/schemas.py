@@ -30,10 +30,18 @@ class UserResponse(BaseModel):
     username: str
     city: Optional[str]
     interests: Optional[str]
+    bio: Optional[str] = None
     is_active: bool
 
     class Config:
         from_attributes = True
+
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    city: Optional[str] = None
+    bio: Optional[str] = None
+    interests: Optional[str] = None
 
 
 class EventBase(BaseModel):
