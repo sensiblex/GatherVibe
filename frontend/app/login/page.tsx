@@ -4,14 +4,16 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '../components/Navbar';
+import { useAuth } from '../context/AuthContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [form, setForm]     = useState({ email: '', password: '' });
+  const { login } = useAuth();
+  const [form, setForm]       = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
-  const [error, setError]   = useState<string | null>(null);
+  const [error, setError]     = useState<string | null>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -31,10 +33,12 @@ export default function LoginPage() {
         throw new Error(data.detail || 'Ошибка входа');
       }
       const data = await res.json();
-      localStorage.setItem('token', data.access_token);
-      localStorage.setItem('user_id', String(data.user_id));
-      localStorage.setItem('username', data.username);
-      localStorage.setItem('email', data.email);
+      // Обновляем контекст и localStorage через AuthContext
+      login(data.access_token, {
+        id: data.user_id,
+        username: data.username,
+        email: data.email,
+      });
       router.push('/');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Неизвестная ошибка');
