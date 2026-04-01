@@ -33,18 +33,12 @@ interface Party {
   created_at: string;
 }
 
+// ─── KickModal ───────────────────────────────────────────────
 function KickModal({
-  member,
-  partyId,
-  token,
-  onClose,
-  onKicked,
+  member, partyId, token, onClose, onKicked,
 }: {
-  member: PartyMember;
-  partyId: number;
-  token: string;
-  onClose: () => void;
-  onKicked: () => void;
+  member: PartyMember; partyId: number; token: string;
+  onClose: () => void; onKicked: () => void;
 }) {
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
@@ -57,33 +51,32 @@ function KickModal({
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ reason: reason.trim() || null }),
       });
-      if (res.ok) {
-        toast(`🚫 ${member.username} исключён из компании`, 'info');
-        onKicked();
-        onClose();
-      } else {
-        const d = await res.json();
-        toast(d.detail || 'Ошибка', 'error');
-      }
+      if (res.ok) { toast(`🚫 ${member.username} исключён из компании`, 'info'); onKicked(); onClose(); }
+      else { const d = await res.json(); toast(d.detail || 'Ошибка', 'error'); }
     } catch {}
     setLoading(false);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-3xl bg-white shadow-2xl border border-gray-100 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div
+        className="w-full max-w-sm rounded-3xl overflow-hidden"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)' }}
+      >
         <div className="px-6 py-4 bg-gradient-to-r from-red-500 to-pink-600 flex items-center justify-between">
           <h3 className="text-white font-black text-base">🚫 Исключить участника</h3>
           <button onClick={onClose} className="text-white/70 hover:text-white transition text-xl">✕</button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
-          <p className="text-sm text-gray-700">
+          <p className="text-sm" style={{ color: 'var(--text)' }}>
             Вы собираетесь исключить <span className="font-bold">{member.username}</span> из компании.
           </p>
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Причина (необязательно)</label>
+            <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+              Причина (необязательно)
+            </label>
             <textarea
-              className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100 transition resize-none"
+              className="gv-input resize-none"
               rows={3}
               maxLength={200}
               placeholder="Укажите причину исключения..."
@@ -94,15 +87,14 @@ function KickModal({
         </div>
         <div className="px-6 pb-6 flex gap-3">
           <button
-            onClick={handleKick}
-            disabled={loading}
+            onClick={handleKick} disabled={loading}
             className="flex-1 rounded-xl bg-gradient-to-r from-red-500 to-pink-600 py-2.5 text-sm text-white font-bold hover:opacity-90 transition disabled:opacity-50">
             {loading ? 'Исключение...' : '🚫 Исключить'}
           </button>
           <button
-            onClick={onClose}
-            disabled={loading}
-            className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition disabled:opacity-50">
+            onClick={onClose} disabled={loading}
+            className="rounded-xl px-4 py-2.5 text-sm font-medium transition disabled:opacity-50 hover:opacity-80"
+            style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
             Отмена
           </button>
         </div>
@@ -111,13 +103,14 @@ function KickModal({
   );
 }
 
+// ─── EditPartyModal ───────────────────────────────────────────
 function EditPartyModal({ party, onClose, onSaved }: { party: Party; onClose: () => void; onSaved: () => void }) {
   const { token } = useAuth();
+  const router = useRouter();
   const [form, setForm] = useState({ title: party.title, description: party.description ?? '', max_members: party.max_members });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
   const acceptedCount = party.members.filter(m => m.status === 'accepted').length + 1;
 
   const handleSave = async () => {
@@ -141,39 +134,46 @@ function EditPartyModal({ party, onClose, onSaved }: { party: Party; onClose: ()
     try {
       await fetch(`${API_BASE}/parties/${party.id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       toast('Компания удалена', 'info');
-      onSaved();
-      onClose();
+      onSaved(); onClose();
       router.push(`/events/${party.event_id}`);
     } catch { setError('Ошибка удаления'); }
     setDeleting(false);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl border border-gray-100 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div
+        className="w-full max-w-md rounded-3xl overflow-hidden"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)' }}
+      >
         <div className="px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 flex items-center justify-between">
           <h3 className="text-white font-black text-base">✏️ Редактировать компанию</h3>
           <button onClick={onClose} className="text-white/70 hover:text-white transition text-xl">✕</button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
-          {error && <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-2.5 text-sm text-red-600">{error}</div>}
+          {error && (
+            <div className="rounded-xl px-4 py-2.5 text-sm"
+              style={{ background: 'var(--error-hl)', border: '1px solid color-mix(in oklch, var(--error) 30%, transparent)', color: 'var(--error)' }}>
+              {error}
+            </div>
+          )}
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Название *</label>
-            <input className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition"
-              value={form.title} maxLength={60} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+            <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Название *</label>
+            <input className="gv-input" value={form.title} maxLength={60}
+              onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Описание</label>
-            <textarea className="rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition resize-none"
-              rows={3} maxLength={300} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+            <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Описание</label>
+            <textarea className="gv-input resize-none" rows={3} maxLength={300}
+              value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Макс. участников</label>
+            <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Макс. участников</label>
             <div className="flex items-center gap-3">
-              <input type="number" min={Math.max(2, acceptedCount)} max={20}
-                className="w-24 rounded-xl border border-gray-200 px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition"
-                value={form.max_members} onChange={e => setForm(f => ({ ...f, max_members: Math.min(20, Math.max(2, Number(e.target.value))) }))} />
-              <span className="text-xs text-gray-400">Принято: {acceptedCount}</span>
+              <input type="number" min={Math.max(2, acceptedCount)} max={20} className="gv-input w-24"
+                value={form.max_members}
+                onChange={e => setForm(f => ({ ...f, max_members: Math.min(20, Math.max(2, Number(e.target.value))) }))} />
+              <span className="text-xs" style={{ color: 'var(--text-faint)' }}>Принято: {acceptedCount}</span>
             </div>
           </div>
         </div>
@@ -183,9 +183,13 @@ function EditPartyModal({ party, onClose, onSaved }: { party: Party; onClose: ()
             {saving ? 'Сохранение...' : 'Сохранить'}
           </button>
           <button onClick={onClose} disabled={saving || deleting}
-            className="rounded-xl border border-gray-200 px-4 py-2.5 text-sm text-gray-600 hover:bg-gray-50 transition disabled:opacity-50">Отмена</button>
+            className="rounded-xl px-4 py-2.5 text-sm font-medium transition disabled:opacity-50 hover:opacity-80"
+            style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
+            Отмена
+          </button>
           <button onClick={handleDelete} disabled={saving || deleting}
-            className="rounded-xl border border-red-200 px-3 py-2.5 text-red-500 hover:bg-red-50 transition disabled:opacity-50 text-sm">
+            className="rounded-xl px-3 py-2.5 text-sm transition disabled:opacity-50 hover:opacity-80"
+            style={{ border: '1px solid color-mix(in oklch, var(--error) 40%, transparent)', color: 'var(--error)', background: 'var(--error-hl)' }}>
             {deleting ? '...' : '🗑️'}
           </button>
         </div>
@@ -194,6 +198,7 @@ function EditPartyModal({ party, onClose, onSaved }: { party: Party; onClose: ()
   );
 }
 
+// ─── PartyDetailPage ─────────────────────────────────────────
 export default function PartyDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -216,28 +221,17 @@ export default function PartyDetailPage() {
       const res = await fetch(`${API_BASE}/parties/detail/${partyId}`);
       if (!res.ok) throw new Error(`Ошибка ${res.status}`);
       const data: Party = await res.json();
-
-      // Detect status changes via polling
       if (token && prevPartyRef.current) {
         try {
           const payload = JSON.parse(atob(token.split('.')[1]));
           const uid: number = payload.id ?? payload.user_id;
           const oldMe = prevPartyRef.current.members.find(m => m.user_id === uid);
           const newMe = data.members.find(m => m.user_id === uid);
-          if (oldMe?.status === 'pending' && newMe?.status === 'accepted') {
-            toast('🎉 Вас приняли в компанию!', 'success');
-          }
-          // Rejected: record deleted, so oldMe exists but newMe is gone
-          if (oldMe?.status === 'pending' && !newMe) {
-            toast('Ваша заявка отклонена', 'error');
-          }
-          // Kicked
-          if (oldMe?.status === 'accepted' && !newMe) {
-            toast('Вы были исключены из компании', 'error');
-          }
+          if (oldMe?.status === 'pending' && newMe?.status === 'accepted') toast('🎉 Вас приняли в компанию!', 'success');
+          if (oldMe?.status === 'pending' && !newMe) toast('Ваша заявка отклонена', 'error');
+          if (oldMe?.status === 'accepted' && !newMe) toast('Вы были исключены из компании', 'error');
         } catch {}
       }
-
       prevPartyRef.current = data;
       setParty(data);
     } catch (e: unknown) {
@@ -248,7 +242,6 @@ export default function PartyDetailPage() {
   }, [partyId, token]);
 
   useEffect(() => { fetchParty(); }, [fetchParty]);
-
   useEffect(() => {
     const id = setInterval(fetchParty, POLL_INTERVAL);
     return () => clearInterval(id);
@@ -258,10 +251,7 @@ export default function PartyDetailPage() {
     if (!token) { window.location.href = '/login'; return; }
     setActionLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/parties/${partyId}/join`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(`${API_BASE}/parties/${partyId}/join`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) { toast('🙋 Заявка отправлена!', 'info'); fetchParty(); }
       else { const d = await res.json(); toast(d.detail || 'Ошибка', 'error'); }
     } catch {}
@@ -272,10 +262,7 @@ export default function PartyDetailPage() {
     if (!token) return;
     setActionLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/parties/${partyId}/leave`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(`${API_BASE}/parties/${partyId}/leave`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) { toast('Вы покинули компанию', 'info'); setChatOpen(false); fetchParty(); }
     } catch {}
     setActionLoading(false);
@@ -285,10 +272,7 @@ export default function PartyDetailPage() {
     if (!token) return;
     setActionLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/parties/${partyId}/close`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(`${API_BASE}/parties/${partyId}/close`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) { toast('🔒 Набор закрыт', 'info'); fetchParty(); }
     } catch {}
     setActionLoading(false);
@@ -298,42 +282,43 @@ export default function PartyDetailPage() {
     if (!token) return;
     setActionLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/parties/${partyId}/members/${userId}/${action}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        toast(action === 'accept' ? '✅ Принят' : '❌ Отклонён', action === 'accept' ? 'success' : 'error');
-        fetchParty();
-      }
+      const res = await fetch(`${API_BASE}/parties/${partyId}/members/${userId}/${action}`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) { toast(action === 'accept' ? '✅ Принят' : '❌ Отклонён', action === 'accept' ? 'success' : 'error'); fetchParty(); }
     } catch {}
     setActionLoading(false);
   };
 
+  // ── Loading skeleton ──
   if (loading) return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
       <div className="container mx-auto px-4 py-10 animate-pulse">
-        <div className="h-4 w-40 bg-gray-200 rounded mb-8" />
-        <div className="h-8 bg-gray-200 rounded w-1/2 mb-4" />
-        <div className="h-4 bg-gray-200 rounded w-1/3 mb-8" />
+        <div className="h-4 w-40 rounded mb-8" style={{ background: 'var(--surface-2)' }} />
+        <div className="h-8 rounded w-1/2 mb-4" style={{ background: 'var(--surface-2)' }} />
+        <div className="h-4 rounded w-1/3 mb-8" style={{ background: 'var(--surface-2)' }} />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-3">{[1,2,3].map(i=><div key={i} className="h-16 bg-gray-200 rounded-2xl"/>)}</div>
-          <div className="space-y-3">{[1,2].map(i=><div key={i} className="h-24 bg-gray-200 rounded-2xl"/>)}</div>
+          <div className="lg:col-span-2 space-y-3">
+            {[1,2,3].map(i => <div key={i} className="h-16 rounded-2xl" style={{ background: 'var(--surface-2)' }} />)}
+          </div>
+          <div className="space-y-3">
+            {[1,2].map(i => <div key={i} className="h-24 rounded-2xl" style={{ background: 'var(--surface-2)' }} />)}
+          </div>
         </div>
       </div>
     </div>
   );
 
+  // ── Error state ──
   if (error || !party) return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
       <div className="flex flex-col items-center justify-center py-32 gap-4">
         <span className="text-5xl">😕</span>
-        <p className="text-gray-600">Не удалось загрузить компанию</p>
-        <p className="text-red-400 text-sm">{error}</p>
-        <button onClick={() => router.back()}
-          className="bg-indigo-600 text-white px-6 py-2 rounded-xl hover:bg-indigo-700 transition">Назад</button>
+        <p style={{ color: 'var(--text-muted)' }}>Не удалось загрузить компанию</p>
+        <p className="text-sm" style={{ color: 'var(--error)' }}>{error}</p>
+        <button onClick={() => router.back()} className="gv-btn-primary">
+          Назад
+        </button>
       </div>
     </div>
   );
@@ -344,59 +329,66 @@ export default function PartyDetailPage() {
   const acceptedCount = party.members.filter(m => m.status === 'accepted').length;
   const pendingCount = party.members.filter(m => m.status === 'pending').length;
   const isFull = acceptedCount + 1 >= party.max_members;
-  // Can join: logged in, not creator, NO membership record at all (rejected users have record deleted), open, not full
   const canJoin = !!token && !isCreator && !myMembership && party.is_open && !isFull;
-  // Can leave: logged in, not creator, accepted members ONLY
   const canLeave = !!token && !isCreator && myMembership?.status === 'accepted';
 
-  const statusColor = (status: string) => ({
-    pending: 'text-amber-600 bg-amber-50 border-amber-200',
-    accepted: 'text-emerald-600 bg-emerald-50 border-emerald-200',
-    rejected: 'text-red-400 bg-red-50 border-red-200',
-  }[status] ?? '');
+  const statusBadgeStyle = (status: string): React.CSSProperties => ({
+    pending:  { background: 'var(--warning-hl)',  color: 'var(--warning)',  border: '1px solid color-mix(in oklch, var(--warning) 30%, transparent)' },
+    accepted: { background: 'var(--success-hl)',  color: 'var(--success)',  border: '1px solid color-mix(in oklch, var(--success) 30%, transparent)' },
+    rejected: { background: 'var(--error-hl)',    color: 'var(--error)',    border: '1px solid color-mix(in oklch, var(--error) 30%, transparent)' },
+  }[status] ?? {});
 
-  const statusLabel = (status: string) => ({
-    pending: '⏳ Ожидает',
-    accepted: '✅ Принят',
-    rejected: '❌ Отклонён',
-  }[status] ?? status);
+  const statusLabel = (status: string) => ({ pending: '⏳ Ожидает', accepted: '✅ Принят', rejected: '❌ Отклонён' }[status] ?? status);
+
+  const cardStyle: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' };
+  const myRowStyle: React.CSSProperties = { background: 'color-mix(in oklch, var(--primary) 8%, var(--surface))', border: '1px solid color-mix(in oklch, var(--primary) 25%, transparent)' };
+  const normalRowStyle: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)' };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
       <main className="container mx-auto px-4 py-10">
         {/* Breadcrumb */}
-        <nav className="flex items-center gap-2 text-sm text-gray-400 mb-8">
-          <Link href="/events" className="hover:text-indigo-600 transition">События</Link>
+        <nav className="flex items-center gap-2 text-sm mb-8" style={{ color: 'var(--text-muted)' }}>
+          <Link href="/events" className="transition hover:opacity-80" style={{ color: 'var(--text-muted)' }}>События</Link>
           <span>/</span>
-          <Link href={`/events/${party.event_id}`} className="hover:text-indigo-600 transition">Событие</Link>
+          <Link href={`/events/${party.event_id}`} className="transition hover:opacity-80" style={{ color: 'var(--text-muted)' }}>Событие</Link>
           <span>/</span>
-          <span className="text-gray-700 line-clamp-1 max-w-xs">{party.title}</span>
+          <span className="line-clamp-1 max-w-xs" style={{ color: 'var(--text)' }}>{party.title}</span>
         </nav>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* LEFT — members */}
+          {/* LEFT */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Header */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            {/* Header card */}
+            <div className="rounded-2xl p-6" style={cardStyle}>
               <div className="flex items-start gap-4">
                 <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-3xl shrink-0">🎉</div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h1 className="text-2xl font-black text-gray-900">{party.title}</h1>
-                    {!party.is_open && <span className="text-sm bg-gray-100 text-gray-500 px-3 py-1 rounded-full">🔒 Набор закрыт</span>}
-                    {isFull && party.is_open && <span className="text-sm bg-orange-50 text-orange-500 px-3 py-1 rounded-full">👥 Заполнена</span>}
+                    <h1 className="text-2xl font-black" style={{ color: 'var(--text)' }}>{party.title}</h1>
+                    {!party.is_open && (
+                      <span className="text-sm px-3 py-1 rounded-full"
+                        style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>🔒 Набор закрыт</span>
+                    )}
+                    {isFull && party.is_open && (
+                      <span className="text-sm px-3 py-1 rounded-full"
+                        style={{ background: 'var(--warning-hl)', color: 'var(--warning)' }}>👥 Заполнена</span>
+                    )}
                   </div>
-                  {party.description && <p className="text-gray-500 mt-2">{party.description}</p>}
-                  <p className="text-sm text-gray-400 mt-2">
-                    Создатель: <span className="font-semibold text-gray-700">{party.creator_username}</span>
+                  {party.description && (
+                    <p className="mt-2" style={{ color: 'var(--text-muted)' }}>{party.description}</p>
+                  )}
+                  <p className="text-sm mt-2" style={{ color: 'var(--text-faint)' }}>
+                    Создатель: <span className="font-semibold" style={{ color: 'var(--text-muted)' }}>{party.creator_username}</span>
                     {' · '}{acceptedCount + 1}/{party.max_members} участников
                     {' · '}Создана {new Date(party.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
                   </p>
                 </div>
                 {isCreator && (
                   <button onClick={() => setShowEdit(true)}
-                    className="shrink-0 text-sm px-3 py-1.5 border border-gray-200 rounded-xl text-gray-500 hover:bg-gray-50 transition">
+                    className="shrink-0 text-sm px-3 py-1.5 rounded-xl transition hover:opacity-80"
+                    style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
                     ✏️ Редактировать
                   </button>
                 )}
@@ -404,91 +396,86 @@ export default function PartyDetailPage() {
             </div>
 
             {/* Members list */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            <div className="rounded-2xl p-6" style={cardStyle}>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="font-bold text-gray-900">Участники</h2>
+                <h2 className="font-bold" style={{ color: 'var(--text)' }}>Участники</h2>
                 {pendingCount > 0 && isCreator && (
-                  <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-1 rounded-full font-semibold">⏳ {pendingCount} ожидают</span>
+                  <span className="text-xs px-2 py-1 rounded-full font-semibold"
+                    style={{ background: 'var(--warning-hl)', color: 'var(--warning)', border: '1px solid color-mix(in oklch, var(--warning) 30%, transparent)' }}>
+                    ⏳ {pendingCount} ожидают
+                  </span>
                 )}
               </div>
               <div className="space-y-3">
-                {/* Creator row — always shown, never duplicated */}
-                <div className={`flex items-center gap-3 p-3 rounded-xl border ${
-                  isCreator ? 'border-indigo-200 bg-indigo-50/40' : 'border-gray-100 bg-white'
-                }`}>
+                {/* Creator row */}
+                <div className="flex items-center gap-3 p-3 rounded-xl"
+                  style={isCreator ? myRowStyle : normalRowStyle}>
                   <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
                     {party.creator_username.slice(0, 2).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">
+                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
                       {party.creator_username}
-                      {isCreator && <span className="ml-1 text-xs text-indigo-400">(вы)</span>}
+                      {isCreator && <span className="ml-1 text-xs" style={{ color: 'var(--primary)' }}>(вы)</span>}
                     </p>
                   </div>
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full border text-indigo-600 bg-indigo-50 border-indigo-200">👑 Создатель</span>
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                    style={{ background: 'var(--primary-hl)', color: 'var(--primary)', border: '1px solid color-mix(in oklch, var(--primary) 30%, transparent)' }}>
+                    👑 Создатель
+                  </span>
                 </div>
 
-                {/* Other members — creator excluded on backend */}
+                {/* Other members */}
                 {party.members.map(member => (
-                  <div key={member.user_id} className={`flex items-center gap-3 p-3 rounded-xl border ${
-                    member.user_id === myId ? 'border-indigo-200 bg-indigo-50/40' : 'border-gray-100 bg-white'
-                  }`}>
+                  <div key={member.user_id} className="flex items-center gap-3 p-3 rounded-xl"
+                    style={member.user_id === myId ? myRowStyle : normalRowStyle}>
                     <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
                       {member.username.slice(0, 2).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate">
+                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
                         {member.username}
-                        {member.user_id === myId && <span className="ml-1 text-xs text-indigo-400">(вы)</span>}
+                        {member.user_id === myId && <span className="ml-1 text-xs" style={{ color: 'var(--primary)' }}>(вы)</span>}
                       </p>
-                      {member.city && <p className="text-xs text-gray-400">📍 {member.city}</p>}
+                      {member.city && <p className="text-xs" style={{ color: 'var(--text-faint)' }}>📍 {member.city}</p>}
                     </div>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${statusColor(member.status)}`}>
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={statusBadgeStyle(member.status)}>
                       {statusLabel(member.status)}
                     </span>
-                    {/* Creator actions on pending */}
                     {isCreator && member.status === 'pending' && (
                       <div className="flex gap-1 ml-1">
-                        <button
-                          onClick={() => handleDecision(member.user_id, 'accept')}
-                          disabled={actionLoading}
-                          className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition disabled:opacity-50"
-                          title="Принять">✓</button>
-                        <button
-                          onClick={() => handleDecision(member.user_id, 'reject')}
-                          disabled={actionLoading}
-                          className="text-xs px-2 py-1 bg-red-400 text-white rounded-lg hover:bg-red-500 transition disabled:opacity-50"
-                          title="Отклонить">✗</button>
+                        <button onClick={() => handleDecision(member.user_id, 'accept')} disabled={actionLoading}
+                          className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition disabled:opacity-50" title="Принять">✓</button>
+                        <button onClick={() => handleDecision(member.user_id, 'reject')} disabled={actionLoading}
+                          className="text-xs px-2 py-1 bg-red-400 text-white rounded-lg hover:bg-red-500 transition disabled:opacity-50" title="Отклонить">✗</button>
                       </div>
                     )}
-                    {/* Creator kick accepted members */}
                     {isCreator && member.status === 'accepted' && (
-                      <button
-                        onClick={() => setKickTarget(member)}
-                        disabled={actionLoading}
-                        className="ml-1 text-xs px-2 py-1 bg-red-50 text-red-500 border border-red-200 rounded-lg hover:bg-red-100 transition disabled:opacity-50"
-                        title="Исключить">
-                        🚫 Кик
-                      </button>
+                      <button onClick={() => setKickTarget(member)} disabled={actionLoading}
+                        className="ml-1 text-xs px-2 py-1 rounded-lg transition disabled:opacity-50 hover:opacity-80"
+                        style={{ background: 'var(--error-hl)', color: 'var(--error)', border: '1px solid color-mix(in oklch, var(--error) 30%, transparent)' }}
+                        title="Исключить">🚫 Кик</button>
                     )}
                   </div>
                 ))}
                 {party.members.length === 0 && (
-                  <p className="text-sm text-gray-400 text-center py-4">Участников пока нет. Будьте первым!</p>
+                  <p className="text-sm text-center py-4" style={{ color: 'var(--text-faint)' }}>Участников пока нет. Будьте первым!</p>
                 )}
               </div>
             </div>
 
             {/* Chat */}
             {isAcceptedMember && user && (
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="rounded-2xl overflow-hidden" style={cardStyle}>
                 <button
                   onClick={() => setChatOpen(v => !v)}
-                  className={`w-full px-6 py-4 flex items-center justify-between font-semibold text-sm transition ${
-                    chatOpen ? 'bg-indigo-50 text-indigo-700' : 'text-gray-700 hover:bg-gray-50'
-                  }`}>
+                  className="w-full px-6 py-4 flex items-center justify-between font-semibold text-sm transition"
+                  style={{
+                    background: chatOpen ? 'color-mix(in oklch, var(--primary) 8%, var(--surface))' : 'var(--surface)',
+                    color: chatOpen ? 'var(--primary)' : 'var(--text)',
+                  }}>
                   <span>💬 Чат компании</span>
-                  <span>{chatOpen ? '▲' : '▼'}</span>
+                  <span style={{ color: 'var(--text-faint)' }}>{chatOpen ? '▲' : '▼'}</span>
                 </button>
                 {chatOpen && (
                   <PartyChat partyId={party.id} currentUserId={myId} currentUsername={myUsername} isAcceptedMember={true} />
@@ -497,64 +484,67 @@ export default function PartyDetailPage() {
             )}
           </div>
 
-          {/* RIGHT — info & actions */}
+          {/* RIGHT */}
           <div className="space-y-5">
             {/* Actions */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-3">
-              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Действия</h3>
-
+            <div className="rounded-2xl p-6 space-y-3" style={cardStyle}>
+              <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Действия</h3>
               {canJoin && (
                 <button onClick={handleJoin} disabled={actionLoading}
-                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white text-sm font-bold py-2.5 rounded-xl hover:opacity-90 transition disabled:opacity-60">
+                  className="w-full gv-btn-primary text-sm py-2.5">
                   {actionLoading ? 'Отправка...' : '🙋 Подать заявку'}
                 </button>
               )}
               {canLeave && (
                 <button onClick={handleLeave} disabled={actionLoading}
-                  className="w-full text-sm py-2.5 text-red-500 border border-red-200 rounded-xl hover:bg-red-50 transition disabled:opacity-60">
+                  className="w-full text-sm py-2.5 rounded-xl transition disabled:opacity-60 hover:opacity-80"
+                  style={{ color: 'var(--error)', border: '1px solid color-mix(in oklch, var(--error) 40%, transparent)', background: 'var(--error-hl)' }}>
                   {actionLoading ? '...' : '🚪 Покинуть компанию'}
                 </button>
               )}
               {isCreator && party.is_open && (
                 <button onClick={handleClose} disabled={actionLoading}
-                  className="w-full text-sm py-2.5 text-gray-500 border border-gray-200 rounded-xl hover:bg-gray-50 transition disabled:opacity-60">
+                  className="w-full text-sm py-2.5 rounded-xl transition disabled:opacity-60 hover:opacity-80"
+                  style={{ color: 'var(--text-muted)', border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
                   🔒 Закрыть набор
                 </button>
               )}
               {myMembership?.status === 'pending' && (
-                <p className="text-xs text-center text-amber-500">⏳ Ваша заявка рассматривается</p>
+                <p className="text-xs text-center" style={{ color: 'var(--warning)' }}>⏳ Ваша заявка рассматривается</p>
               )}
               {!token && (
                 <Link href="/login"
-                  className="block w-full text-center text-sm py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition font-semibold">
+                  className="block w-full text-center text-sm py-2.5 rounded-xl font-semibold transition hover:opacity-90"
+                  style={{ background: 'var(--primary)', color: 'var(--text-inverse)' }}>
                   Войти чтобы вступить
                 </Link>
               )}
             </div>
 
             {/* Info */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-3">
-              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wide">Информация</h3>
+            <div className="rounded-2xl p-6 space-y-3" style={cardStyle}>
+              <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Информация</h3>
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Статус набора</span>
-                <span className={`font-semibold ${party.is_open ? 'text-emerald-600' : 'text-gray-400'}`}>
+                <span style={{ color: 'var(--text-muted)' }}>Статус набора</span>
+                <span className="font-semibold" style={{ color: party.is_open ? 'var(--success)' : 'var(--text-faint)' }}>
                   {party.is_open ? '🟢 Открыт' : '🔒 Закрыт'}
                 </span>
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Участников</span>
-                <span className="font-semibold text-gray-800">{acceptedCount + 1} / {party.max_members}</span>
+              <div className="flex items-center justify-between text-sm" style={{ borderTop: '1px solid var(--divider)', paddingTop: '0.75rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Участников</span>
+                <span className="font-semibold" style={{ color: 'var(--text)' }}>{acceptedCount + 1} / {party.max_members}</span>
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500">Заявок</span>
-                <span className="font-semibold text-amber-600">{pendingCount}</span>
+              <div className="flex items-center justify-between text-sm" style={{ borderTop: '1px solid var(--divider)', paddingTop: '0.75rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Заявок</span>
+                <span className="font-semibold" style={{ color: 'var(--warning)' }}>{pendingCount}</span>
               </div>
             </div>
 
             {/* Back to event */}
             <Link
               href={`/events/${party.event_id}`}
-              className="block w-full text-center text-sm py-2.5 border border-gray-200 text-gray-500 rounded-xl hover:bg-gray-50 transition">
+              className="block w-full text-center text-sm py-2.5 rounded-xl transition hover:opacity-80"
+              style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
               ← Вернуться к событию
             </Link>
           </div>
@@ -565,13 +555,8 @@ export default function PartyDetailPage() {
         <EditPartyModal party={party} onClose={() => setShowEdit(false)} onSaved={fetchParty} />
       )}
       {kickTarget && token && (
-        <KickModal
-          member={kickTarget}
-          partyId={partyId}
-          token={token}
-          onClose={() => setKickTarget(null)}
-          onKicked={fetchParty}
-        />
+        <KickModal member={kickTarget} partyId={partyId} token={token}
+          onClose={() => setKickTarget(null)} onKicked={fetchParty} />
       )}
     </div>
   );

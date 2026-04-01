@@ -95,14 +95,14 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
       href={`/events/${event.kudago_id}`}
       className="group flex flex-col rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
       style={{
-        background: 'var(--card-bg, var(--surface, #ffffff))',
-        border: '1px solid var(--border, #e5e7eb)',
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
       }}
     >
       {/* IMAGE */}
       <div
         className="relative w-full h-48 overflow-hidden"
-        style={{ background: 'var(--surface-2, #f3f4f6)' }}
+        style={{ background: 'var(--surface-2)' }}
       >
         {event.cover_url ? (
           <Image
@@ -114,7 +114,7 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center"
-            style={{ background: 'linear-gradient(135deg, var(--surface-2, #eef2ff), var(--surface-3, #f5f3ff))' }}>
+            style={{ background: 'linear-gradient(135deg, var(--surface-2), var(--surface-off))' }}>
             <span className="text-5xl opacity-30">🎭</span>
           </div>
         )}
@@ -133,12 +133,15 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
           )}
         </div>
 
+        {/* Date badge — тёмный фон с белым текстом: хорошо виден в любой теме поверх изображения */}
         {event.start_date && (
           <span
-            className="absolute bottom-3 right-3 text-xs font-semibold px-2 py-1 rounded-lg shadow"
+            className="absolute bottom-3 right-3 text-xs font-semibold px-2.5 py-1 rounded-lg shadow-md"
             style={{
-              background: 'var(--surface-overlay, rgba(255,255,255,0.92))',
-              color: 'var(--text, #1f2937)',
+              background: 'rgba(0,0,0,0.62)',
+              color: '#ffffff',
+              backdropFilter: 'blur(4px)',
+              WebkitBackdropFilter: 'blur(4px)',
             }}
           >
             {formatDate(event.start_date, event.start_time)}
@@ -158,8 +161,8 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
                   key={toKey(cat, i)}
                   className="text-xs font-medium px-2 py-0.5 rounded-full"
                   style={{
-                    background: 'var(--badge-bg, #eef2ff)',
-                    color: 'var(--accent, #4f46e5)',
+                    background: 'var(--primary-hl)',
+                    color: 'var(--primary)',
                   }}
                 >
                   {translateTag(raw)}
@@ -171,7 +174,7 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
 
         <h3
           className="font-bold text-base leading-snug line-clamp-2 transition-colors"
-          style={{ color: 'var(--text, #111827)' }}
+          style={{ color: 'var(--text)' }}
         >
           {event.title}
         </h3>
@@ -179,7 +182,7 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
         {event.place_title && (
           <div
             className="flex items-center gap-1.5 text-sm"
-            style={{ color: 'var(--text-muted, #9ca3af)' }}
+            style={{ color: 'var(--text-muted)' }}
           >
             <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -193,18 +196,18 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
 
         <div
           className="mt-auto pt-3 flex items-center justify-between"
-          style={{ borderTop: '1px solid var(--border-subtle, #f3f4f6)' }}
+          style={{ borderTop: '1px solid var(--divider)' }}
         >
           {event.is_free ? (
-            <span className="text-emerald-500 font-bold text-sm">Бесплатно</span>
+            <span className="font-bold text-sm" style={{ color: 'var(--success)' }}>Бесплатно</span>
           ) : event.price ? (
-            <span className="font-bold text-sm" style={{ color: 'var(--text, #111827)' }}>{event.price}</span>
+            <span className="font-bold text-sm" style={{ color: 'var(--text)' }}>{event.price}</span>
           ) : (
-            <span className="text-sm" style={{ color: 'var(--text-faint, #d1d5db)' }}>—</span>
+            <span className="text-sm" style={{ color: 'var(--text-faint)' }}>—</span>
           )}
           <span
-            className="text-xs font-medium transition-colors"
-            style={{ color: 'var(--accent, #6366f1)' }}
+            className="text-xs font-medium"
+            style={{ color: 'var(--primary)' }}
           >
             Подробнее →
           </span>
