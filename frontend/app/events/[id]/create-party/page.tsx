@@ -20,7 +20,6 @@ export default function CreatePartyPage() {
 
   useEffect(() => {
     if (token === null) {
-      // token is null only after hydration when user is truly not logged in
       router.replace('/login');
     }
   }, [token, router]);
@@ -53,18 +52,30 @@ export default function CreatePartyPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
       <main className="container mx-auto px-4 py-10 max-w-lg">
-        <nav className="flex items-center gap-2 text-sm text-gray-400 mb-8">
-          <Link href="/events" className="hover:text-indigo-600 transition">События</Link>
+        <nav className="flex items-center gap-2 text-sm mb-8" style={{ color: 'var(--text-muted)' }}>
+          <Link href="/events" className="transition hover:opacity-80" style={{ color: 'var(--text-muted)' }}>
+            События
+          </Link>
           <span>/</span>
-          <Link href={`/events/${eventId}`} className="hover:text-indigo-600 transition">Мероприятие</Link>
+          <Link href={`/events/${eventId}`} className="transition hover:opacity-80" style={{ color: 'var(--text-muted)' }}>
+            Мероприятие
+          </Link>
           <span>/</span>
-          <span className="text-gray-700">Создать компанию</span>
+          <span style={{ color: 'var(--text)' }}>Создать компанию</span>
         </nav>
 
-        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+        <div
+          className="rounded-3xl overflow-hidden"
+          style={{
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            boxShadow: 'var(--shadow-sm)',
+          }}
+        >
+          {/* Header */}
           <div className="px-8 py-6 bg-gradient-to-r from-purple-600 to-pink-600">
             <div className="flex items-center gap-3">
               <span className="text-4xl">🎉</span>
@@ -75,15 +86,27 @@ export default function CreatePartyPage() {
             </div>
           </div>
 
+          {/* Form */}
           <div className="px-8 py-6 flex flex-col gap-5">
             {error && (
-              <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
+              <div
+                className="rounded-xl px-4 py-3 text-sm"
+                style={{
+                  background: 'var(--error-hl)',
+                  border: '1px solid color-mix(in oklch, var(--error) 30%, transparent)',
+                  color: 'var(--error)',
+                }}
+              >
                 {error}
               </div>
             )}
 
+            {/* Title */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+              <label
+                className="text-xs font-bold uppercase tracking-wide"
+                style={{ color: 'var(--text-muted)' }}
+              >
                 Название компании *
               </label>
               <input
@@ -91,13 +114,19 @@ export default function CreatePartyPage() {
                 value={form.title}
                 onChange={e => setForm(f => ({ ...f, title: e.target.value.slice(0, 60) }))}
                 placeholder="Например: Приятная компания на вечер"
-                className="rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 transition"
+                className="gv-input"
               />
-              <span className="text-xs text-gray-400 text-right">{form.title.length}/60</span>
+              <span className="text-xs text-right" style={{ color: 'var(--text-faint)' }}>
+                {form.title.length}/60
+              </span>
             </div>
 
+            {/* Description */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+              <label
+                className="text-xs font-bold uppercase tracking-wide"
+                style={{ color: 'var(--text-muted)' }}
+              >
                 Описание
               </label>
               <textarea
@@ -105,49 +134,77 @@ export default function CreatePartyPage() {
                 onChange={e => setForm(f => ({ ...f, description: e.target.value.slice(0, 300) }))}
                 placeholder="Кого ищешь, планы на вечер, пожелания..."
                 rows={4}
-                className="rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-purple-400 focus:ring-2 focus:ring-purple-100 transition resize-none"
+                className="gv-input resize-none"
               />
-              <span className="text-xs text-gray-400 text-right">{form.description.length}/300</span>
+              <span className="text-xs text-right" style={{ color: 'var(--text-faint)' }}>
+                {form.description.length}/300
+              </span>
             </div>
 
+            {/* Max members */}
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+              <label
+                className="text-xs font-bold uppercase tracking-wide"
+                style={{ color: 'var(--text-muted)' }}
+              >
                 Макс. количество участников
               </label>
               <div className="flex items-center gap-4">
                 <button
                   type="button"
                   onClick={() => setForm(f => ({ ...f, max_members: Math.max(2, f.max_members - 1) }))}
-                  className="w-10 h-10 rounded-full border border-gray-200 text-gray-600 hover:bg-gray-100 transition font-bold text-lg"
+                  className="w-10 h-10 rounded-full font-bold text-lg transition hover:opacity-80"
+                  style={{
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-muted)',
+                    background: 'var(--surface-2)',
+                  }}
                 >
                   −
                 </button>
-                <span className="text-2xl font-black text-gray-900 w-8 text-center">
+                <span
+                  className="text-2xl font-black w-8 text-center"
+                  style={{ color: 'var(--text)' }}
+                >
                   {form.max_members}
                 </span>
                 <button
                   type="button"
                   onClick={() => setForm(f => ({ ...f, max_members: Math.min(20, f.max_members + 1) }))}
-                  className="w-10 h-10 rounded-full border border-gray-200 text-gray-600 hover:bg-gray-100 transition font-bold text-lg"
+                  className="w-10 h-10 rounded-full font-bold text-lg transition hover:opacity-80"
+                  style={{
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-muted)',
+                    background: 'var(--surface-2)',
+                  }}
                 >
                   +
                 </button>
-                <span className="text-sm text-gray-400">человек (включая вас)</span>
+                <span className="text-sm" style={{ color: 'var(--text-faint)' }}>
+                  человек (включая вас)
+                </span>
               </div>
             </div>
           </div>
 
+          {/* Actions */}
           <div className="px-8 pb-8 flex gap-3">
             <button
               onClick={handleCreate}
               disabled={creating || !form.title.trim()}
-              className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 rounded-xl hover:opacity-90 transition disabled:opacity-60 shadow-md shadow-purple-100"
+              className="flex-1 text-white font-bold py-3 rounded-xl hover:opacity-90 transition disabled:opacity-60 bg-gradient-to-r from-purple-600 to-pink-600"
+              style={{ boxShadow: 'var(--shadow-md)' }}
             >
               {creating ? 'Создание...' : '🎉 Создать компанию'}
             </button>
             <Link
               href={`/events/${eventId}`}
-              className="px-5 py-3 rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50 transition text-sm font-medium"
+              className="px-5 py-3 rounded-xl text-sm font-medium transition hover:opacity-80"
+              style={{
+                border: '1px solid var(--border)',
+                color: 'var(--text-muted)',
+                background: 'var(--surface-2)',
+              }}
             >
               Отмена
             </Link>
