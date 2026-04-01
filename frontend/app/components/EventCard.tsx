@@ -23,113 +23,45 @@ export interface KudaGoEvent {
   site_url: string;
 }
 
-// Перевод слагов / английских названий KudaGo на русский
 const CATEGORY_RU: Record<string, string> = {
-  // Категории
-  concert: 'Концерт',
-  theater: 'Театр',
-  theatre: 'Театр',
-  exhibition: 'Выставка',
-  movie: 'Кино',
-  cinema: 'Кино',
-  festival: 'Фестиваль',
-  sport: 'Спорт',
-  sports: 'Спорт',
-  other: 'Разное',
-  holiday: 'Праздник',
-  'kids-holiday': 'Детский праздник',
-  education: 'Образование',
-  lecture: 'Лекция',
-  'business-events': 'Бизнес',
-  business: 'Бизнес',
-  tour: 'Экскурсия',
-  excursion: 'Экскурсия',
-  party: 'Вечеринка',
-  nightlife: 'Ночная жизнь',
-  'stand-up': 'Стэндап',
-  standup: 'Стэндап',
-  comedy: 'Комедия',
-  opera: 'Опера',
-  ballet: 'Балет',
-  musical: 'Мюзикл',
-  'open-air': 'Опен-эйр',
-  'art-object': 'Искусство',
-  art: 'Искусство',
-  circus: 'Цирк',
-  magic: 'Фокус',
-  'master-class': 'Мастер-класс',
-  masterclass: 'Мастер-класс',
-  workshop: 'Мастер-класс',
-  'photo-video': 'Фото/Видео',
-  photography: 'Фотография',
-  literature: 'Литература',
-  book: 'Книги',
-  food: 'Еда',
-  'food-wine': 'Еда и вино',
-  yoga: 'Йога',
-  fitness: 'Фитнес',
-  dance: 'Танцы',
-  gaming: 'Игры',
-  'computer-games': 'Игры',
-  quest: 'Квест',
-  charity: 'Благотворительность',
-  fashion: 'Мода',
-  science: 'Наука',
-  technology: 'Технологии',
-  health: 'Здоровье',
-  nature: 'Природа',
-  animals: 'Животные',
-  religion: 'Религия',
-  'social-activity': 'Общество',
-  networking: 'Нетворкинг',
+  concert: 'Концерт', theater: 'Театр', theatre: 'Театр',
+  exhibition: 'Выставка', movie: 'Кино', cinema: 'Кино',
+  festival: 'Фестиваль', sport: 'Спорт', sports: 'Спорт',
+  other: 'Разное', holiday: 'Праздник', 'kids-holiday': 'Детский праздник',
+  education: 'Образование', lecture: 'Лекция', 'business-events': 'Бизнес',
+  business: 'Бизнес', tour: 'Экскурсия', excursion: 'Экскурсия',
+  party: 'Вечеринка', nightlife: 'Ночная жизнь',
+  'stand-up': 'Стэндап', standup: 'Стэндап', comedy: 'Комедия',
+  opera: 'Опера', ballet: 'Балет', musical: 'Мюзикл',
+  'open-air': 'Опен-эйр', 'art-object': 'Искусство', art: 'Искусство',
+  circus: 'Цирк', magic: 'Фокус',
+  'master-class': 'Мастер-класс', masterclass: 'Мастер-класс', workshop: 'Мастер-класс',
+  'photo-video': 'Фото/Видео', photography: 'Фотография',
+  literature: 'Литература', book: 'Книги',
+  food: 'Еда', 'food-wine': 'Еда и вино',
+  yoga: 'Йога', fitness: 'Фитнес', dance: 'Танцы',
+  gaming: 'Игры', 'computer-games': 'Игры', quest: 'Квест',
+  charity: 'Благотворительность', fashion: 'Мода',
+  science: 'Наука', technology: 'Технологии', health: 'Здоровье',
+  nature: 'Природа', animals: 'Животные', religion: 'Религия',
+  'social-activity': 'Общество', networking: 'Нетворкинг',
   'speed-dating': 'Спид-дейтинг',
-  // Теги KudaGo
-  'rock-music': 'Рок',
-  'jazz-blues': 'Джаз / Блюз',
-  jazz: 'Джаз',
-  blues: 'Блюз',
-  'classical-music': 'Классика',
-  classical: 'Классика',
-  'electronic-music': 'Электронная музыка',
-  electronic: 'Электронная музыка',
-  'hip-hop': 'Хип-хоп',
-  pop: 'Поп',
-  'pop-music': 'Поп',
-  metal: 'Метал',
-  folk: 'Фольк',
-  reggae: 'Регги',
-  'r-n-b': 'R&B',
-  soul: 'Саул',
-  funk: 'Фанк',
-  acoustic: 'Акустика',
-  'world-music': 'Этническая музыка',
-  // Кино
-  'action-movie': 'Боевик',
-  comedy_film: 'Комедия',
-  drama: 'Драма',
-  horror: 'Ужасы',
-  thriller: 'Триллер',
-  cartoon: 'Мультфильм',
-  animation: 'Анимация',
-  documentary: 'Документальный',
-  'sci-fi': 'Фантастика',
-  fantasy: 'Фэнтези',
-  adventure: 'Приключения',
-  // Театр
-  drama_play: 'Драма',
-  puppet: 'Кукольный театр',
-  improvisation: 'Импровизация',
-  'performance-art': 'Перформанс',
+  'rock-music': 'Рок', 'jazz-blues': 'Джаз / Блюз', jazz: 'Джаз',
+  blues: 'Блюз', 'classical-music': 'Классика', classical: 'Классика',
+  'electronic-music': 'Электронная музыка', electronic: 'Электронная музыка',
+  'hip-hop': 'Хип-хоп', pop: 'Поп', 'pop-music': 'Поп', metal: 'Метал',
+  folk: 'Фольк', reggae: 'Регги', 'r-n-b': 'R&B', soul: 'Саул',
+  funk: 'Фанк', acoustic: 'Акустика', 'world-music': 'Этническая музыка',
+  'action-movie': 'Боевик', comedy_film: 'Комедия', drama: 'Драма',
+  horror: 'Ужасы', thriller: 'Триллер', cartoon: 'Мультфильм',
+  animation: 'Анимация', documentary: 'Документальный',
+  'sci-fi': 'Фантастика', fantasy: 'Фэнтези', adventure: 'Приключения',
+  drama_play: 'Драма', puppet: 'Кукольный театр',
+  improvisation: 'Импровизация', 'performance-art': 'Перформанс',
   performance: 'Перформанс',
-  // Другое
-  'for-kids': 'Для детей',
-  kids: 'Для детей',
-  children: 'Для детей',
-  family: 'Семейное',
-  free: 'Бесплатно',
-  online: 'Онлайн',
-  outdoor: 'На улице',
-  indoor: 'В помещении',
+  'for-kids': 'Для детей', kids: 'Для детей', children: 'Для детей',
+  family: 'Семейное', free: 'Бесплатно', online: 'Онлайн',
+  outdoor: 'На улице', indoor: 'В помещении',
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -140,17 +72,13 @@ function toLabel(val: any): string {
   if (typeof val === 'object') return String(val.name ?? val.slug ?? val.id ?? '');
   return String(val);
 }
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toKey(val: any, idx: number): string {
   return toLabel(val) || String(idx);
 }
-
 function translateTag(raw: string): string {
-  const key = raw.toLowerCase().trim();
-  return CATEGORY_RU[key] ?? raw;
+  return CATEGORY_RU[raw.toLowerCase().trim()] ?? raw;
 }
-
 function formatDate(dateStr: string | null, timeStr: string | null): string {
   if (!dateStr) return '';
   return (
@@ -165,9 +93,17 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
   return (
     <Link
       href={`/events/${event.kudago_id}`}
-      className="group flex flex-col bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+      className="group flex flex-col rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+      style={{
+        background: 'var(--card-bg, var(--surface, #ffffff))',
+        border: '1px solid var(--border, #e5e7eb)',
+      }}
     >
-      <div className="relative w-full h-48 bg-gray-100 overflow-hidden">
+      {/* IMAGE */}
+      <div
+        className="relative w-full h-48 overflow-hidden"
+        style={{ background: 'var(--surface-2, #f3f4f6)' }}
+      >
         {event.cover_url ? (
           <Image
             src={event.cover_url}
@@ -177,7 +113,8 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
             unoptimized
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
+          <div className="w-full h-full flex items-center justify-center"
+            style={{ background: 'linear-gradient(135deg, var(--surface-2, #eef2ff), var(--surface-3, #f5f3ff))' }}>
             <span className="text-5xl opacity-30">🎭</span>
           </div>
         )}
@@ -197,12 +134,19 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
         </div>
 
         {event.start_date && (
-          <span className="absolute bottom-3 right-3 bg-white/90 text-gray-800 text-xs font-semibold px-2 py-1 rounded-lg shadow">
+          <span
+            className="absolute bottom-3 right-3 text-xs font-semibold px-2 py-1 rounded-lg shadow"
+            style={{
+              background: 'var(--surface-overlay, rgba(255,255,255,0.92))',
+              color: 'var(--text, #1f2937)',
+            }}
+          >
             {formatDate(event.start_date, event.start_time)}
           </span>
         )}
       </div>
 
+      {/* BODY */}
       <div className="flex flex-col flex-1 p-4 gap-2">
         {event.categories?.length > 0 && (
           <div className="flex flex-wrap gap-1">
@@ -212,7 +156,11 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
               return (
                 <span
                   key={toKey(cat, i)}
-                  className="text-xs bg-indigo-50 text-indigo-600 font-medium px-2 py-0.5 rounded-full"
+                  className="text-xs font-medium px-2 py-0.5 rounded-full"
+                  style={{
+                    background: 'var(--badge-bg, #eef2ff)',
+                    color: 'var(--accent, #4f46e5)',
+                  }}
                 >
                   {translateTag(raw)}
                 </span>
@@ -221,39 +169,43 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
           </div>
         )}
 
-        <h3 className="font-bold text-gray-900 text-base leading-snug line-clamp-2 group-hover:text-indigo-600 transition-colors">
+        <h3
+          className="font-bold text-base leading-snug line-clamp-2 transition-colors"
+          style={{ color: 'var(--text, #111827)' }}
+        >
           {event.title}
         </h3>
 
         {event.place_title && (
-          <div className="flex items-center gap-1.5 text-sm text-gray-400">
+          <div
+            className="flex items-center gap-1.5 text-sm"
+            style={{ color: 'var(--text-muted, #9ca3af)' }}
+          >
             <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-              />
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-              />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
             </svg>
             <span className="line-clamp-1">{event.place_title}</span>
           </div>
         )}
 
-        <div className="mt-auto pt-3 border-t border-gray-50 flex items-center justify-between">
+        <div
+          className="mt-auto pt-3 flex items-center justify-between"
+          style={{ borderTop: '1px solid var(--border-subtle, #f3f4f6)' }}
+        >
           {event.is_free ? (
-            <span className="text-emerald-600 font-bold text-sm">Бесплатно</span>
+            <span className="text-emerald-500 font-bold text-sm">Бесплатно</span>
           ) : event.price ? (
-            <span className="text-gray-800 font-bold text-sm">{event.price}</span>
+            <span className="font-bold text-sm" style={{ color: 'var(--text, #111827)' }}>{event.price}</span>
           ) : (
-            <span className="text-gray-300 text-sm">—</span>
+            <span className="text-sm" style={{ color: 'var(--text-faint, #d1d5db)' }}>—</span>
           )}
-          <span className="text-xs text-indigo-400 group-hover:text-indigo-600 font-medium transition-colors">
+          <span
+            className="text-xs font-medium transition-colors"
+            style={{ color: 'var(--accent, #6366f1)' }}
+          >
             Подробнее →
           </span>
         </div>

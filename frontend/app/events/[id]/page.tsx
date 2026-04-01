@@ -88,6 +88,12 @@ function formatDate(dateStr: string | null, timeStr: string | null): string {
   }) + (timeStr ? ` в ${timeStr.slice(0, 5)}` : '');
 }
 
+// Переиспользуемый стиль «карточка» через CSS-переменные
+const cardStyle: React.CSSProperties = {
+  background: 'var(--card-bg, var(--surface, #ffffff))',
+  border: '1px solid var(--border, #e5e7eb)',
+};
+
 export default function EventDetailPage() {
   const params  = useParams();
   const router  = useRouter();
@@ -107,20 +113,24 @@ export default function EventDetailPage() {
   }, [eventId]);
 
   if (loading) return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
       <div className="container mx-auto px-4 py-10 animate-pulse">
-        <div className="h-4 w-40 bg-gray-200 rounded mb-8" />
+        <div className="h-4 w-40 rounded mb-8" style={{ background: 'var(--surface-2, #e5e7eb)' }} />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           <div className="lg:col-span-2 space-y-4">
-            <div className="w-full h-96 bg-gray-200 rounded-3xl" />
-            <div className="flex gap-2">{[1,2,3].map(i=><div key={i} className="w-20 h-14 bg-gray-200 rounded-xl"/>)}</div>
-            <div className="h-8 bg-gray-200 rounded w-3/4" />
-            {[1,2,3].map(i=><div key={i} className="h-4 bg-gray-200 rounded"/>)}
+            <div className="w-full h-96 rounded-3xl" style={{ background: 'var(--surface-2, #e5e7eb)' }} />
+            <div className="flex gap-2">
+              {[1,2,3].map(i => (
+                <div key={i} className="w-20 h-14 rounded-xl" style={{ background: 'var(--surface-2, #e5e7eb)' }} />
+              ))}
+            </div>
+            <div className="h-8 rounded w-3/4" style={{ background: 'var(--surface-2, #e5e7eb)' }} />
+            {[1,2,3].map(i => <div key={i} className="h-4 rounded" style={{ background: 'var(--surface-2, #e5e7eb)' }} />)}
           </div>
           <div className="space-y-4">
-            <div className="h-40 bg-gray-200 rounded-3xl" />
-            <div className="h-40 bg-gray-200 rounded-3xl" />
+            <div className="h-40 rounded-3xl" style={{ background: 'var(--surface-2, #e5e7eb)' }} />
+            <div className="h-40 rounded-3xl" style={{ background: 'var(--surface-2, #e5e7eb)' }} />
           </div>
         </div>
       </div>
@@ -128,14 +138,19 @@ export default function EventDetailPage() {
   );
 
   if (error || !event) return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
       <div className="flex flex-col items-center justify-center py-32 gap-4">
         <span className="text-5xl">😕</span>
-        <p className="text-gray-600">Не удалось загрузить событие</p>
+        <p style={{ color: 'var(--text-muted)' }}>Не удалось загрузить событие</p>
         <p className="text-red-400 text-sm">{error}</p>
-        <button onClick={() => router.back()}
-          className="bg-indigo-600 text-white px-6 py-2 rounded-xl hover:bg-indigo-700 transition">Назад</button>
+        <button
+          onClick={() => router.back()}
+          className="px-6 py-2 rounded-xl font-bold hover:opacity-90 transition"
+          style={{ background: 'var(--accent, #4f46e5)', color: '#fff' }}
+        >
+          Назад
+        </button>
       </div>
     </div>
   );
@@ -144,21 +159,31 @@ export default function EventDetailPage() {
   const ageLabel = event.age_restriction ? `${event.age_restriction}+` : null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
       <main className="container mx-auto px-4 py-10">
-        <nav className="flex items-center gap-2 text-sm text-gray-400 mb-8">
-          <Link href="/events" className="hover:text-indigo-600 transition">События</Link>
+        {/* Breadcrumb */}
+        <nav className="flex items-center gap-2 text-sm mb-8" style={{ color: 'var(--text-muted)' }}>
+          <Link href="/events" className="hover:underline transition" style={{ color: 'var(--text-muted)' }}>
+            События
+          </Link>
           <span>/</span>
-          <span className="text-gray-700 line-clamp-1 max-w-xs">{event.short_title || event.title}</span>
+          <span className="line-clamp-1 max-w-xs" style={{ color: 'var(--text)' }}>
+            {event.short_title || event.title}
+          </span>
         </nav>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-          {/* LEFT COLUMN */}
+          {/* ── LEFT COLUMN ────────────────────────────── */}
           <div className="lg:col-span-2 space-y-6">
+
+            {/* Gallery */}
             {images.length > 0 ? (
               <div className="space-y-3">
-                <div className="relative w-full h-80 sm:h-[420px] rounded-3xl overflow-hidden bg-gray-100 shadow-lg">
+                <div
+                  className="relative w-full h-80 sm:h-[420px] rounded-3xl overflow-hidden shadow-lg"
+                  style={{ background: 'var(--surface-2, #e5e7eb)' }}
+                >
                   <Image src={images[activeImg].url} alt={event.title}
                     fill className="object-cover" unoptimized priority />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
@@ -198,66 +223,90 @@ export default function EventDetailPage() {
                 )}
               </div>
             ) : (
-              <div className="w-full h-64 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-3xl flex items-center justify-center">
+              <div
+                className="w-full h-64 rounded-3xl flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg, var(--surface-2, #eef2ff), var(--surface-3, #f5f3ff))' }}
+              >
                 <span className="text-6xl opacity-20">🎭</span>
               </div>
             )}
 
+            {/* Title + badges */}
             <div>
               <div className="flex flex-wrap gap-2 mb-3">
                 {event.is_free && (
-                  <span className="bg-emerald-100 text-emerald-700 text-sm font-bold px-3 py-1 rounded-full">Бесплатно</span>
+                  <span className="bg-emerald-500/20 text-emerald-500 text-sm font-bold px-3 py-1 rounded-full">
+                    Бесплатно
+                  </span>
                 )}
                 {ageLabel && (
-                  <span className="bg-gray-100 text-gray-700 text-sm font-bold px-3 py-1 rounded-full">{ageLabel}</span>
+                  <span
+                    className="text-sm font-bold px-3 py-1 rounded-full"
+                    style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
+                  >
+                    {ageLabel}
+                  </span>
                 )}
                 {Array.isArray(event.categories) && event.categories.map((cat, i) => {
                   const label = toLabel(cat);
                   if (!label) return null;
                   return (
-                    <span key={toKey(cat, i)} className="bg-indigo-50 text-indigo-600 text-sm font-medium px-3 py-1 rounded-full">
+                    <span
+                      key={toKey(cat, i)}
+                      className="text-sm font-medium px-3 py-1 rounded-full"
+                      style={{ background: 'var(--badge-bg, #eef2ff)', color: 'var(--accent, #4f46e5)' }}
+                    >
                       {translateTag(label)}
                     </span>
                   );
                 })}
               </div>
-              <h1 className="text-3xl font-black text-gray-900 leading-tight">{event.title}</h1>
+              <h1 className="text-3xl font-black leading-tight" style={{ color: 'var(--text)' }}>
+                {event.title}
+              </h1>
             </div>
 
+            {/* Description */}
             {event.description && (
-              <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-                <h2 className="text-base font-bold text-gray-800 mb-3">О мероприятии</h2>
-                <p className="text-gray-600 leading-relaxed whitespace-pre-line">{event.description}</p>
+              <div className="rounded-2xl p-6 shadow-sm" style={cardStyle}>
+                <h2 className="text-base font-bold mb-3" style={{ color: 'var(--text)' }}>О мероприятии</h2>
+                <p className="leading-relaxed whitespace-pre-line" style={{ color: 'var(--text-muted)' }}>
+                  {event.description}
+                </p>
                 {event.body_text && event.body_text !== event.description && (
-                  <p className="text-gray-500 leading-relaxed mt-4 whitespace-pre-line">{event.body_text}</p>
+                  <p className="leading-relaxed mt-4 whitespace-pre-line" style={{ color: 'var(--text-muted)' }}>
+                    {event.body_text}
+                  </p>
                 )}
               </div>
             )}
 
-            {/* ===== КТО ИДЁТ ===== */}
             <EventAttendees eventId={eventId} />
-
-            {/* ===== КОМПАНИИ ===== */}
             <EventParty eventId={eventId} />
 
+            {/* Participants */}
             {Array.isArray(event.participants) && event.participants.length > 0 && (
-              <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-                <h2 className="text-base font-bold text-gray-800 mb-4">Участники</h2>
+              <div className="rounded-2xl p-6 shadow-sm" style={cardStyle}>
+                <h2 className="text-base font-bold mb-4" style={{ color: 'var(--text)' }}>Участники</h2>
                 <div className="flex flex-wrap gap-4">
                   {event.participants.map((p, i) => (
                     <div key={i} className="flex items-center gap-3">
                       {p.image_url ? (
-                        <div className="relative w-10 h-10 rounded-full overflow-hidden bg-gray-100 shrink-0">
+                        <div className="relative w-10 h-10 rounded-full overflow-hidden shrink-0"
+                          style={{ background: 'var(--surface-2)' }}>
                           <Image src={p.image_url} alt={p.name} fill className="object-cover" unoptimized />
                         </div>
                       ) : (
-                        <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm shrink-0">
+                        <div
+                          className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0"
+                          style={{ background: 'var(--badge-bg, #eef2ff)', color: 'var(--accent, #4f46e5)' }}
+                        >
                           {p.name?.charAt(0) || '?'}
                         </div>
                       )}
                       <div>
-                        <p className="font-semibold text-gray-800 text-sm">{p.name}</p>
-                        {p.role && <p className="text-xs text-gray-400">{toLabel(p.role)}</p>}
+                        <p className="font-semibold text-sm" style={{ color: 'var(--text)' }}>{p.name}</p>
+                        {p.role && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{toLabel(p.role)}</p>}
                       </div>
                     </div>
                   ))}
@@ -265,13 +314,18 @@ export default function EventDetailPage() {
               </div>
             )}
 
+            {/* Tags */}
             {Array.isArray(event.tags) && event.tags.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {event.tags.map((tag, i) => {
                   const label = toLabel(tag);
                   if (!label) return null;
                   return (
-                    <span key={toKey(tag, i)} className="text-xs bg-gray-100 text-gray-500 px-3 py-1 rounded-full">
+                    <span
+                      key={toKey(tag, i)}
+                      className="text-xs px-3 py-1 rounded-full"
+                      style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
+                    >
                       #{translateTag(label)}
                     </span>
                   );
@@ -280,67 +334,107 @@ export default function EventDetailPage() {
             )}
           </div>
 
-          {/* RIGHT COLUMN */}
+          {/* ── RIGHT COLUMN ───────────────────────────── */}
           <div className="space-y-5 lg:sticky lg:top-24 self-start">
-            <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-              <p className="text-xs text-gray-400 uppercase font-semibold tracking-wide mb-1">Стоимость</p>
+
+            {/* Price card */}
+            <div className="rounded-2xl p-6 shadow-sm" style={cardStyle}>
+              <p
+                className="text-xs uppercase font-semibold tracking-wide mb-1"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Стоимость
+              </p>
               {event.is_free ? (
-                <p className="text-2xl font-black text-emerald-600 mb-4">Бесплатно</p>
+                <p className="text-2xl font-black text-emerald-500 mb-4">Бесплатно</p>
               ) : event.price ? (
-                <p className="text-xl font-black text-gray-900 mb-4">{event.price}</p>
+                <p className="text-xl font-black mb-4" style={{ color: 'var(--text)' }}>{event.price}</p>
               ) : (
-                <p className="text-gray-400 mb-4">Цена не указана</p>
+                <p className="mb-4" style={{ color: 'var(--text-muted)' }}>Цена не указана</p>
               )}
               {event.site_url && (
-                <a href={event.site_url} target="_blank" rel="noopener noreferrer"
-                  className="block w-full text-center bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-xl font-bold hover:opacity-90 shadow-md shadow-indigo-100 transition">
+                <a
+                  href={event.site_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block w-full text-center py-3 rounded-xl font-bold hover:opacity-90 transition shadow-md"
+                  style={{ background: 'var(--accent-gradient, linear-gradient(135deg,#4f46e5,#7c3aed))', color: '#fff' }}
+                >
                   Перейти на сайт ↗
                 </a>
               )}
             </div>
 
+            {/* Dates */}
             {Array.isArray(event.all_dates) && event.all_dates.length > 0 && (
-              <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-                <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-4">📅 Даты</h2>
+              <div className="rounded-2xl p-6 shadow-sm" style={cardStyle}>
+                <h2
+                  className="text-xs font-bold uppercase tracking-wide mb-4"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  📅 Даты
+                </h2>
                 <ul className="space-y-2">
                   {event.all_dates.slice(0, 5).map((d, i) => (
-                    <li key={i} className="text-sm text-gray-600 flex items-start gap-2">
-                      <span className="text-indigo-400 mt-0.5">→</span>
+                    <li key={i} className="text-sm flex items-start gap-2" style={{ color: 'var(--text-muted)' }}>
+                      <span style={{ color: 'var(--accent)' }} className="mt-0.5">→</span>
                       <span>
                         {d.is_endless ? 'Постоянно' : formatDate(d.start, d.start_time)}
                         {d.end && !d.is_endless && d.end !== d.start && (
-                          <span className="text-gray-400"> — {formatDate(d.end, d.end_time)}</span>
+                          <span style={{ color: 'var(--text-faint, #9ca3af)' }}>
+                            {' '}— {formatDate(d.end, d.end_time)}
+                          </span>
                         )}
                       </span>
                     </li>
                   ))}
                   {event.all_dates.length > 5 && (
-                    <li className="text-xs text-gray-400">+{event.all_dates.length - 5} дат</li>
+                    <li className="text-xs" style={{ color: 'var(--text-faint)' }}>
+                      +{event.all_dates.length - 5} дат
+                    </li>
                   )}
                 </ul>
               </div>
             )}
 
+            {/* Place */}
             {(event.place_title || event.place_address) && (
-              <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-                <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-4">📍 Место</h2>
-                {event.place_title && <p className="font-bold text-gray-900 mb-1">{event.place_title}</p>}
-                {event.place_address && <p className="text-sm text-gray-500 mb-2">{event.place_address}</p>}
+              <div className="rounded-2xl p-6 shadow-sm" style={cardStyle}>
+                <h2
+                  className="text-xs font-bold uppercase tracking-wide mb-4"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  📍 Место
+                </h2>
+                {event.place_title && (
+                  <p className="font-bold mb-1" style={{ color: 'var(--text)' }}>{event.place_title}</p>
+                )}
+                {event.place_address && (
+                  <p className="text-sm mb-2" style={{ color: 'var(--text-muted)' }}>{event.place_address}</p>
+                )}
                 {event.place_subway && (
-                  <p className="text-sm text-gray-500 flex items-center gap-1.5">
+                  <p className="text-sm flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
                     <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block" />
                     {toLabel(event.place_subway)}
                   </p>
                 )}
                 {event.place_phone && (
-                  <a href={`tel:${event.place_phone}`} className="text-sm text-indigo-600 hover:text-indigo-800 mt-2 block">
+                  <a
+                    href={`tel:${event.place_phone}`}
+                    className="text-sm mt-2 block hover:underline"
+                    style={{ color: 'var(--accent)' }}
+                  >
                     {event.place_phone}
                   </a>
                 )}
                 {event.lat && event.lon && (
-                  <a href={`https://yandex.ru/maps/?pt=${event.lon},${event.lat}&z=16`}
-                    target="_blank" rel="noopener noreferrer"
-                    className="mt-4 flex items-center gap-2 text-sm text-indigo-500 hover:text-indigo-700 font-medium">
+                  <a
+                    href={`https://yandex.ru/maps/?pt=${event.lon},${event.lat}&z=16`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-4 flex items-center gap-2 text-sm font-medium hover:underline"
+                    style={{ color: 'var(--accent)' }}
+                  >
                     🗺️ Открыть на карте
                   </a>
                 )}
