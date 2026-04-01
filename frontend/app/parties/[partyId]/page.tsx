@@ -77,7 +77,9 @@ function KickModal({
           <button onClick={onClose} className="text-white/70 hover:text-white transition text-xl">✕</button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
-          <p className="text-sm text-gray-700">Вы собираетесь исключить <span className="font-bold">{member.username}</span> из компании.</p>
+          <p className="text-sm text-gray-700">
+            Вы собираетесь исключить <span className="font-bold">{member.username}</span> из компании.
+          </p>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Причина (необязательно)</label>
             <textarea
@@ -116,7 +118,7 @@ function EditPartyModal({ party, onClose, onSaved }: { party: Party; onClose: ()
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
-  const acceptedCount = party.members.filter(m => m.status === 'accepted').length + 1; // +1 creator
+  const acceptedCount = party.members.filter(m => m.status === 'accepted').length + 1;
 
   const handleSave = async () => {
     if (!form.title.trim()) { setError('Название обязательно'); return; }
@@ -225,11 +227,12 @@ export default function PartyDetailPage() {
           if (oldMe?.status === 'pending' && newMe?.status === 'accepted') {
             toast('🎉 Вас приняли в компанию!', 'success');
           }
-          if (oldMe?.status === 'pending' && newMe?.status === 'rejected') {
+          // Rejected: record deleted, so oldMe exists but newMe is gone
+          if (oldMe?.status === 'pending' && !newMe) {
             toast('Ваша заявка отклонена', 'error');
           }
-          // Detect kick
-          if (oldMe && !newMe && oldMe.status === 'accepted') {
+          // Kicked
+          if (oldMe?.status === 'accepted' && !newMe) {
             toast('Вы были исключены из компании', 'error');
           }
         } catch {}
@@ -340,9 +343,11 @@ export default function PartyDetailPage() {
   const isAcceptedMember = isCreator || myMembership?.status === 'accepted';
   const acceptedCount = party.members.filter(m => m.status === 'accepted').length;
   const pendingCount = party.members.filter(m => m.status === 'pending').length;
-  const isFull = acceptedCount + 1 >= party.max_members; // +1 for creator
-  const canJoin = !!token && !isCreator && (!myMembership || myMembership.status === 'rejected') && party.is_open && !isFull;
-  const canLeave = !!token && !isCreator && myMembership && myMembership.status !== 'rejected';
+  const isFull = acceptedCount + 1 >= party.max_members;
+  // Can join: logged in, not creator, NO membership record at all (rejected users have record deleted), open, not full
+  const canJoin = !!token && !isCreator && !myMembership && party.is_open && !isFull;
+  // Can leave: logged in, not creator, accepted members ONLY
+  const canLeave = !!token && !isCreator && myMembership?.status === 'accepted';
 
   const statusColor = (status: string) => ({
     pending: 'text-amber-600 bg-amber-50 border-amber-200',
@@ -407,7 +412,7 @@ export default function PartyDetailPage() {
                 )}
               </div>
               <div className="space-y-3">
-                {/* Creator row */}
+                {/* Creator row — always shown, never duplicated */}
                 <div className={`flex items-center gap-3 p-3 rounded-xl border ${
                   isCreator ? 'border-indigo-200 bg-indigo-50/40' : 'border-gray-100 bg-white'
                 }`}>
@@ -423,7 +428,7 @@ export default function PartyDetailPage() {
                   <span className="text-xs font-semibold px-2 py-0.5 rounded-full border text-indigo-600 bg-indigo-50 border-indigo-200">👑 Создатель</span>
                 </div>
 
-                {/* Other members */}
+                {/* Other members — creator excluded on backend */}
                 {party.members.map(member => (
                   <div key={member.user_id} className={`flex items-center gap-3 p-3 rounded-xl border ${
                     member.user_id === myId ? 'border-indigo-200 bg-indigo-50/40' : 'border-gray-100 bg-white'
@@ -518,9 +523,6 @@ export default function PartyDetailPage() {
               )}
               {myMembership?.status === 'pending' && (
                 <p className="text-xs text-center text-amber-500">⏳ Ваша заявка рассматривается</p>
-              )}
-              {myMembership?.status === 'rejected' && !canJoin && (
-                <p className="text-xs text-center text-red-400">Ваша заявка была отклонена</p>
               )}
               {!token && (
                 <Link href="/login"

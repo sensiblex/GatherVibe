@@ -32,7 +32,6 @@ export interface Party {
 }
 
 function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) {
-  const router = useRouter();
   const { user, token } = useAuth();
   const myId = user?.id ?? null;
 
@@ -41,11 +40,11 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
   const isCreator = myId !== null && party.creator_id === myId;
   const myMembership = party.members.find(m => m.user_id === myId);
   const acceptedCount = party.members.filter(m => m.status === 'accepted').length;
-  const isFull = acceptedCount + 1 >= party.max_members; // +1 for creator
-  // Only show join if: logged in, not creator, no membership (or was rejected), open, not full
-  const canJoin = !!token && !isCreator && (!myMembership || myMembership.status === 'rejected') && party.is_open && !isFull;
-  // Can leave only if accepted member (not creator, not rejected)
-  const canLeave = !!token && !isCreator && myMembership && myMembership.status !== 'rejected';
+  const isFull = acceptedCount + 1 >= party.max_members;
+  // Can join: logged in, not creator, no active membership, open, not full
+  const canJoin = !!token && !isCreator && !myMembership && party.is_open && !isFull;
+  // Can leave: logged in, not creator, accepted member only
+  const canLeave = !!token && !isCreator && myMembership?.status === 'accepted';
 
   const handleJoinRequest = async () => {
     if (!token) { window.location.href = '/login'; return; }
@@ -93,7 +92,6 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
             <h3 className="font-bold text-gray-900 text-sm">{party.title}</h3>
             {isCreator && <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-semibold">👑 Вы создатель</span>}
             {myMembership?.status === 'accepted' && !isCreator && <span className="text-xs bg-emerald-100 text-emerald-600 px-2 py-0.5 rounded-full font-semibold">✅ Участник</span>}
-            {myMembership?.status === 'rejected' && <span className="text-xs bg-red-100 text-red-500 px-2 py-0.5 rounded-full font-semibold">❌ Отклонён</span>}
             {myMembership?.status === 'pending' && <span className="text-xs bg-amber-100 text-amber-600 px-2 py-0.5 rounded-full font-semibold">⏳ Ожидает</span>}
             {!party.is_open && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">🔒 Закрыта</span>}
             {isFull && party.is_open && <span className="text-xs bg-orange-50 text-orange-500 px-2 py-0.5 rounded-full">👥 Заполнена</span>}
@@ -104,6 +102,7 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
           </p>
           {party.description && <p className="text-xs text-gray-500 mt-1 line-clamp-1">{party.description}</p>}
         </div>
+        {/* Link to separate party detail page */}
         <Link
           href={`/parties/${party.id}`}
           className="shrink-0 text-xs px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition font-semibold"
@@ -124,7 +123,7 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
             {loading ? '...' : 'Покинуть'}
           </button>
         )}
-        {!isCreator && !canJoin && !canLeave && !myMembership?.status && !party.is_open && (
+        {!isCreator && !canJoin && !canLeave && !party.is_open && (
           <p className="text-xs text-gray-400 py-2">Набор в эту компанию закрыт</p>
         )}
         {!isCreator && isFull && party.is_open && !myMembership && (
@@ -132,9 +131,6 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
         )}
         {myMembership?.status === 'pending' && (
           <p className="text-xs text-amber-500 py-2">⏳ Ваша заявка рассматривается</p>
-        )}
-        {myMembership?.status === 'rejected' && canJoin && (
-          <p className="text-xs text-red-400 py-1">Ваша заявка была отклонена. Можете подать снова.</p>
         )}
       </div>
     </div>
@@ -163,11 +159,12 @@ export default function EventParty({ eventId }: { eventId: string }) {
             if (!oldParty) return;
             const oldMe = oldParty.members.find(m => m.user_id === myId);
             const newMe = newParty.members.find(m => m.user_id === myId);
-            if (!oldMe || !newMe) return;
-            if (oldMe.status === 'pending' && newMe.status === 'accepted') {
+            // accepted
+            if (oldMe?.status === 'pending' && newMe?.status === 'accepted') {
               toast(`🎉 Вас приняли в компанию «${newParty.title}»!`, 'success');
             }
-            if (oldMe.status === 'pending' && newMe.status === 'rejected') {
+            // rejected — oldMe existed, newMe gone (record deleted)
+            if (oldMe?.status === 'pending' && !newMe) {
               toast(`Заявка в «${newParty.title}» отклонена`, 'error');
             }
           });

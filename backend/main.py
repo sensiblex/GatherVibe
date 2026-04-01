@@ -21,6 +21,7 @@ from models.event import Event
 from schemas import EventCreate, EventResponse
 import kudago_api
 from pydantic import BaseModel
+import time
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -171,7 +172,8 @@ def get_events(
     city: Optional[str] = None, category: Optional[str] = None,
     search: Optional[str] = None, db: Session = Depends(get_db)
 ):
-    query = db.query(Event).filter(Event.is_active == True)
+    now = datetime.utcnow()
+    query = db.query(Event).filter(Event.is_active == True, Event.date_time >= now)
     if city:
         query = query.filter(Event.city.ilike(f"%{city}%"))
     if category:
@@ -228,14 +230,36 @@ def kudago_get_events(
     search: Optional[str] = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
+    actual_since: Optional[int] = Query(default=None),
+    actual_until: Optional[int] = Query(default=None),
 ):
     try:
+        # Always filter from now so past events never appear
+        now_ts = int(time.time())
+        effective_since = max(actual_since, now_ts) if actual_since else now_ts
+        effective_until = actual_until  # may be None (no upper bound)
+
         if search:
-            raw = kudago_api.search(query=search, ctype="event", location=location, is_free=is_free, page=page, page_size=page_size)
+            raw = kudago_api.search(
+                query=search, ctype="event", location=location,
+                is_free=is_free, page=page, page_size=page_size,
+                actual_since=effective_since, actual_until=effective_until,
+            )
         else:
-            raw = kudago_api.get_events(location=location, categories=categories, is_free=is_free, page=page, page_size=page_size)
+            raw = kudago_api.get_events(
+                location=location, categories=categories, is_free=is_free,
+                page=page, page_size=page_size,
+                actual_since=effective_since, actual_until=effective_until,
+            )
         events = kudago_api.parse_events(raw)
-        return {"count": raw.get("count", len(events)), "next": raw.get("next"), "previous": raw.get("previous"), "page": page, "page_size": page_size, "results": events}
+        return {
+            "count": raw.get("count", len(events)),
+            "next": raw.get("next"),
+            "previous": raw.get("previous"),
+            "page": page,
+            "page_size": page_size,
+            "results": events,
+        }
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
 
@@ -417,7 +441,7 @@ class PartyOut(BaseModel):
 
 def _build_party_out(party: EventParty, db: Session) -> PartyOut:
     creator = db.query(User).filter(User.id == party.creator_id).first()
-    # Exclude the creator from members list to avoid duplication
+    # Only include non-creator members to avoid duplication
     members_rows = db.query(PartyMember, User).join(User, PartyMember.user_id == User.id).filter(
         PartyMember.party_id == party.id,
         PartyMember.user_id != party.creator_id
@@ -473,7 +497,7 @@ def create_party(
     db.add(party)
     db.commit()
     db.refresh(party)
-    # Do NOT add creator as a PartyMember — creator is shown separately
+    # Creator is NOT added as a PartyMember — shown separately as creator
     return _build_party_out(party, db)
 
 
@@ -554,7 +578,7 @@ def join_party(
     ).first()
     if existing:
         if existing.status == 'rejected':
-            # Allow re-applying after rejection by deleting old entry
+            # Allow re-applying after rejection
             db.delete(existing)
             db.commit()
         else:
@@ -582,7 +606,7 @@ def leave_party(
     ).first()
     if not member:
         raise HTTPException(status_code=404, detail="Вы не состоите в этой компании")
-    # Only accepted members can leave; rejected ones cannot
+    # Rejected users are not real members — they cannot leave
     if member.status == 'rejected':
         raise HTTPException(status_code=400, detail="Вы не являетесь участником компании")
     db.delete(member)
@@ -637,7 +661,9 @@ def reject_member(
     ).first()
     if not m:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    m.status = "rejected"
+    # FIX: delete the record instead of setting status=rejected
+    # This ensures the user is truly NOT a member and cannot press "leave"
+    db.delete(m)
     db.commit()
     return _build_party_out(party, db)
 
