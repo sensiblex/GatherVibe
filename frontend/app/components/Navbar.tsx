@@ -30,7 +30,7 @@ function ThemeToggle() {
     <button
       onClick={toggle}
       aria-label={dark ? 'Светлая тема' : 'Тёмная тема'}
-      className="relative w-9 h-9 flex items-center justify-center rounded-xl transition hover:opacity-80"
+      className="relative w-9 h-9 flex items-center justify-center rounded-xl transition"
       style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
     >
       {dark ? (
@@ -61,7 +61,6 @@ export default function Navbar() {
       });
       if (res.ok) {
         const data = await res.json();
-        // data может быть массивом заявок или { count: N }
         if (Array.isArray(data)) setPendingCount(data.length);
         else if (typeof data.count === 'number') setPendingCount(data.count);
       }
@@ -75,12 +74,14 @@ export default function Navbar() {
   }, [fetchPending]);
 
   return (
-    <nav className="sticky top-0 z-50 backdrop-blur-lg border-b transition"
+    <nav
+      className="sticky top-0 z-50 backdrop-blur-lg border-b transition"
       style={{
-        background: 'color-mix(in srgb, var(--surface) 85%, transparent)',
+        background: 'color-mix(in srgb, var(--surface) 88%, transparent)',
         borderColor: 'var(--divider)',
         boxShadow: 'var(--shadow-sm)',
-      }}>
+      }}
+    >
       <div className="container mx-auto px-4 py-3 flex items-center justify-between gap-4">
 
         {/* Logo */}
@@ -96,26 +97,34 @@ export default function Navbar() {
 
         {/* Nav links */}
         <div className="hidden sm:flex items-center gap-1">
-          <Link href="/events"
+          <Link
+            href="/events"
             className="px-4 py-2 rounded-xl text-sm font-medium transition"
             style={{
               background: isActive('/events') ? 'var(--primary-hl)' : 'transparent',
               color: isActive('/events') ? 'var(--primary)' : 'var(--text-muted)',
-            }}>
+            }}
+          >
             События
           </Link>
         </div>
 
-        {/* Right side */}
+        {/* Right */}
         <div className="flex items-center gap-2">
           <ThemeToggle />
 
           {user ? (
             <>
-              {/* Notification bell */}
-              <Link href="/profile" className="relative w-9 h-9 flex items-center justify-center rounded-xl transition"
-                style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
-                title="Заявки в мои компании">
+              {/* ── Bell → /notifications ── */}
+              <Link
+                href="/notifications"
+                className="relative w-9 h-9 flex items-center justify-center rounded-xl transition"
+                style={{
+                  background: isActive('/notifications') ? 'var(--primary-hl)' : 'var(--surface-2)',
+                  color: isActive('/notifications') ? 'var(--primary)' : 'var(--text-muted)',
+                }}
+                title="Уведомления"
+              >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
                   <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
@@ -129,26 +138,32 @@ export default function Navbar() {
                 Привет,{' '}
                 <span className="font-semibold" style={{ color: 'var(--text)' }}>{user.username}</span>!
               </span>
-              <Link href="/profile"
+
+              <Link
+                href="/profile"
                 className="text-sm font-medium px-3 py-1.5 rounded-xl transition"
-                style={{ color: 'var(--primary)', background: 'var(--primary-hl)' }}>
+                style={{
+                  color: isActive('/profile') ? 'var(--text-inverse)' : 'var(--primary)',
+                  background: isActive('/profile') ? 'var(--primary)' : 'var(--primary-hl)',
+                }}
+              >
                 Профиль
               </Link>
-              <button onClick={logout}
+
+              <button
+                onClick={logout}
                 className="text-sm px-3 py-1.5 rounded-xl font-medium transition"
-                style={{ color: 'var(--error)', background: 'var(--error-hl)' }}>
+                style={{ color: 'var(--error)', background: 'var(--error-hl)' }}
+              >
                 Выйти
               </button>
             </>
           ) : (
             <>
-              <Link href="/login"
-                className="text-sm font-medium transition"
-                style={{ color: 'var(--text-muted)' }}>
+              <Link href="/login" className="text-sm font-medium transition" style={{ color: 'var(--text-muted)' }}>
                 Войти
               </Link>
-              <Link href="/register"
-                className="gv-btn-primary text-sm px-4 py-2">
+              <Link href="/register" className="gv-btn-primary text-sm px-4 py-2">
                 Регистрация
               </Link>
             </>
