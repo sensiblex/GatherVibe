@@ -1,5 +1,10 @@
+'use client';
+
 import Image from 'next/image';
 import Link from 'next/link';
+import { useEffect, useState } from 'react';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export interface KudaGoEvent {
   kudago_id: number;
@@ -87,8 +92,28 @@ function formatDate(dateStr: string | null, timeStr: string | null): string {
   );
 }
 
+// ──────────────────────────────────────────────────────────────────────
 export default function EventCard({ event }: { event: KudaGoEvent }) {
   const ageLabel = event.age_restriction ? `${event.age_restriction}+` : null;
+
+  // ── Задача 5: счётчик участников ──
+  const [attendeeCount, setAttendeeCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!event.kudago_id) return;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/attendees/${event.kudago_id}`);
+        if (!res.ok) return;
+        const data: { id: number }[] = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          setAttendeeCount(data.length);
+        }
+      } catch {
+        // не блокируем рендер карточки
+      }
+    })();
+  }, [event.kudago_id]);
 
   return (
     <Link
@@ -133,7 +158,6 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
           )}
         </div>
 
-        {/* Date badge — тёмный фон с белым текстом: хорошо виден в любой теме поверх изображения */}
         {event.start_date && (
           <span
             className="absolute bottom-3 right-3 text-xs font-semibold px-2.5 py-1 rounded-lg shadow-md"
@@ -194,23 +218,36 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
           </div>
         )}
 
+        {/* FOOTER */}
         <div
-          className="mt-auto pt-3 flex items-center justify-between"
+          className="mt-auto pt-3 flex items-center justify-between gap-2"
           style={{ borderTop: '1px solid var(--divider)' }}
         >
-          {event.is_free ? (
-            <span className="font-bold text-sm" style={{ color: 'var(--success)' }}>Бесплатно</span>
-          ) : event.price ? (
-            <span className="font-bold text-sm" style={{ color: 'var(--text)' }}>{event.price}</span>
-          ) : (
-            <span className="text-sm" style={{ color: 'var(--text-faint)' }}>—</span>
-          )}
-          <span
-            className="text-xs font-medium"
-            style={{ color: 'var(--primary)' }}
-          >
-            Подробнее →
-          </span>
+          {/* Цена */}
+          <div>
+            {event.is_free ? (
+              <span className="font-bold text-sm" style={{ color: 'var(--success)' }}>Бесплатно</span>
+            ) : event.price ? (
+              <span className="font-bold text-sm" style={{ color: 'var(--text)' }}>{event.price}</span>
+            ) : (
+              <span className="text-sm" style={{ color: 'var(--text-faint)' }}>—</span>
+            )}
+          </div>
+
+          {/* ── Счётчик + ссылка ── */}
+          <div className="flex items-center gap-3">
+            {attendeeCount !== null && attendeeCount > 0 && (
+              <span className="text-xs text-indigo-500 font-semibold flex items-center gap-1">
+                👥 {attendeeCount} идут
+              </span>
+            )}
+            <span
+              className="text-xs font-medium"
+              style={{ color: 'var(--primary)' }}
+            >
+              Подробнее →
+            </span>
+          </div>
         </div>
       </div>
     </Link>
