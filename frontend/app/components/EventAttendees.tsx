@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -91,16 +92,14 @@ function AttendeeCard({
     ? attendee.interests.split(',').filter(Boolean).slice(0, 5)
     : [];
 
-  // border: me → accent, top-match → purple-300, some common → faint purple, else default
   const borderColor = isMe
     ? 'var(--accent, #4f46e5)'
     : isTopMatch
-    ? '#d8b4fe' // purple-300
+    ? '#d8b4fe'
     : commonInterests.length > 0
     ? 'color-mix(in oklch, #9333ea 50%, var(--border))'
     : 'var(--border)';
 
-  // ring for top-match: extra box-shadow
   const boxShadow = isTopMatch
     ? '0 0 0 2px #d8b4fe, 0 2px 8px 0 rgba(168,85,247,0.10)'
     : undefined;
@@ -122,7 +121,7 @@ function AttendeeCard({
         boxShadow,
       }}
     >
-      {/* Labels: Вы / Лучшее совпадение */}
+      {/* Labels */}
       {isMe && (
         <span
           className="absolute top-3 right-3 text-xs font-bold px-2 py-0.5 rounded-full"
@@ -142,23 +141,29 @@ function AttendeeCard({
         </span>
       )}
 
-      {/* Avatar + name */}
+      {/* Avatar + name — имя кликабельно, ведёт на /users/[id] */}
       <div className="flex items-center gap-3">
-        <div
-          className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0"
+        <Link
+          href={`/users/${attendee.user_id}`}
+          className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 transition hover:opacity-80"
           style={{
             background:
               isTopMatch || commonInterests.length >= 2
                 ? 'linear-gradient(135deg,#9333ea,#ec4899)'
                 : 'linear-gradient(135deg,var(--accent,#4f46e5),#9333ea)',
           }}
+          aria-label={`Профиль ${attendee.username}`}
         >
           {initials}
-        </div>
+        </Link>
         <div className="min-w-0">
-          <p className="font-bold text-sm truncate" style={{ color: 'var(--text)' }}>
+          <Link
+            href={`/users/${attendee.user_id}`}
+            className="font-bold text-sm truncate block transition hover:opacity-70"
+            style={{ color: 'var(--text)' }}
+          >
             {attendee.username}
-          </p>
+          </Link>
           {attendee.city && (
             <p className="text-xs flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
               <span>📍</span>{attendee.city}
@@ -181,21 +186,18 @@ function AttendeeCard({
         </div>
       )}
 
-      {/* Match score badge (задача 4) */}
       {!isMe && matchScore > 0 && (
         <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full font-semibold self-start">
           🔥 {matchScore} общих интереса
         </span>
       )}
 
-      {/* Comment */}
       {attendee.comment && (
         <p className="text-sm italic leading-snug" style={{ color: 'var(--text-muted)' }}>
           «{attendee.comment}»
         </p>
       )}
 
-      {/* Looking indicator */}
       {attendee.is_looking && !isMe && (
         <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-500">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -223,7 +225,6 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
   const [token, setToken] = useState<string | null>(null);
   const [myUserId, setMyUserId] = useState<number | null>(null);
 
-  // ── read token once on mount ──
   useEffect(() => {
     const t = localStorage.getItem('token');
     setToken(t);
@@ -237,7 +238,6 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
     }
   }, []);
 
-  // ── fetch current user interests (задача 1) ──
   useEffect(() => {
     if (!token) return;
     fetch(`${API_BASE}/users/me`, { headers: { Authorization: `Bearer ${token}` } })
@@ -248,7 +248,6 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
       .catch(() => {});
   }, [token]);
 
-  // ── fetchers ──
   const fetchAttendees = useCallback(async () => {
     try {
       const res = await fetch(
@@ -283,7 +282,6 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
     Promise.all([fetchAttendees(), fetchMyStatus()]).finally(() => setLoading(false));
   }, [fetchAttendees, fetchMyStatus, tokenReady]);
 
-  // ── scoring helpers (задача 2) ──
   const getMatchScore = useCallback(
     (attendee: Attendee): number => calcMatchScore(myInterests, attendee, myUserId),
     [myInterests, myUserId]
@@ -298,7 +296,6 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
     [myInterests, myUserId]
   );
 
-  // ── all unique interests for filter chips ──
   const allInterests = useMemo(() => {
     const set = new Set<string>();
     attendees.forEach(a => {
@@ -307,34 +304,26 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
     return Array.from(set).filter(Boolean).sort();
   }, [attendees]);
 
-  // ── sorted + filtered list (задача 3: свою карточку всегда первой) ──
   const processedAttendees = useMemo(() => {
     let list = [...attendees];
-
     if (filterInterest) {
       list = list.filter(a =>
         a.interests?.split(',').map(s => s.trim()).includes(filterInterest)
       );
     }
-
     if (sortBy === 'match') {
       list.sort((a, b) => {
-        // свою карточку — всегда первой
         if (a.user_id === myUserId) return -1;
         if (b.user_id === myUserId) return 1;
-        // остальных — по matchScore DESC
         return getMatchScore(b) - getMatchScore(a);
       });
     } else {
       list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }
-
     return list;
   }, [attendees, sortBy, filterInterest, getMatchScore, myUserId]);
 
-  // ── top-match id (задача 5) ──
   const topMatchUserId = useMemo(() => {
-    // ищем участника (не себя) с максимальным score > 0
     let best: Attendee | null = null;
     let bestScore = 0;
     for (const a of attendees) {
@@ -345,7 +334,6 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
     return bestScore > 0 ? best?.user_id ?? null : null;
   }, [attendees, getMatchScore, myUserId]);
 
-  // ── join / leave ──
   const handleJoin = async () => {
     if (!token) { window.location.href = '/login'; return; }
     setJoining(true);
@@ -414,7 +402,6 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Sort buttons */}
           <div
             className="flex rounded-xl overflow-hidden text-xs font-semibold"
             style={{ border: '1px solid var(--border)' }}
@@ -435,7 +422,6 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
             </button>
           </div>
 
-          {/* Only-looking filter */}
           <button
             onClick={() => setOnlyLooking(v => !v)}
             className="text-xs px-3 py-1.5 rounded-full font-medium transition"
@@ -547,63 +533,74 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
                 }`}
               />
             </div>
-            <span className="text-sm" style={{ color: 'var(--text)' }}>
-              {isLooking ? '🟢 Ищу компанию для похода' : '⚫ Просто отмечаюсь'}
+            <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>
+              Ищу компанию на это событие
             </span>
           </label>
           <div className="flex gap-2">
-            <button
-              onClick={handleJoin}
-              disabled={joining}
-              className="flex-1 text-white text-sm font-bold py-2 rounded-xl hover:opacity-90 transition disabled:opacity-60"
-              style={{ background: 'var(--accent-gradient, linear-gradient(135deg,#4f46e5,#7c3aed))' }}
-            >
-              {joining ? 'Сохранение...' : myStatus.attending ? 'Обновить' : 'Подтвердить участие'}
-            </button>
-            {myStatus.attending && (
+            {!myStatus.attending ? (
               <button
-                onClick={handleLeave}
+                onClick={handleJoin}
                 disabled={joining}
-                className="px-4 text-sm rounded-xl transition disabled:opacity-60"
-                style={{ color: '#ef4444', border: '1px solid color-mix(in oklch, #ef4444 40%, transparent)' }}
+                className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white hover:opacity-90 transition disabled:opacity-60"
+                style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
               >
-                Отменить
+                {joining ? 'Сохранение...' : '✓ Подтвердить участие'}
               </button>
+            ) : (
+              <>
+                <button
+                  onClick={handleJoin}
+                  disabled={joining}
+                  className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white hover:opacity-90 transition disabled:opacity-60"
+                  style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
+                >
+                  {joining ? 'Сохранение...' : '💾 Сохранить'}
+                </button>
+                <button
+                  onClick={handleLeave}
+                  disabled={joining}
+                  className="px-4 py-2.5 rounded-xl text-sm font-medium transition disabled:opacity-60"
+                  style={{
+                    color: '#ef4444',
+                    border: '1px solid color-mix(in oklch, #ef4444 40%, transparent)',
+                  }}
+                >
+                  Отписаться
+                </button>
+              </>
             )}
             <button
               onClick={() => setShowForm(false)}
-              className="px-4 text-sm rounded-xl transition hover:opacity-80"
-              style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+              className="px-4 py-2.5 rounded-xl text-sm transition"
+              style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}
             >
-              ✕
+              Отмена
             </button>
           </div>
         </div>
       )}
 
-      {/* ── Attendees list ── */}
+      {/* ── List ── */}
       <div className="p-6">
-        {myInterests.length > 0 && sortBy === 'match' && attendees.length > 1 && (
-          <p className="text-xs mb-4 flex items-center gap-1" style={{ color: 'var(--accent)' }}>
-            <span>🎯</span> Участники отсортированы по совпадению интересов с вашим профилем
-          </p>
-        )}
-
         {loading ? (
-          // skeleton loader — не трогаем
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {[1, 2, 3].map(i => (
-              <div key={i} className="h-24 rounded-2xl animate-pulse" style={{ background: 'var(--surface-2)' }} />
+              <div
+                key={i}
+                className="h-28 rounded-2xl animate-pulse"
+                style={{ background: 'var(--surface-2)' }}
+              />
             ))}
           </div>
         ) : processedAttendees.length === 0 ? (
           <div className="text-center py-10">
             <p className="text-4xl mb-3">🎭</p>
             <p className="font-medium" style={{ color: 'var(--text-muted)' }}>
-              {filterInterest ? `Никого с интересом «${filterInterest}»` : 'Пока никто не отметился'}
+              {onlyLooking ? 'Никто не ищет компанию' : 'Пока никто не идёт'}
             </p>
             <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-              {filterInterest ? 'Попробуй другой фильтр' : 'Будь первым — нажми «Иду!»'}
+              Будь первым — нажми «+ Иду!»
             </p>
           </div>
         ) : (
