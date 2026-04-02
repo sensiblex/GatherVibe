@@ -68,7 +68,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  // Слушаем кастомное событие auth:logout — реагируем в той же вкладке
+  /**
+   * Слушаем кастомное событие auth:logout.
+   * Диспатчится:
+   *  - вручную через logout() из того же контекста
+   *  - автоматически через apiFetch при получении HTTP 401
+   */
   useEffect(() => {
     const onLogout = () => { setToken(null); setUser(null); };
     window.addEventListener('auth:logout', onLogout);
