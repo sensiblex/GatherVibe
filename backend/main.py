@@ -1,3 +1,4 @@
+import asyncio
 import socketio
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -108,6 +109,17 @@ async def send_party_message(sid, data: dict):
 async def leave_party_chat(sid, data: dict):
     party_id = data['partyId']
     await sio.leave_room(sid, f'party_{party_id}')
+
+
+# -- Notifications --
+
+@sio.on('subscribe_notifications')
+async def subscribe_notifications(sid, data: dict):
+    """Creator subscribes to their personal notification room."""
+    user_id = data.get('userId')
+    if user_id:
+        await sio.enter_room(sid, f'creator_{user_id}')
+        print(f"[notifications] {sid} subscribed to creator_{user_id}")
 
 
 app.add_middleware(
@@ -709,7 +721,7 @@ def delete_party(
 
 
 @app.post("/parties/{party_id}/join", response_model=PartyOut)
-def join_party(
+async def join_party(
     party_id: int,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -737,6 +749,19 @@ def join_party(
     m = PartyMember(party_id=party_id, user_id=user.id, status="pending")
     db.add(m)
     db.commit()
+
+    # Уведомляем создателя партии в реальном времени
+    await sio.emit(
+        "new_party_request",
+        {
+            "party_id": party.id,
+            "party_title": party.title,
+            "user_id": user.id,
+            "username": user.username,
+        },
+        room=f"creator_{party.creator_id}",
+    )
+
     return _build_party_out(party, db)
 
 
@@ -865,6 +890,13 @@ def create_test_user(db: Session = Depends(get_db)):
     return {"message": "Тестовый пользователь создан", "user_id": test_user.id}
 
 
+@app.delete("/test-user")
+def delete_test_user(db: Session = Depends(get_db)):
+    db.query(User).filter(User.email == "test@example.com").delete()
+    db.commit()
+    return {"ok": True}
+
+
 @app.post("/register", response_model=UserResponse)
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == user.email).first():
@@ -886,10 +918,3 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
     if user is None:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
     return user
-
-
-@app.delete("/test-user")
-def delete_test_user(db: Session = Depends(get_db)):
-    db.query(User).filter(User.email == "test@example.com").delete()
-    db.commit()
-    return {"ok": True}
