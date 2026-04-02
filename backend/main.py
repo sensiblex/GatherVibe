@@ -617,6 +617,10 @@ def approve_request(
     if accepted_count + 1 >= party.max_members:
         raise HTTPException(status_code=400, detail="Компания уже заполнена")
     member.status = "accepted"
+    # Автозакрытие: создатель + уже принятые + только что принятый
+    new_total = accepted_count + 2  # +1 создатель, +1 только что принятый
+    if new_total >= party.max_members:
+        party.is_open = False
     db.commit()
     return _build_party_out(party, db)
 
@@ -813,6 +817,10 @@ def accept_member(
     if not m:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     m.status = "accepted"
+    # Автозакрытие: создатель + уже принятые + только что принятый
+    new_total = accepted_count + 2  # +1 создатель, +1 только что принятый
+    if new_total >= party.max_members:
+        party.is_open = False
     db.commit()
     return _build_party_out(party, db)
 
