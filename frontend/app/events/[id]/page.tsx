@@ -1,649 +1,293 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Image from 'next/image';
 import Link from 'next/link';
-import Navbar from '../../components/Navbar';
-import EventAttendees from '../../components/EventAttendees';
-import EventParty from '../../components/EventParty';
-import EventChat from '../../components/EventChat';
+import Navbar from '../../../app/components/Navbar';
+import EventAttendees from '../../../app/components/EventAttendees';
+import EventChat from '../../../app/components/EventChat';
+import EventParty from '../../../app/components/EventParty';
+import { apiFetch } from '../../lib/apiFetch';
 import { useAuth } from '../../context/AuthContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-const CATEGORY_RU: Record<string, string> = {
-  concert: 'Концерт', theater: 'Театр', theatre: 'Театр',
-  exhibition: 'Выставка', movie: 'Кино', cinema: 'Кино',
-  festival: 'Фестиваль', sport: 'Спорт', sports: 'Спорт',
-  other: 'Разное', holiday: 'Праздник', 'kids-holiday': 'Детский праздник',
-  education: 'Образование', lecture: 'Лекция', business: 'Бизнес',
-  'business-events': 'Бизнес', tour: 'Экскурсия', excursion: 'Экскурсия',
-  party: 'Вечеринка', nightlife: 'Ночная жизнь',
-  'stand-up': 'Стэндап', standup: 'Стэндап', comedy: 'Комедия',
-  opera: 'Опера', ballet: 'Балет', musical: 'Мюзикл',
-  'open-air': 'Опен-эйр', art: 'Искусство', 'art-object': 'Искусство',
-  circus: 'Цирк', magic: 'Фокус',
-  'master-class': 'Мастер-класс', masterclass: 'Мастер-класс', workshop: 'Мастер-класс',
-  literature: 'Литература', food: 'Еда', 'food-wine': 'Еда и вино',
-  yoga: 'Йога', fitness: 'Фитнес', dance: 'Танцы',
-  gaming: 'Игры', quest: 'Квест', charity: 'Благотворительность',
-  science: 'Наука', technology: 'Технологии',
-  'for-kids': 'Для детей', kids: 'Для детей', family: 'Семейное',
-  outdoor: 'На улице', online: 'Онлайн',
-  'rock-music': 'Рок', jazz: 'Джаз', 'jazz-blues': 'Джаз / Блюз',
-  classical: 'Классика', 'classical-music': 'Классика',
-  electronic: 'Электронная музыка', 'hip-hop': 'Хип-хоп',
-  pop: 'Поп', metal: 'Метал', folk: 'Фольк',
-  drama: 'Драма', documentary: 'Документальный',
-  animation: 'Анимация', cartoon: 'Мультфильм',
-  networking: 'Нетворкинг', fashion: 'Мода',
+const CATEGORY_LABELS: Record<string, string> = {
+  concert: '🎵 Концерт',
+  theater: '🎭 Театр',
+  exhibition: '🎨 Выставка',
+  festival: '🎪 Фестиваль',
+  sport: '⚽ Спорт',
+  standup: '🎤 Стендап',
+  cinema: '🎬 Кино',
+  lecture: '📚 Лекция',
+  tour: '🗺️ Экскурсия',
+  party: '🎉 Вечеринка',
+  master_class: '🎓 Мастер-класс',
 };
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toLabel(val: any): string {
-  if (!val && val !== 0) return '';
-  if (typeof val === 'string') return val;
-  if (typeof val === 'number') return String(val);
-  if (typeof val === 'object') return String(val.name ?? val.slug ?? val.title ?? val.id ?? '');
-  return String(val);
-}
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toKey(val: any, idx: number): string {
-  return toLabel(val) || String(idx);
-}
-function translateTag(raw: string): string {
-  return CATEGORY_RU[raw.toLowerCase().trim()] ?? raw;
-}
-
-interface EventImage { url: string; source_name: string; source_link: string; }
-interface EventDate {
-  start: string | null; end: string | null;
-  start_time: string | null; end_time: string | null;
-  is_continuous: boolean; is_endless: boolean;
-}
-interface Participant { role: string; name: string; image_url: string | null; }
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyArr = any[];
 
 interface EventDetail {
-  kudago_id: number;
-  title: string; short_title: string;
-  description: string; body_text: string;
-  categories: AnyArr; tags: AnyArr;
-  price: string; is_free: boolean;
-  age_restriction: string | number | null;
-  images: EventImage[]; cover_url: string | null;
-  all_dates: EventDate[];
-  start_date: string | null; start_time: string | null;
-  place_title: string; place_address: string;
-  place_phone: string; place_subway: string;
-  lat: number | null; lon: number | null;
-  participants: Participant[];
-  site_url: string;
+  id: number;
+  title: string;
+  description: string | null;
+  location: string | null;
+  city: string | null;
+  date_time: string;
+  category: string | null;
+  image_url: string | null;
+  is_active: boolean;
 }
 
-function formatDate(dateStr: string | null, timeStr: string | null): string {
-  if (!dateStr) return 'Дата не указана';
-  return new Date(dateStr).toLocaleDateString('ru-RU', {
-    day: 'numeric', month: 'long', year: 'numeric',
-  }) + (timeStr ? ` в ${timeStr.slice(0, 5)}` : '');
-}
-
-const cardStyle: React.CSSProperties = {
-  background: 'var(--card-bg, var(--surface, #ffffff))',
-  border: '1px solid var(--border, #e5e7eb)',
-};
-
-// ── WantToGo button & modal ──────────────────────────────────────────────────
-
-interface WantToGoState {
-  attending: boolean;
-  is_looking: boolean;
-  comment: string;
-}
-
-function WantToGoButton({ eventId, token, userId }: { eventId: string; token: string | null; userId: number | null }) {
-  const [state, setState] = useState<WantToGoState>({
-    attending: false,
-    is_looking: true,
-    comment: '',
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   });
-  const [modalOpen, setModalOpen] = useState(false);
-  const [comment, setComment] = useState('');
-  const [isLooking, setIsLooking] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [fetching, setFetching] = useState(true);
-  const modalRef = useRef<HTMLDivElement>(null);
+}
 
-  // Load current status
-  useEffect(() => {
-    if (!token) { setFetching(false); return; }
-    fetch(`${API_BASE}/attendees/${eventId}/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => {
-        if (d?.attending) {
-          setState({ attending: true, is_looking: d.is_looking ?? true, comment: d.comment || '' });
-          setComment(d.comment || '');
-          setIsLooking(d.is_looking ?? true);
-        }
-      })
-      .catch(() => {})
-      .finally(() => setFetching(false));
-  }, [eventId, token]);
-
-  // Close modal on outside click
-  useEffect(() => {
-    if (!modalOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
-        setModalOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [modalOpen]);
-
-  const handleClick = () => {
-    if (!token) { window.location.href = '/login'; return; }
-    setModalOpen(true);
-  };
-
-  const handleSubmit = async () => {
-    if (!token) return;
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/attendees/${eventId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ comment: comment.trim() || null, is_looking: isLooking }),
-      });
-      if (res.ok) {
-        setState({ attending: true, is_looking: isLooking, comment: comment.trim() });
-        setModalOpen(false);
-      }
-    } catch {}
-    setLoading(false);
-  };
-
-  const handleLeave = async () => {
-    if (!token) return;
-    setLoading(true);
-    try {
-      await fetch(`${API_BASE}/attendees/${eventId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setState({ attending: false, is_looking: true, comment: '' });
-      setComment('');
-      setIsLooking(true);
-      setModalOpen(false);
-    } catch {}
-    setLoading(false);
-  };
-
-  if (fetching) return <div className="h-10 w-32 rounded-xl animate-pulse" style={{ background: 'var(--surface-2)' }} />;
-
+// ── Skeleton ──────────────────────────────────────────────────────────────────
+function EventSkeleton() {
   return (
-    <>
-      {state.attending ? (
-        <div className="flex gap-2">
-          <button
-            onClick={() => setModalOpen(true)}
-            className="flex-1 py-3 rounded-xl font-bold text-sm transition hover:opacity-80"
-            style={{ background: '#22c55e', color: '#fff' }}
-          >
-            ✓ Ты идёшь
-          </button>
-          <button
-            onClick={handleLeave}
-            disabled={loading}
-            className="px-4 py-3 rounded-xl text-sm font-medium transition disabled:opacity-50"
-            style={{
-              border: '1px solid color-mix(in oklch, #ef4444 40%, transparent)',
-              color: '#ef4444',
-            }}
-          >
-            {loading ? '...' : 'Отменить'}
-          </button>
-        </div>
-      ) : (
-        <button
-          onClick={handleClick}
-          className="w-full py-3 rounded-xl font-bold text-sm text-white hover:opacity-90 transition shadow-md"
-          style={{ background: 'var(--accent-gradient, linear-gradient(135deg,#4f46e5,#7c3aed))' }}
-        >
-          🎟 Хочу пойти
-        </button>
-      )}
-
-      {/* Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'oklch(0 0 0 / 0.5)' }}>
-          <div
-            ref={modalRef}
-            className="w-full max-w-sm rounded-3xl p-6 shadow-2xl"
-            style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-          >
-            <h3 className="font-black text-lg mb-4" style={{ color: 'var(--text)' }}>
-              {state.attending ? '✏️ Обновить участие' : '🎟 Я иду на событие!'}
-            </h3>
-
-            <div className="mb-4">
-              <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>
-                Расскажи о себе
-              </label>
-              <textarea
-                value={comment}
-                onChange={e => setComment(e.target.value.slice(0, 100))}
-                placeholder="Расскажи о себе — чем интересуешься?"
-                rows={3}
-                className="w-full px-4 py-2.5 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                style={{
-                  background: 'var(--surface-2)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text)',
-                }}
-              />
-              <p className="text-xs text-right mt-1" style={{ color: 'var(--text-muted)' }}>
-                {comment.length}/100
-              </p>
-            </div>
-
-            <label className="flex items-center gap-3 cursor-pointer mb-5">
-              <div
-                onClick={() => setIsLooking(v => !v)}
-                className="w-11 h-6 rounded-full relative transition-colors shrink-0"
-                style={{ background: isLooking ? '#22c55e' : 'var(--surface-2)' }}
-              >
-                <span
-                  className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${
-                    isLooking ? 'translate-x-6' : 'translate-x-1'
-                  }`}
-                />
-              </div>
-              <span className="text-sm" style={{ color: 'var(--text)' }}>
-                {isLooking ? '🟢 Ищу компанию для похода' : '⚫ Просто отмечаюсь'}
-              </span>
-            </label>
-
-            <div className="flex gap-2">
-              <button
-                onClick={handleSubmit}
-                disabled={loading}
-                className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white hover:opacity-90 transition disabled:opacity-60"
-                style={{ background: 'var(--accent-gradient, linear-gradient(135deg,#4f46e5,#7c3aed))' }}
-              >
-                {loading ? 'Сохранение...' : state.attending ? 'Обновить' : 'Подтвердить'}
-              </button>
-              <button
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2.5 rounded-xl text-sm transition hover:opacity-80"
-                style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}
-              >
-                Отмена
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    <div className="animate-pulse space-y-6">
+      <div className="h-64 rounded-3xl" style={{ background: 'var(--surface-2)' }} />
+      <div className="space-y-3">
+        <div className="h-8 w-2/3 rounded-xl" style={{ background: 'var(--surface-2)' }} />
+        <div className="h-4 w-1/3 rounded-xl" style={{ background: 'var(--surface-2)' }} />
+        <div className="h-4 w-full rounded-xl" style={{ background: 'var(--surface-2)' }} />
+        <div className="h-4 w-5/6 rounded-xl" style={{ background: 'var(--surface-2)' }} />
+      </div>
+    </div>
   );
 }
 
-// ── Main page ────────────────────────────────────────────────────────────────
+// ── Not found ─────────────────────────────────────────────────────────────────
+function NotFound() {
+  return (
+    <div className="text-center py-24 px-4">
+      <p className="text-6xl mb-4">🔍</p>
+      <h2 className="text-2xl font-black mb-2" style={{ color: 'var(--text)' }}>
+        Событие не найдено
+      </h2>
+      <p className="mb-8" style={{ color: 'var(--text-muted)' }}>
+        Оно могло быть удалено или ссылка неверна
+      </p>
+      <Link
+        href="/events"
+        className="gv-btn-primary px-6 py-3"
+      >
+        ← К списку событий
+      </Link>
+    </div>
+  );
+}
 
+// ── Unauthorized CTA banner ───────────────────────────────────────────────────
+function UnauthBanner() {
+  return (
+    <div
+      className="rounded-2xl px-6 py-5 flex flex-col sm:flex-row items-center gap-4"
+      style={{
+        background: 'linear-gradient(135deg, var(--primary-hl), color-mix(in oklch, var(--primary) 8%, var(--surface)))',
+        border: '1px solid color-mix(in oklch, var(--primary) 25%, var(--border))',
+      }}
+    >
+      <div className="text-3xl">🔐</div>
+      <div className="flex-1 text-center sm:text-left">
+        <p className="font-bold" style={{ color: 'var(--text)' }}>
+          Войдите, чтобы участвовать
+        </p>
+        <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
+          Присоединяйтесь к событиям, создавайте компании и общайтесь в чате
+        </p>
+      </div>
+      <div className="flex gap-3 shrink-0">
+        <Link
+          href="/login"
+          className="gv-btn-primary px-5 py-2 text-sm"
+        >
+          Войти
+        </Link>
+        <Link
+          href="/register"
+          className="px-5 py-2 text-sm rounded-xl font-semibold transition hover:opacity-80"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+        >
+          Регистрация
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function EventDetailPage() {
-  const params  = useParams();
-  const router  = useRouter();
-  const { token, user } = useAuth();
-  const eventId = params?.id as string;
-  const [event, setEvent]         = useState<EventDetail | null>(null);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
-  const [activeImg, setActiveImg] = useState(0);
+  const params = useParams();
+  const router = useRouter();
+  const { user } = useAuth();
+
+  const eventId = String(params?.id ?? '');
+
+  const [event, setEvent] = useState<EventDetail | null>(null);
+  const [status, setStatus] = useState<'loading' | 'ok' | 'notfound' | 'error'>('loading');
 
   useEffect(() => {
     if (!eventId) return;
-    fetch(`${API_BASE}/kudago/events/${eventId}`)
-      .then(r => { if (!r.ok) throw new Error(`Ошибка ${r.status}`); return r.json(); })
-      .then((d: EventDetail) => { setEvent(d); setActiveImg(0); })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
+    setStatus('loading');
+    apiFetch(`${API_BASE}/events/${eventId}`)
+      .then(async (res) => {
+        if (res.status === 404) { setStatus('notfound'); return; }
+        if (!res.ok) { setStatus('error'); return; }
+        const data: EventDetail = await res.json();
+        setEvent(data);
+        setStatus('ok');
+      })
+      .catch(() => setStatus('error'));
   }, [eventId]);
 
-  if (loading) return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
-      <Navbar />
-      <div className="container mx-auto px-4 py-10 animate-pulse">
-        <div className="h-4 w-40 rounded mb-8" style={{ background: 'var(--surface-2, #e5e7eb)' }} />
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-          <div className="lg:col-span-2 space-y-4">
-            <div className="w-full h-96 rounded-3xl" style={{ background: 'var(--surface-2, #e5e7eb)' }} />
-            <div className="h-8 rounded w-3/4" style={{ background: 'var(--surface-2, #e5e7eb)' }} />
-          </div>
-          <div className="space-y-4">
-            <div className="h-40 rounded-3xl" style={{ background: 'var(--surface-2, #e5e7eb)' }} />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  if (error || !event) return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
-      <Navbar />
-      <div className="flex flex-col items-center justify-center py-32 gap-4">
-        <span className="text-5xl">😕</span>
-        <p style={{ color: 'var(--text-muted)' }}>Не удалось загрузить событие</p>
-        <p className="text-red-400 text-sm">{error}</p>
-        <button onClick={() => router.back()}
-          className="px-6 py-2 rounded-xl font-bold hover:opacity-90 transition"
-          style={{ background: 'var(--accent, #4f46e5)', color: '#fff' }}>
-          Назад
-        </button>
-      </div>
-    </div>
-  );
-
-  const images = Array.isArray(event.images) ? event.images : [];
-  const ageLabel = event.age_restriction ? `${event.age_restriction}+` : null;
-  const kudagoId = String(event.kudago_id || eventId);
+  const categoryLabel = event?.category
+    ? (CATEGORY_LABELS[event.category] ?? event.category)
+    : null;
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
-      <main className="container mx-auto px-4 py-10">
-        {/* Breadcrumb */}
-        <nav className="flex items-center gap-2 text-sm mb-8" style={{ color: 'var(--text-muted)' }}>
-          <Link href="/events" className="hover:underline transition" style={{ color: 'var(--text-muted)' }}>
-            События
-          </Link>
-          <span>/</span>
-          <span className="line-clamp-1 max-w-xs" style={{ color: 'var(--text)' }}>
-            {event.short_title || event.title}
-          </span>
-        </nav>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-          {/* ── LEFT COLUMN ── */}
-          <div className="lg:col-span-2 space-y-6">
+      <main className="container mx-auto px-4 py-8 max-w-4xl">
 
-            {/* Gallery */}
-            {images.length > 0 ? (
-              <div className="space-y-3">
-                <div
-                  className="relative w-full h-80 sm:h-[420px] rounded-3xl overflow-hidden shadow-lg"
-                  style={{ background: 'var(--surface-2, #e5e7eb)' }}
-                >
-                  <Image src={images[activeImg].url} alt={event.title}
-                    fill className="object-cover" unoptimized priority />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-                  {images.length > 1 && (
-                    <>
-                      <button onClick={() => setActiveImg(p => (p - 1 + images.length) % images.length)}
-                        className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white w-10 h-10 rounded-full flex items-center justify-center transition text-lg">
-                        &#8592;
-                      </button>
-                      <button onClick={() => setActiveImg(p => (p + 1) % images.length)}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white w-10 h-10 rounded-full flex items-center justify-center transition text-lg">
-                        &#8594;
-                      </button>
-                      <span className="absolute bottom-4 right-4 bg-black/50 text-white text-xs px-2.5 py-1 rounded-full">
-                        {activeImg + 1} / {images.length}
-                      </span>
-                    </>
+        {/* ── Back navigation ── */}
+        <button
+          onClick={() => router.back()}
+          className="flex items-center gap-2 text-sm font-semibold mb-6 transition hover:opacity-70"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+          Назад
+        </button>
+
+        {/* ── States ── */}
+        {status === 'loading' && <EventSkeleton />}
+        {status === 'notfound' && <NotFound />}
+        {status === 'error' && (
+          <div className="text-center py-24">
+            <p className="text-5xl mb-4">⚠️</p>
+            <h2 className="text-xl font-black mb-2" style={{ color: 'var(--text)' }}>Ошибка загрузки</h2>
+            <p className="mb-6" style={{ color: 'var(--text-muted)' }}>Не удалось получить данные события</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="gv-btn-primary px-6 py-3"
+            >
+              Попробовать снова
+            </button>
+          </div>
+        )}
+
+        {status === 'ok' && event && (
+          <div className="space-y-8">
+
+            {/* ── Event header card ── */}
+            <div
+              className="gv-card overflow-hidden"
+              style={{ padding: 0 }}
+            >
+              {/* Cover image */}
+              {event.image_url && (
+                <div className="w-full h-56 sm:h-72 overflow-hidden">
+                  <img
+                    src={event.image_url}
+                    alt={event.title}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                </div>
+              )}
+
+              <div className="p-6 sm:p-8">
+                {/* Category + city badges */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {categoryLabel && (
+                    <span
+                      className="text-xs px-3 py-1 rounded-full font-semibold"
+                      style={{
+                        background: 'var(--primary-hl)',
+                        color: 'var(--primary)',
+                      }}
+                    >
+                      {categoryLabel}
+                    </span>
                   )}
-                  {images[activeImg]?.source_name && (
-                    <a href={images[activeImg].source_link || '#'} target="_blank" rel="noopener noreferrer"
-                      className="absolute bottom-4 left-4 bg-black/40 text-white text-xs px-2.5 py-1 rounded-full hover:bg-black/60 transition">
-                      © {images[activeImg].source_name}
-                    </a>
+                  {event.city && (
+                    <span
+                      className="text-xs px-3 py-1 rounded-full font-semibold flex items-center gap-1"
+                      style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
+                    >
+                      📍 {event.city}
+                    </span>
                   )}
                 </div>
-                {images.length > 1 && (
-                  <div className="flex gap-2 overflow-x-auto pb-1">
-                    {images.map((img, idx) => (
-                      <button key={idx} onClick={() => setActiveImg(idx)}
-                        className={`relative shrink-0 w-20 h-14 rounded-xl overflow-hidden border-2 transition ${
-                          idx === activeImg ? 'border-indigo-500' : 'border-transparent opacity-50 hover:opacity-80'
-                        }`}>
-                        <Image src={img.url} alt="" fill className="object-cover" unoptimized />
-                      </button>
-                    ))}
+
+                {/* Title */}
+                <h1 className="text-2xl sm:text-3xl font-black mb-4 leading-tight" style={{ color: 'var(--text)' }}>
+                  {event.title}
+                </h1>
+
+                {/* Meta info */}
+                <div className="flex flex-wrap gap-4 mb-6">
+                  <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <rect x="3" y="4" width="18" height="18" rx="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    <span>{formatDate(event.date_time)}</span>
+                  </div>
+                  {event.location && (
+                    <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
+                        <circle cx="12" cy="10" r="3" />
+                      </svg>
+                      <span>{event.location}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Description */}
+                {event.description && (
+                  <div
+                    className="text-sm leading-relaxed whitespace-pre-line"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {event.description}
                   </div>
                 )}
               </div>
-            ) : (
-              <div
-                className="w-full h-64 rounded-3xl flex items-center justify-center"
-                style={{ background: 'linear-gradient(135deg, var(--surface-2, #eef2ff), var(--surface-3, #f5f3ff))' }}
-              >
-                <span className="text-6xl opacity-20">🎭</span>
-              </div>
-            )}
-
-            {/* Title + badges */}
-            <div>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {event.is_free && (
-                  <span className="bg-emerald-500/20 text-emerald-500 text-sm font-bold px-3 py-1 rounded-full">
-                    Бесплатно
-                  </span>
-                )}
-                {ageLabel && (
-                  <span className="text-sm font-bold px-3 py-1 rounded-full"
-                    style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                    {ageLabel}
-                  </span>
-                )}
-                {Array.isArray(event.categories) && event.categories.map((cat, i) => {
-                  const label = toLabel(cat);
-                  if (!label) return null;
-                  return (
-                    <span key={toKey(cat, i)} className="text-sm font-medium px-3 py-1 rounded-full"
-                      style={{ background: 'var(--badge-bg, #eef2ff)', color: 'var(--accent, #4f46e5)' }}>
-                      {translateTag(label)}
-                    </span>
-                  );
-                })}
-              </div>
-              <h1 className="text-3xl font-black leading-tight" style={{ color: 'var(--text)' }}>
-                {event.title}
-              </h1>
             </div>
 
-            {/* Description */}
-            {event.description && (
-              <div className="rounded-2xl p-6 shadow-sm" style={cardStyle}>
-                <h2 className="text-base font-bold mb-3" style={{ color: 'var(--text)' }}>О мероприятии</h2>
-                <p className="leading-relaxed whitespace-pre-line" style={{ color: 'var(--text-muted)' }}>
-                  {event.description}
-                </p>
-                {event.body_text && event.body_text !== event.description && (
-                  <p className="leading-relaxed mt-4 whitespace-pre-line" style={{ color: 'var(--text-muted)' }}>
-                    {event.body_text}
-                  </p>
-                )}
-              </div>
-            )}
+            {/* ── Unauth CTA (shown only when logged out) ── */}
+            {!user && <UnauthBanner />}
 
-            <EventAttendees eventId={kudagoId} />
-            <EventParty eventId={kudagoId} />
+            {/* ── Interactive blocks ── */}
+            <EventAttendees eventId={eventId} />
 
-            {/* Chat — only for authorized */}
-            {token && user ? (
-              <EventChat
-                eventId={kudagoId}
-                currentUserId={String(user.id)}
-                currentUsername={user.username}
-              />
-            ) : (
-              <div className="rounded-2xl p-6 text-center shadow-sm" style={cardStyle}>
-                <p className="text-2xl mb-2">💬</p>
-                <p className="font-medium" style={{ color: 'var(--text-muted)' }}>Чат события</p>
-                <p className="text-sm mt-1 mb-4" style={{ color: 'var(--text-muted)' }}>
-                  Войдите, чтобы участвовать в чате
-                </p>
-                <Link
-                  href="/login"
-                  className="inline-block px-5 py-2 rounded-xl font-bold text-sm text-white hover:opacity-90 transition"
-                  style={{ background: 'var(--accent-gradient, linear-gradient(135deg,#4f46e5,#7c3aed))' }}
-                >
-                  Войти
-                </Link>
-              </div>
-            )}
+            <EventParty eventId={eventId} />
 
-            {/* Participants */}
-            {Array.isArray(event.participants) && event.participants.length > 0 && (
-              <div className="rounded-2xl p-6 shadow-sm" style={cardStyle}>
-                <h2 className="text-base font-bold mb-4" style={{ color: 'var(--text)' }}>Участники</h2>
-                <div className="flex flex-wrap gap-4">
-                  {event.participants.map((p, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      {p.image_url ? (
-                        <div className="relative w-10 h-10 rounded-full overflow-hidden shrink-0"
-                          style={{ background: 'var(--surface-2)' }}>
-                          <Image src={p.image_url} alt={p.name} fill className="object-cover" unoptimized />
-                        </div>
-                      ) : (
-                        <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm shrink-0"
-                          style={{ background: 'var(--badge-bg, #eef2ff)', color: 'var(--accent, #4f46e5)' }}>
-                          {p.name?.charAt(0) || '?'}
-                        </div>
-                      )}
-                      <div>
-                        <p className="font-semibold text-sm" style={{ color: 'var(--text)' }}>{p.name}</p>
-                        {p.role && <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{toLabel(p.role)}</p>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <EventChat
+              eventId={eventId}
+              currentUserId={user ? String(user.id) : ''}
+              currentUsername={user?.username ?? 'Аноним'}
+            />
 
-            {/* Tags */}
-            {Array.isArray(event.tags) && event.tags.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {event.tags.map((tag, i) => {
-                  const label = toLabel(tag);
-                  if (!label) return null;
-                  return (
-                    <span key={toKey(tag, i)} className="text-xs px-3 py-1 rounded-full"
-                      style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>
-                      #{translateTag(label)}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
           </div>
-
-          {/* ── RIGHT COLUMN ── */}
-          <div className="space-y-5 lg:sticky lg:top-24 self-start">
-
-            {/* Price + WantToGo card */}
-            <div className="rounded-2xl p-6 shadow-sm" style={cardStyle}>
-              <p className="text-xs uppercase font-semibold tracking-wide mb-1"
-                style={{ color: 'var(--text-muted)' }}>
-                Стоимость
-              </p>
-              {event.is_free ? (
-                <p className="text-2xl font-black text-emerald-500 mb-4">Бесплатно</p>
-              ) : event.price ? (
-                <p className="text-xl font-black mb-4" style={{ color: 'var(--text)' }}>{event.price}</p>
-              ) : (
-                <p className="mb-4" style={{ color: 'var(--text-muted)' }}>Цена не указана</p>
-              )}
-
-              {/* 🎟 Want to go button */}
-              <WantToGoButton eventId={kudagoId} token={token} userId={user?.id ?? null} />
-
-              {event.site_url && (
-                <a
-                  href={event.site_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-3 block w-full text-center py-2.5 rounded-xl font-semibold text-sm hover:opacity-80 transition"
-                  style={{
-                    border: '1px solid var(--border)',
-                    color: 'var(--text-muted)',
-                  }}
-                >
-                  Перейти на сайт ↗
-                </a>
-              )}
-            </div>
-
-            {/* Dates */}
-            {Array.isArray(event.all_dates) && event.all_dates.length > 0 && (
-              <div className="rounded-2xl p-6 shadow-sm" style={cardStyle}>
-                <h2 className="text-xs font-bold uppercase tracking-wide mb-4"
-                  style={{ color: 'var(--text-muted)' }}>📅 Даты</h2>
-                <ul className="space-y-2">
-                  {event.all_dates.slice(0, 5).map((d, i) => (
-                    <li key={i} className="text-sm flex items-start gap-2" style={{ color: 'var(--text-muted)' }}>
-                      <span style={{ color: 'var(--accent)' }} className="mt-0.5">→</span>
-                      <span>
-                        {d.is_endless ? 'Постоянно' : formatDate(d.start, d.start_time)}
-                        {d.end && !d.is_endless && d.end !== d.start && (
-                          <span style={{ color: 'var(--text-faint, #9ca3af)' }}>
-                            {' '}— {formatDate(d.end, d.end_time)}
-                          </span>
-                        )}
-                      </span>
-                    </li>
-                  ))}
-                  {event.all_dates.length > 5 && (
-                    <li className="text-xs" style={{ color: 'var(--text-faint)' }}>
-                      +{event.all_dates.length - 5} дат
-                    </li>
-                  )}
-                </ul>
-              </div>
-            )}
-
-            {/* Place */}
-            {(event.place_title || event.place_address) && (
-              <div className="rounded-2xl p-6 shadow-sm" style={cardStyle}>
-                <h2 className="text-xs font-bold uppercase tracking-wide mb-4"
-                  style={{ color: 'var(--text-muted)' }}>📍 Место</h2>
-                {event.place_title && (
-                  <p className="font-bold mb-1" style={{ color: 'var(--text)' }}>{event.place_title}</p>
-                )}
-                {event.place_address && (
-                  <p className="text-sm mb-2" style={{ color: 'var(--text-muted)' }}>{event.place_address}</p>
-                )}
-                {event.place_subway && (
-                  <p className="text-sm flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
-                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block" />
-                    {toLabel(event.place_subway)}
-                  </p>
-                )}
-                {event.place_phone && (
-                  <a href={`tel:${event.place_phone}`}
-                    className="text-sm mt-2 block hover:underline"
-                    style={{ color: 'var(--accent)' }}>
-                    {event.place_phone}
-                  </a>
-                )}
-                {event.lat && event.lon && (
-                  <a
-                    href={`https://yandex.ru/maps/?pt=${event.lon},${event.lat}&z=16`}
-                    target="_blank" rel="noopener noreferrer"
-                    className="mt-4 flex items-center gap-2 text-sm font-medium hover:underline"
-                    style={{ color: 'var(--accent)' }}>
-                    🗺️ Открыть на карте
-                  </a>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+        )}
       </main>
     </div>
   );
