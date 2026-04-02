@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '../context/AuthContext';
 import { toast } from './Toast';
@@ -184,6 +184,12 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
 
 export default function EventParty({ eventId }: { eventId: string }) {
   const router = useRouter();
+  const params = useParams();
+  // Always use the raw URL segment for navigation so that KudaGo events
+  // (where eventId prop = kudago_id) don't produce a wrong route like
+  // /events/244451/create-party when the user is actually on /events/3.
+  const urlEventId = (params?.id as string) ?? eventId;
+
   const { token } = useAuth();
   const [parties, setParties] = useState<Party[]>([]);
   const [loading, setLoading] = useState(true);
@@ -252,7 +258,7 @@ export default function EventParty({ eventId }: { eventId: string }) {
         </div>
         <button
           onClick={() => token
-            ? router.push(`/events/${eventId}/create-party`)
+            ? router.push(`/events/${urlEventId}/create-party`)
             : (window.location.href = '/login')
           }
           className="text-white text-sm font-bold px-4 py-1.5 rounded-full hover:opacity-90 shadow-sm transition"
