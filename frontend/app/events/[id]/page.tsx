@@ -6,6 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import Navbar from '../../components/Navbar';
 import EventAttendees from '../../components/EventAttendees';
+import EventChat from '../../components/EventChat';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -310,6 +311,9 @@ export default function EventDetailPage() {
                 )}
               </div>
             )}
+
+            {/* ===== EVENT CHAT ===== */}
+            <EventChat eventId={eventId} />
           </div>
         </div>
       </main>
