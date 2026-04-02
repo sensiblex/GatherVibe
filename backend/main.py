@@ -537,6 +537,99 @@ def get_party_detail(party_id: int, db: Session = Depends(get_db)):
     return _build_party_out(party, db)
 
 
+# ===== NOTIFICATIONS — pending requests for party creators =====
+
+class PendingRequestOut(BaseModel):
+    id: int
+    user_id: int
+    username: str
+    party_id: int
+    event_title: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@app.get("/parties/my-pending-requests", response_model=List[PendingRequestOut])
+def get_my_pending_requests(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Return all pending join requests for parties created by the current user."""
+    current_user = get_current_user_from_token(token, db)
+    rows = (
+        db.query(PartyMember, User, EventParty)
+        .join(User, PartyMember.user_id == User.id)
+        .join(EventParty, PartyMember.party_id == EventParty.id)
+        .filter(
+            EventParty.creator_id == current_user.id,
+            PartyMember.status == "pending",
+            PartyMember.user_id != current_user.id,
+        )
+        .order_by(PartyMember.joined_at.desc())
+        .all()
+    )
+    result = []
+    for member, user, party in rows:
+        result.append(PendingRequestOut(
+            id=member.id,
+            user_id=user.id,
+            username=user.username,
+            party_id=party.id,
+            event_title=party.title,
+            created_at=member.joined_at,
+        ))
+    return result
+
+
+@app.post("/parties/requests/{request_id}/approve", response_model=PartyOut)
+def approve_request(
+    request_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Approve a pending join request by PartyMember.id."""
+    current_user = get_current_user_from_token(token, db)
+    member = db.query(PartyMember).filter(PartyMember.id == request_id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    party = db.query(EventParty).filter(EventParty.id == member.party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if party.creator_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Только создатель может принимать участников")
+    accepted_count = db.query(PartyMember).filter(
+        PartyMember.party_id == party.id, PartyMember.status == "accepted"
+    ).count()
+    if accepted_count + 1 >= party.max_members:
+        raise HTTPException(status_code=400, detail="Компания уже заполнена")
+    member.status = "accepted"
+    db.commit()
+    return _build_party_out(party, db)
+
+
+@app.post("/parties/requests/{request_id}/reject", response_model=PartyOut)
+def reject_request(
+    request_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Reject (delete) a pending join request by PartyMember.id."""
+    current_user = get_current_user_from_token(token, db)
+    member = db.query(PartyMember).filter(PartyMember.id == request_id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Заявка не найдена")
+    party = db.query(EventParty).filter(EventParty.id == member.party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if party.creator_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Только создатель может отклонять заявки")
+    db.delete(member)
+    db.commit()
+    return _build_party_out(party, db)
+
+
 @app.post("/parties/{event_id}", response_model=PartyOut)
 def create_party(
     event_id: str,
@@ -720,32 +813,6 @@ def reject_member(
     db.delete(m)
     db.commit()
     return _build_party_out(party, db)
-
-
-@app.post("/parties/{party_id}/members/{user_id}/kick")
-def kick_member(
-    party_id: int,
-    user_id: int,
-    body: PartyKickBody,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может исключать участников")
-    if user_id == current_user.id:
-        raise HTTPException(status_code=400, detail="Нельзя исключить себя")
-    m = db.query(PartyMember).filter(
-        PartyMember.party_id == party_id, PartyMember.user_id == user_id
-    ).first()
-    if not m:
-        raise HTTPException(status_code=404, detail="Участник не найден")
-    db.delete(m)
-    db.commit()
-    return {"ok": True, "kicked_user_id": user_id, "reason": body.reason}
 
 
 @app.post("/parties/{party_id}/close", response_model=PartyOut)
