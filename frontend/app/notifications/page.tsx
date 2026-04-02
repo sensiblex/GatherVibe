@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
+import { apiFetch } from '../lib/apiFetch';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -27,9 +28,7 @@ export default function NotificationsPage() {
     if (!token) { router.push('/login'); return; }
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/parties/my-pending-requests`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`${API_BASE}/parties/my-pending-requests`);
       if (!res.ok) throw new Error();
       const data = await res.json();
       setRequests(Array.isArray(data) ? data : []);
@@ -46,9 +45,8 @@ export default function NotificationsPage() {
     if (!token) return;
     setActing(requestId);
     try {
-      await fetch(`${API_BASE}/parties/requests/${requestId}/${action}`, {
+      await apiFetch(`${API_BASE}/parties/requests/${requestId}/${action}`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
       });
       setRequests(prev => prev.filter(r => r.id !== requestId));
     } catch {}
