@@ -8,9 +8,11 @@ import Navbar from '../components/Navbar';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-const INTERESTS_LIST = [
+// Задача 3: 14 интересов
+const INTEREST_OPTIONS = [
   'музыка', 'кино', 'театр', 'выставки', 'спорт', 'йога',
   'рок', 'джаз', 'классика', 'фестивали', 'мастер-классы', 'танцы',
+  'литература', 'фотография',
 ];
 
 interface User {
@@ -29,6 +31,7 @@ const STATS = [
   { label: 'Найдено компаний',       value: '0', emoji: '✨' },
 ];
 
+// ──────────────────────────────────────────────────────────────────
 function EditProfileModal({
   user,
   onSave,
@@ -83,26 +86,34 @@ function EditProfileModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'oklch(0 0 0 / 0.55)' }}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'oklch(0 0 0 / 0.55)' }}
+    >
       <div
         className="w-full max-w-md rounded-3xl shadow-2xl overflow-y-auto max-h-[90vh]"
         style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
       >
+        {/* Header */}
         <div className="px-6 pt-6 pb-2 flex items-center justify-between">
           <h2 className="text-lg font-black" style={{ color: 'var(--text)' }}>✏️ Редактировать профиль</h2>
-          <button onClick={onClose} className="text-xl hover:opacity-70 transition"
-            style={{ color: 'var(--text-muted)' }}>✕</button>
+          <button
+            onClick={onClose}
+            className="text-xl hover:opacity-70 transition"
+            style={{ color: 'var(--text-muted)' }}
+          >✕</button>
         </div>
 
         <div className="px-6 pb-6 space-y-4 mt-4">
           {error && (
-            <p className="text-sm px-4 py-2 rounded-xl"
+            <p
+              className="text-sm px-4 py-2 rounded-xl"
               style={{
                 background: 'color-mix(in oklch, #ef4444 10%, transparent)',
                 color: '#ef4444',
                 border: '1px solid color-mix(in oklch, #ef4444 30%, transparent)',
-              }}>
+              }}
+            >
               {error}
             </p>
           )}
@@ -132,9 +143,7 @@ function EditProfileModal({
 
           {/* Bio */}
           <div>
-            <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>
-              О себе
-            </label>
+            <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>О себе</label>
             <textarea
               value={bio}
               onChange={e => setBio(e.target.value.slice(0, 200))}
@@ -143,38 +152,35 @@ function EditProfileModal({
               className="w-full px-4 py-2.5 rounded-xl text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400"
               style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
             />
-            <p className="text-xs text-right mt-1" style={{ color: 'var(--text-muted)' }}>{bio.length}/200</p>
+            <p className="text-xs text-right mt-1" style={{ color: 'var(--text-muted)' }}>
+              {bio.length}/200
+            </p>
           </div>
 
-          {/* Interests */}
+          {/* Interests — pill checkboxes */}
           <div>
             <label className="block text-sm font-semibold mb-2" style={{ color: 'var(--text)' }}>
               Интересы
             </label>
             <div className="flex flex-wrap gap-2">
-              {INTERESTS_LIST.map(interest => (
-                <button
-                  key={interest}
-                  type="button"
-                  onClick={() => toggleInterest(interest)}
-                  className="text-sm px-3 py-1.5 rounded-full font-medium transition hover:opacity-80"
-                  style={{
-                    background: selectedInterests.includes(interest)
-                      ? 'var(--accent, #4f46e5)'
-                      : 'var(--surface-2)',
-                    color: selectedInterests.includes(interest)
-                      ? '#fff'
-                      : 'var(--text-muted)',
-                    border: `1px solid ${
-                      selectedInterests.includes(interest)
-                        ? 'var(--accent, #4f46e5)'
-                        : 'var(--border)'
-                    }`,
-                  }}
-                >
-                  {interest}
-                </button>
-              ))}
+              {INTEREST_OPTIONS.map(interest => {
+                const active = selectedInterests.includes(interest);
+                return (
+                  <button
+                    key={interest}
+                    type="button"
+                    onClick={() => toggleInterest(interest)}
+                    className="text-sm px-3 py-1.5 rounded-full font-medium transition hover:opacity-80"
+                    style={{
+                      background: active ? '#e0e7ff' : '#ffffff',
+                      color: active ? '#4338ca' : '#6b7280',
+                      border: `1px solid ${active ? '#a5b4fc' : '#e5e7eb'}`,
+                    }}
+                  >
+                    {interest}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -184,14 +190,14 @@ function EditProfileModal({
               onClick={handleSave}
               disabled={loading}
               className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white hover:opacity-90 transition disabled:opacity-60"
-              style={{ background: 'var(--accent-gradient, linear-gradient(135deg,#4f46e5,#7c3aed))' }}
+              style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
             >
               {loading ? 'Сохранение...' : 'Сохранить'}
             </button>
             <button
               onClick={onClose}
               className="px-4 py-2.5 rounded-xl text-sm transition hover:opacity-80"
-              style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+              style={{ border: '1px solid #e5e7eb', color: '#6b7280' }}
             >
               Отмена
             </button>
@@ -202,20 +208,19 @@ function EditProfileModal({
   );
 }
 
+// ──────────────────────────────────────────────────────────────────
 export default function ProfilePage() {
   const router = useRouter();
-  const [user, setUser]             = useState<User | null>(null);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState('');
-  const [editOpen, setEditOpen]     = useState(false);
+  const [user, setUser]         = useState<User | null>(null);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState('');
+  const [editOpen, setEditOpen] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (!token) { router.push('/login'); return; }
-
-    axios.get(`${API_BASE}/users/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    axios
+      .get(`${API_BASE}/users/me`, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => setUser(res.data))
       .catch(err => {
         if (err.response?.status === 401) {
@@ -233,12 +238,15 @@ export default function ProfilePage() {
     router.push('/');
   };
 
+  // ── skeleton ──
   if (loading) return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
       <div className="container mx-auto px-4 py-16 max-w-4xl animate-pulse">
-        <div className="rounded-3xl p-8 mb-6"
-          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
+        <div
+          className="rounded-3xl p-8 mb-6"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+        >
           <div className="flex gap-6 items-center">
             <div className="w-24 h-24 rounded-full" style={{ background: 'var(--surface-2)' }} />
             <div className="space-y-3 flex-1">
@@ -251,6 +259,7 @@ export default function ProfilePage() {
     </div>
   );
 
+  // ── error ──
   if (error) return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
@@ -271,6 +280,7 @@ export default function ProfilePage() {
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
 
+      {/* Modal */}
       {editOpen && user && (
         <EditProfileModal
           user={user}
@@ -281,10 +291,13 @@ export default function ProfilePage() {
 
       <main className="container mx-auto px-4 py-10 max-w-4xl">
 
-        {/* Avatar + name */}
-        <div className="rounded-3xl p-8 mb-6"
-          style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+        {/* ── Avatar + name card ── */}
+        <div
+          className="rounded-3xl p-8 mb-6"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}
+        >
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
+            {/* Avatar */}
             <div className="relative shrink-0">
               <div
                 className="w-24 h-24 rounded-full flex items-center justify-center text-3xl font-black shadow-lg"
@@ -293,32 +306,52 @@ export default function ProfilePage() {
                 {initials}
               </div>
               {user?.is_active && (
-                <span className="absolute bottom-1 right-1 w-4 h-4 rounded-full border-2"
-                  style={{ background: 'var(--success)', borderColor: 'var(--surface)' }} />
+                <span
+                  className="absolute bottom-1 right-1 w-4 h-4 rounded-full border-2"
+                  style={{ background: 'var(--success)', borderColor: 'var(--surface)' }}
+                />
               )}
             </div>
 
+            {/* Info */}
             <div className="flex-1 text-center sm:text-left">
-              <h1 className="text-2xl font-black" style={{ color: 'var(--text)' }}>{user?.username}</h1>
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3">
+                <h1 className="text-2xl font-black" style={{ color: 'var(--text)' }}>{user?.username}</h1>
+                {/* ── Задача 3: кнопка редактирования в шапке ── */}
+                <button
+                  onClick={() => setEditOpen(true)}
+                  className="text-xs px-3 py-1.5 rounded-full font-semibold transition hover:opacity-90 shadow-sm"
+                  style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', color: '#fff' }}
+                >
+                  ✏️ Редактировать
+                </button>
+              </div>
+
               <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>{user?.email}</p>
 
               <div className="flex flex-wrap justify-center sm:justify-start gap-2 mt-4">
                 {user?.city && (
-                  <span className="flex items-center gap-1.5 text-sm px-3 py-1 rounded-full"
-                    style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                  <span
+                    className="flex items-center gap-1.5 text-sm px-3 py-1 rounded-full"
+                    style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+                  >
                     📍 {user.city}
                   </span>
                 )}
-                <span className="flex items-center gap-1.5 text-sm px-3 py-1 rounded-full font-medium"
+                <span
+                  className="flex items-center gap-1.5 text-sm px-3 py-1 rounded-full font-medium"
                   style={{
                     background: user?.is_active ? 'var(--success-hl)' : 'var(--error-hl)',
                     color: user?.is_active ? 'var(--success)' : 'var(--error)',
                     border: `1px solid ${user?.is_active ? 'var(--success-hl)' : 'var(--error-hl)'}`,
-                  }}>
+                  }}
+                >
                   {user?.is_active ? '✓ Активен' : 'Заблокирован'}
                 </span>
-                <span className="text-sm px-3 py-1 rounded-full font-mono"
-                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-faint)' }}>
+                <span
+                  className="text-sm px-3 py-1 rounded-full font-mono"
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-faint)' }}
+                >
                   ID: {user?.id}
                 </span>
               </div>
@@ -332,9 +365,11 @@ export default function ProfilePage() {
               {interestsList.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-3">
                   {interestsList.map(i => (
-                    <span key={i}
+                    <span
+                      key={i}
                       className="text-xs px-2.5 py-1 rounded-full font-medium"
-                      style={{ background: 'var(--badge-bg, #eef2ff)', color: 'var(--accent, #4f46e5)' }}>
+                      style={{ background: 'var(--badge-bg, #eef2ff)', color: 'var(--accent, #4f46e5)' }}
+                    >
                       {i}
                     </span>
                   ))}
@@ -342,19 +377,25 @@ export default function ProfilePage() {
               )}
             </div>
 
-            <button onClick={handleLogout}
+            {/* Logout */}
+            <button
+              onClick={handleLogout}
               className="shrink-0 text-sm px-4 py-2 rounded-xl font-medium transition"
-              style={{ background: 'var(--error-hl)', color: 'var(--error)', border: '1px solid var(--error-hl)' }}>
+              style={{ background: 'var(--error-hl)', color: 'var(--error)', border: '1px solid var(--error-hl)' }}
+            >
               Выйти
             </button>
           </div>
         </div>
 
-        {/* Stats */}
+        {/* ── Stats ── */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           {STATS.map(s => (
-            <div key={s.label} className="rounded-2xl p-6 text-center"
-              style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+            <div
+              key={s.label}
+              className="rounded-2xl p-6 text-center"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}
+            >
               <span className="text-3xl">{s.emoji}</span>
               <p className="text-3xl font-black mt-2" style={{ color: 'var(--text)' }}>{s.value}</p>
               <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>{s.label}</p>
@@ -362,9 +403,11 @@ export default function ProfilePage() {
           ))}
         </div>
 
-        {/* Settings */}
-        <div className="rounded-3xl p-6"
-          style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+        {/* ── Settings ── */}
+        <div
+          className="rounded-3xl p-6"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}
+        >
           <h2 className="text-base font-bold mb-4" style={{ color: 'var(--text)' }}>Настройки</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <button
