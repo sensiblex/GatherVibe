@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { io, Socket } from 'socket.io-client';
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:8000';
@@ -44,7 +45,7 @@ export default function EventChat({
     }
 
     const handleMessage = (data: Message) => {
-      setMessages(prev => [...prev, data]);
+      setMessages(prev => [...prev, data].slice(-50));
     };
     socket.on('receive_message', handleMessage);
 
@@ -55,7 +56,6 @@ export default function EventChat({
     };
   }, [eventId]);
 
-  // Auto-scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -101,7 +101,9 @@ export default function EventChat({
         </div>
         <div className="flex items-center gap-1.5">
           <span
-            className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'}`}
+            className={`w-2 h-2 rounded-full ${
+              connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'
+            }`}
           />
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {connected ? 'Подключено' : 'Подключение...'}
@@ -134,15 +136,22 @@ export default function EventChat({
                   isMe ? 'flex-row-reverse' : 'flex-row'
                 }`}
               >
-                {/* Avatar */}
+                {/* Avatar — кликабельна, ведёт на /users/[userId] */}
                 {!isMe && (
-                  <div
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 self-end"
-                    style={{ background: 'linear-gradient(135deg,var(--accent,#4f46e5),#9333ea)' }}
+                  <Link
+                    href={`/users/${m.userId}`}
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 self-end transition hover:opacity-75 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                    style={{
+                      background:
+                        'linear-gradient(135deg,var(--accent,#4f46e5),#9333ea)',
+                    }}
+                    title={m.username}
+                    aria-label={`Профиль ${m.username}`}
                   >
                     {(m.username || m.userId).slice(0, 1).toUpperCase()}
-                  </div>
+                  </Link>
                 )}
+
                 {/* Bubble */}
                 <div
                   className={`max-w-xs lg:max-w-md px-3 py-2 rounded-2xl text-sm ${
@@ -156,10 +165,16 @@ export default function EventChat({
                     border: isMe ? 'none' : '1px solid var(--border)',
                   }}
                 >
+                  {/* Username — кликабелен, ведёт на /users/[userId] */}
                   {!isMe && (
-                    <p className="text-xs font-semibold mb-0.5 opacity-70">
+                    <Link
+                      href={`/users/${m.userId}`}
+                      className="text-xs font-semibold mb-0.5 opacity-70 block truncate max-w-[160px] transition hover:opacity-100 hover:underline"
+                      style={{ color: 'inherit' }}
+                      title={m.username}
+                    >
                       {m.username || m.userId}
-                    </p>
+                    </Link>
                   )}
                   <p>{m.message}</p>
                   <p
@@ -204,7 +219,10 @@ export default function EventChat({
           onClick={sendMessage}
           disabled={!input.trim() || !connected}
           className="px-4 py-2 rounded-xl font-bold text-sm text-white hover:opacity-90 transition disabled:opacity-40"
-          style={{ background: 'var(--accent-gradient, linear-gradient(135deg,#4f46e5,#7c3aed))' }}
+          style={{
+            background:
+              'var(--accent-gradient, linear-gradient(135deg,#4f46e5,#7c3aed))',
+          }}
         >
           ➤
         </button>

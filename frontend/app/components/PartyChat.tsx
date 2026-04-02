@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { io, Socket } from 'socket.io-client';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -19,7 +20,12 @@ interface Props {
   isAcceptedMember: boolean;
 }
 
-export default function PartyChat({ partyId, currentUserId, currentUsername, isAcceptedMember }: Props) {
+export default function PartyChat({
+  partyId,
+  currentUserId,
+  currentUsername,
+  isAcceptedMember,
+}: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [connected, setConnected] = useState(false);
@@ -86,9 +92,7 @@ export default function PartyChat({ partyId, currentUserId, currentUsername, isA
       <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600">
         <div className="flex items-center gap-2">
           <span className="text-white font-bold text-sm">💬 Чат компании</span>
-          {connected && (
-            <span className="text-xs text-indigo-200">• онлайн</span>
-          )}
+          {connected && <span className="text-xs text-indigo-200">• онлайн</span>}
         </div>
         <div className="flex items-center gap-1.5">
           <span
@@ -113,34 +117,67 @@ export default function PartyChat({ partyId, currentUserId, currentUsername, isA
           </div>
         ) : (
           messages.map((msg, i) => {
-            const isOwn = currentUserId !== null && String(msg.userId) === String(currentUserId);
+            const isOwn =
+              currentUserId !== null &&
+              String(msg.userId) === String(currentUserId);
             return (
               <div
                 key={i}
-                className={`flex flex-col max-w-[75%] ${
-                  isOwn ? 'self-end items-end' : 'self-start items-start'
+                className={`flex gap-2 items-end ${
+                  isOwn ? 'flex-row-reverse' : 'flex-row'
                 }`}
               >
+                {/* Avatar — кликабельна, ведёт на /users/[userId] */}
                 {!isOwn && (
-                  <span className="text-xs text-gray-500 mb-0.5 px-1 font-semibold">
-                    {msg.username}
-                  </span>
+                  <Link
+                    href={`/users/${msg.userId}`}
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 transition hover:opacity-75 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                    style={{
+                      background:
+                        'linear-gradient(135deg,#4f46e5,#9333ea)',
+                    }}
+                    title={msg.username}
+                    aria-label={`Профиль ${msg.username}`}
+                  >
+                    {(msg.username || String(msg.userId))
+                      .slice(0, 1)
+                      .toUpperCase()}
+                  </Link>
                 )}
+
                 <div
-                  className={`px-3 py-2 rounded-2xl text-sm leading-relaxed break-words ${
-                    isOwn
-                      ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-br-sm'
-                      : 'bg-white text-gray-800 border border-gray-100 shadow-sm rounded-bl-sm'
+                  className={`flex flex-col max-w-[72%] ${
+                    isOwn ? 'items-end' : 'items-start'
                   }`}
                 >
-                  {msg.message}
+                  {/* Username — кликабелен */}
+                  {!isOwn && (
+                    <Link
+                      href={`/users/${msg.userId}`}
+                      className="text-xs text-gray-500 mb-0.5 px-1 font-semibold transition hover:text-indigo-600 hover:underline"
+                      title={msg.username}
+                    >
+                      {msg.username}
+                    </Link>
+                  )}
+
+                  <div
+                    className={`px-3 py-2 rounded-2xl text-sm leading-relaxed break-words ${
+                      isOwn
+                        ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-br-sm'
+                        : 'bg-white text-gray-800 border border-gray-100 shadow-sm rounded-bl-sm'
+                    }`}
+                  >
+                    {msg.message}
+                  </div>
+
+                  <span className="text-[10px] text-gray-400 mt-0.5 px-1">
+                    {new Date(msg.timestamp).toLocaleTimeString('ru-RU', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
                 </div>
-                <span className="text-[10px] text-gray-400 mt-0.5 px-1">
-                  {new Date(msg.timestamp).toLocaleTimeString('ru-RU', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </span>
               </div>
             );
           })
