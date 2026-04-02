@@ -36,10 +36,10 @@ function firstDayOfMonth(year: number, month: number) {
 }
 
 const RU_MONTHS = [
-  'Январь','Февраль','Март','Апрель','Май','Июнь',
-  'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь',
+  '\u042f\u043d\u0432\u0430\u0440\u044c','\u0424\u0435\u0432\u0440\u0430\u043b\u044c','\u041c\u0430\u0440\u0442','\u0410\u043f\u0440\u0435\u043b\u044c','\u041c\u0430\u0439','\u0418\u044e\u043d\u044c',
+  '\u0418\u044e\u043b\u044c','\u0410\u0432\u0433\u0443\u0441\u0442','\u0421\u0435\u043d\u0442\u044f\u0431\u0440\u044c','\u041e\u043a\u0442\u044f\u0431\u0440\u044c','\u041d\u043e\u044f\u0431\u0440\u044c','\u0414\u0435\u043a\u0430\u0431\u0440\u044c',
 ];
-const RU_DAYS_SHORT = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+const RU_DAYS_SHORT = ['\u041f\u043d','\u0412\u0442','\u0421\u0440','\u0427\u0442','\u041f\u0442','\u0421\u0431','\u0412\u0441'];
 
 function EventCalendar({
   events, selectedDate, onSelectDate,
@@ -95,7 +95,7 @@ function EventCalendar({
           onClick={prevMonth}
           className="w-8 h-8 flex items-center justify-center rounded-xl transition"
           style={{ color: 'var(--text-muted)' }}
-        >‹</button>
+        >&#8249;</button>
         <h2 className="font-bold text-sm" style={{ color: 'var(--text)' }}>
           {RU_MONTHS[viewMonth]} {viewYear}
         </h2>
@@ -103,7 +103,7 @@ function EventCalendar({
           onClick={nextMonth}
           className="w-8 h-8 flex items-center justify-center rounded-xl transition"
           style={{ color: 'var(--text-muted)' }}
-        >›</button>
+        >&#8250;</button>
       </div>
 
       <div className="grid grid-cols-7 mb-1">
@@ -159,14 +159,14 @@ function EventCalendar({
           style={{ borderTop: '1px solid var(--divider)' }}
         >
           <p className="text-xs font-semibold" style={{ color: 'var(--primary)' }}>
-            📅 {displayDate(selectedDate, { day: 'numeric', month: 'long', year: 'numeric' })}
+            \uD83D\uDCC5 {displayDate(selectedDate, { day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
           <button
             onClick={() => onSelectDate(null)}
             className="text-xs transition"
             style={{ color: 'var(--text-faint)' }}
           >
-            Сбросить ✕
+            \u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u2715
           </button>
         </div>
       )}
@@ -196,7 +196,11 @@ export default function EventsPage() {
   const [calOpen, setCalOpen]         = useState(true);
   const [isSingleDayFilter, setIsSingleDayFilter] = useState(false);
 
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // sentinel ref — div под сеткой карточек, за которым следит IntersectionObserver
+  const sentinelRef  = useRef<HTMLDivElement>(null);
+  // флаг, чтобы observer не дёргал loadMore пока уже идёт запрос
+  const loadingRef   = useRef(false);
   const todayStr = localIsoDate(new Date());
 
   useEffect(() => {
@@ -222,6 +226,8 @@ export default function EventsPage() {
     free: boolean, from: string, to: string,
     append: boolean, singleDay: boolean,
   ) => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     append ? setLoadingMore(true) : setLoading(true);
     setError(null);
     try {
@@ -235,7 +241,7 @@ export default function EventsPage() {
       if (to)   params.set('actual_until', String(localEndTs(to)));
 
       const res = await fetch(`${API_BASE}/kudago/events?${params}`);
-      if (!res.ok) throw new Error(`Ошибка ${res.status}`);
+      if (!res.ok) throw new Error(`\u041e\u0448\u0438\u0431\u043a\u0430 ${res.status}`);
       const data = await res.json();
       const incoming: KudaGoEvent[] = data.results || [];
       setTotal(data.count ?? null);
@@ -252,17 +258,79 @@ export default function EventsPage() {
 
       setEvents(prev => append ? [...prev, ...filtered] : filtered);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Неизвестная ошибка');
+      setError(e instanceof Error ? e.message : '\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f \u043e\u0448\u0438\u0431\u043a\u0430');
     } finally {
       setLoading(false);
       setLoadingMore(false);
+      loadingRef.current = false;
     }
   }, []);
 
+  // сброс страницы при смене фильтров
   useEffect(() => {
     setPage(1);
     load(1, search, category, isFree, dateFrom, dateTo, false, isSingleDayFilter);
   }, [search, category, isFree, dateFrom, dateTo, isSingleDayFilter, load]);
+
+  // ─── IntersectionObserver — авто-загрузка при появлении sentinel ────────
+  // pageRef/hasMoreRef нужны чтобы не держать устаревший замыкательный контекст
+  const pageRef    = useRef(page);
+  const hasMoreRef = useRef(hasMore);
+  const searchRef        = useRef(search);
+  const categoryRef      = useRef(category);
+  const isFreeRef        = useRef(isFree);
+  const dateFromRef      = useRef(dateFrom);
+  const dateToRef        = useRef(dateTo);
+  const isSingleDayRef   = useRef(isSingleDayFilter);
+  const isFallbackRef    = useRef(false);
+
+  // синхронизируем рефы при каждом рендере
+  pageRef.current          = page;
+  hasMoreRef.current       = hasMore;
+  searchRef.current        = search;
+  categoryRef.current      = category;
+  isFreeRef.current        = isFree;
+  dateFromRef.current      = dateFrom;
+  dateToRef.current        = dateTo;
+  isSingleDayRef.current   = isSingleDayFilter;
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (
+          entry.isIntersecting &&
+          hasMoreRef.current &&
+          !loadingRef.current &&
+          !isFallbackRef.current
+        ) {
+          const next = pageRef.current + 1;
+          setPage(next);
+          load(
+            next,
+            searchRef.current,
+            categoryRef.current,
+            isFreeRef.current,
+            dateFromRef.current,
+            dateToRef.current,
+            true,
+            isSingleDayRef.current,
+          );
+        }
+      },
+      {
+        // триггер когда sentinel появился на 50% высоты viewport снизу
+        rootMargin: '0px 0px 200px 0px',
+        threshold: 0,
+      },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [load]);
 
   const onSearchChange = (val: string) => {
     setSearchInput(val);
@@ -270,6 +338,7 @@ export default function EventsPage() {
     debounceRef.current = setTimeout(() => setSearch(val), 500);
   };
 
+  // ручная кнопка — запасной вариант
   const loadMore = () => {
     const next = page + 1;
     setPage(next);
@@ -291,8 +360,8 @@ export default function EventsPage() {
   );
   const displayEvents = calDateFallbackEvents.length > 0 ? calDateFallbackEvents : events;
   const isFallback = calDateFallbackEvents.length > 0;
+  isFallbackRef.current = isFallback;
 
-  /* ── input/select style helpers ── */
   const inputStyle = {
     background: 'var(--surface-2)',
     border: '1px solid var(--border)',
@@ -311,10 +380,10 @@ export default function EventsPage() {
       {/* Header / filters */}
       <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--divider)' }}>
         <div className="container mx-auto px-4 py-8">
-          <h1 className="text-3xl font-black" style={{ color: 'var(--text)' }}>События в Казани</h1>
+          <h1 className="text-3xl font-black" style={{ color: 'var(--text)' }}>\u0421\u043e\u0431\u044b\u0442\u0438\u044f \u0432 \u041a\u0430\u0437\u0430\u043d\u0438</h1>
           {total !== null && !loading && (
             <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
-              {total.toLocaleString('ru-RU')} мероприятий
+              {total.toLocaleString('ru-RU')} \u043c\u0435\u0440\u043e\u043f\u0440\u0438\u044f\u0442\u0438\u0439
             </p>
           )}
 
@@ -330,7 +399,7 @@ export default function EventsPage() {
               <input
                 type="text" value={searchInput}
                 onChange={e => onSearchChange(e.target.value)}
-                placeholder="Поиск событий..."
+                placeholder="\u041f\u043e\u0438\u0441\u043a \u0441\u043e\u0431\u044b\u0442\u0438\u0439..."
                 style={{ ...inputStyle, paddingLeft: '2.25rem', width: '100%' }}
                 onFocus={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.boxShadow = '0 0 0 3px var(--primary-ring)'; }}
                 onBlur={e  => { e.currentTarget.style.borderColor = 'var(--border)';   e.currentTarget.style.boxShadow = 'none'; }}
@@ -344,7 +413,7 @@ export default function EventsPage() {
                 onFocus={e => { e.currentTarget.style.borderColor = 'var(--primary)'; }}
                 onBlur={e  => { e.currentTarget.style.borderColor = 'var(--border)'; }}
               >
-                <option value="">Все категории</option>
+                <option value="">\u0412\u0441\u0435 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438</option>
                 {categories.map(cat => <option key={cat.slug} value={cat.slug}>{cat.name}</option>)}
               </select>
             )}
@@ -359,12 +428,12 @@ export default function EventsPage() {
                 border: '1px solid var(--border)',
               }}
             >
-              🄓 Бесплатно
+              \uD83C\uDD13 \u0411\u0435\u0441\u043f\u043b\u0430\u0442\u043d\u043e
             </button>
 
             {/* Date from */}
             <div className="flex items-center gap-1.5">
-              <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>С</label>
+              <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>\u0421</label>
               <input type="date" value={dateFrom} min={todayStr}
                 onChange={e => {
                   setDateFrom(e.target.value);
@@ -380,7 +449,7 @@ export default function EventsPage() {
 
             {/* Date to */}
             <div className="flex items-center gap-1.5">
-              <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>По</label>
+              <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>\u041f\u043e</label>
               <input type="date" value={dateTo} min={dateFrom || todayStr}
                 onChange={e => {
                   setDateTo(e.target.value);
@@ -402,7 +471,7 @@ export default function EventsPage() {
                   border: '1px solid var(--border)',
                 }}
               >
-                Сбросить ✕
+                \u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u2715
               </button>
             )}
           </div>
@@ -425,8 +494,8 @@ export default function EventsPage() {
                   boxShadow: 'var(--shadow-sm)',
                 }}
               >
-                <span>📅 Календарь событий</span>
-                <span style={{ color: 'var(--text-faint)' }}>{calOpen ? '▲' : '▼'}</span>
+                <span>\uD83D\uDCC5 \u041a\u0430\u043b\u0435\u043d\u0434\u0430\u0440\u044c \u0441\u043e\u0431\u044b\u0442\u0438\u0439</span>
+                <span style={{ color: 'var(--text-faint)' }}>{calOpen ? '\u25b2' : '\u25bc'}</span>
               </button>
 
               {calOpen && (
@@ -448,10 +517,10 @@ export default function EventsPage() {
                     }}
                   >
                     <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--primary)' }}>
-                      События {displayDate(calSelectedDate, { day: 'numeric', month: 'long' })}
+                      \u0421\u043e\u0431\u044b\u0442\u0438\u044f {displayDate(calSelectedDate, { day: 'numeric', month: 'long' })}
                     </p>
                     {dayEvents.length === 0 ? (
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Событий не найдено</p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>\u0421\u043e\u0431\u044b\u0442\u0438\u0439 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e</p>
                     ) : (
                       <ul className="space-y-2">
                         {dayEvents.slice(0, 5).map(e => (
@@ -470,7 +539,7 @@ export default function EventsPage() {
                         ))}
                         {dayEvents.length > 5 && (
                           <p className="text-[10px]" style={{ color: 'var(--primary)' }}>
-                            и ещё {dayEvents.length - 5}...
+                            \u0438 \u0435\u0449\u0451 {dayEvents.length - 5}...
                           </p>
                         )}
                       </ul>
@@ -489,13 +558,13 @@ export default function EventsPage() {
                 }}
               >
                 <p className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-faint)' }}>
-                  Быстрые фильтры
+                  \u0411\u044b\u0441\u0442\u0440\u044b\u0435 \u0444\u0438\u043b\u044c\u0442\u0440\u044b
                 </p>
                 {([
-                  { label: '🕐 Сегодня',     offset: 0 },
-                  { label: '📆 Завтра',      offset: 1 },
-                  { label: '🗓 Эта неделя',  offset: 7 },
-                  { label: '📅 Этот месяц', offset: 30 },
+                  { label: '\uD83D\uDD50 \u0421\u0435\u0433\u043e\u0434\u043d\u044f',     offset: 0 },
+                  { label: '\uD83D\uDCC6 \u0417\u0430\u0432\u0442\u0440\u0430',      offset: 1 },
+                  { label: '\uD83D\uDDD3 \u042d\u0442\u0430 \u043d\u0435\u0434\u0435\u043b\u044f',  offset: 7 },
+                  { label: '\uD83D\uDCC5 \u042d\u0442\u043e\u0442 \u043c\u0435\u0441\u044f\u0446', offset: 30 },
                 ] as { label: string; offset: number }[]).map(({ label, offset }) => {
                   const fromDate = new Date();
                   if (offset === 1) fromDate.setDate(fromDate.getDate() + 1);
@@ -545,25 +614,25 @@ export default function EventsPage() {
                     color: 'var(--primary)',
                   }}
                 >
-                  📅
+                  \uD83D\uDCC5
                   {dateFrom && dateTo && dateFrom === dateTo
                     ? displayDate(dateFrom, { day: 'numeric', month: 'long' })
                     : [
-                        dateFrom && `с ${displayDate(dateFrom, { day: 'numeric', month: 'short' })}`,
-                        dateTo   && `по ${displayDate(dateTo,   { day: 'numeric', month: 'short' })}`,
+                        dateFrom && `\u0441 ${displayDate(dateFrom, { day: 'numeric', month: 'short' })}`,
+                        dateTo   && `\u043f\u043e ${displayDate(dateTo,   { day: 'numeric', month: 'short' })}`,
                       ].filter(Boolean).join(' ')}
                   <button
                     onClick={() => { setDateFrom(''); setDateTo(''); setCalSelectedDate(null); setIsSingleDayFilter(false); }}
                     className="ml-1 transition"
                     style={{ color: 'var(--text-faint)' }}
-                  >✕</button>
+                  >\u2715</button>
                 </span>
                 {isFallback && (
                   <span
                     className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full"
                     style={{ background: 'var(--warning-hl)', color: 'var(--warning)', border: '1px solid var(--warning-hl)' }}
                   >
-                    ⚡ Показаны события из общей выборки
+                    \u26a1 \u041f\u043e\u043a\u0430\u0437\u0430\u043d\u044b \u0441\u043e\u0431\u044b\u0442\u0438\u044f \u0438\u0437 \u043e\u0431\u0449\u0435\u0439 \u0432\u044b\u0431\u043e\u0440\u043a\u0438
                   </span>
                 )}
               </div>
@@ -590,14 +659,14 @@ export default function EventsPage() {
             {/* Error */}
             {error && (
               <div className="flex flex-col items-center py-24 gap-4">
-                <span className="text-5xl">😕</span>
-                <p className="text-lg" style={{ color: 'var(--text)' }}>Не удалось загрузить события</p>
+                <span className="text-5xl">\uD83D\uDE15</span>
+                <p className="text-lg" style={{ color: 'var(--text)' }}>\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0441\u043e\u0431\u044b\u0442\u0438\u044f</p>
                 <p className="text-sm" style={{ color: 'var(--error)' }}>{error}</p>
                 <button
                   onClick={() => load(1, search, category, isFree, dateFrom, dateTo, false, isSingleDayFilter)}
                   className="gv-btn-primary"
                 >
-                  Попробовать снова
+                  \u041f\u043e\u043f\u0440\u043e\u0431\u043e\u0432\u0430\u0442\u044c \u0441\u043d\u043e\u0432\u0430
                 </button>
               </div>
             )}
@@ -607,14 +676,14 @@ export default function EventsPage() {
               <>
                 {displayEvents.length === 0 ? (
                   <div className="flex flex-col items-center py-24 gap-4 text-center">
-                    <span className="text-6xl">🎭</span>
-                    <p className="text-lg" style={{ color: 'var(--text-muted)' }}>Ничего не найдено</p>
+                    <span className="text-6xl">\uD83C\uDFAD</span>
+                    <p className="text-lg" style={{ color: 'var(--text-muted)' }}>\u041d\u0438\u0447\u0435\u0433\u043e \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e</p>
                     {hasActive && (
                       <button onClick={clearFilters}
                         className="text-sm font-medium transition"
                         style={{ color: 'var(--primary)' }}
                       >
-                        Сбросить фильтры
+                        \u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u0444\u0438\u043b\u044c\u0442\u0440\u044b
                       </button>
                     )}
                   </div>
@@ -624,28 +693,35 @@ export default function EventsPage() {
                   </div>
                 )}
 
+                {/* sentinel — невидимый div, за которым следит IntersectionObserver */}
                 {!isFallback && hasMore && events.length > 0 && (
-                  <div className="flex justify-center mt-12">
-                    <button
-                      onClick={loadMore}
-                      disabled={loadingMore}
-                      className="flex items-center gap-2 px-8 py-3 rounded-2xl font-semibold transition"
-                      style={{
-                        background: 'var(--surface)',
-                        border: '2px solid var(--primary)',
-                        color: 'var(--primary)',
-                      }}
-                    >
-                      {loadingMore ? (
-                        <>
-                          <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                          </svg>
-                          Загружаем...
-                        </>
-                      ) : 'Загрузить ещё'}
-                    </button>
+                  <div ref={sentinelRef} className="mt-10 flex flex-col items-center gap-3">
+                    {/* спиннер при авто-загрузке */}
+                    {loadingMore && (
+                      <div className="flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
+                        <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10"
+                            stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor"
+                            d="M4 12a8 8 0 018-8v8H4z" />
+                        </svg>
+                        <span className="text-sm font-medium">\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043c...</span>
+                      </div>
+                    )}
+                    {/* резервная кнопка — видна только когда не загружается */}
+                    {!loadingMore && (
+                      <button
+                        onClick={loadMore}
+                        className="flex items-center gap-2 px-8 py-3 rounded-2xl font-semibold transition"
+                        style={{
+                          background: 'var(--surface)',
+                          border: '2px solid var(--primary)',
+                          color: 'var(--primary)',
+                        }}
+                      >
+                        \u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0435\u0449\u0451
+                      </button>
+                    )}
                   </div>
                 )}
               </>
