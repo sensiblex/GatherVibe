@@ -21,6 +21,20 @@ interface MyStatus {
   comment?: string | null;
 }
 
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+function splitInterests(raw: string | null | undefined): string[] {
+  return (raw || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function calcMatchScore(myTags: string[], attendee: Attendee, myUserId: number | null): number {
+  if (attendee.user_id === myUserId || !myTags.length) return 0;
+  const theirTags = splitInterests(attendee.interests);
+  return myTags.filter(t => theirTags.includes(t)).length;
+}
+
+// ─── sub-components ─────────────────────────────────────────────────────────
+
 function InterestBadge({ interest, highlight }: { interest: string; highlight?: boolean }) {
   return (
     <span
@@ -62,25 +76,39 @@ function CompatibilityBar({ score }: { score: number }) {
 function AttendeeCard({
   attendee,
   isMe,
+  isTopMatch,
   commonInterests,
+  matchScore,
 }: {
   attendee: Attendee;
   isMe: boolean;
+  isTopMatch: boolean;
   commonInterests: string[];
+  matchScore: number;
 }) {
   const initials = attendee.username.slice(0, 2).toUpperCase();
   const interests = attendee.interests
     ? attendee.interests.split(',').filter(Boolean).slice(0, 5)
     : [];
 
+  // border: me → accent, top-match → purple-300, some common → faint purple, else default
   const borderColor = isMe
     ? 'var(--accent, #4f46e5)'
+    : isTopMatch
+    ? '#d8b4fe' // purple-300
     : commonInterests.length > 0
     ? 'color-mix(in oklch, #9333ea 50%, var(--border))'
     : 'var(--border)';
 
+  // ring for top-match: extra box-shadow
+  const boxShadow = isTopMatch
+    ? '0 0 0 2px #d8b4fe, 0 2px 8px 0 rgba(168,85,247,0.10)'
+    : undefined;
+
   const bgColor = isMe
     ? 'color-mix(in oklch, var(--accent, #4f46e5) 8%, var(--surface))'
+    : isTopMatch
+    ? 'color-mix(in oklch, #9333ea 7%, var(--surface))'
     : commonInterests.length > 0
     ? 'color-mix(in oklch, #9333ea 5%, var(--surface))'
     : 'var(--surface)';
@@ -91,8 +119,10 @@ function AttendeeCard({
       style={{
         background: bgColor,
         border: `1px solid ${borderColor}`,
+        boxShadow,
       }}
     >
+      {/* Labels: Вы / Лучшее совпадение */}
       {isMe && (
         <span
           className="absolute top-3 right-3 text-xs font-bold px-2 py-0.5 rounded-full"
@@ -101,19 +131,26 @@ function AttendeeCard({
           Вы
         </span>
       )}
-      {!isMe && commonInterests.length >= 2 && (
+      {!isMe && isTopMatch && (
+        <span className="absolute top-3 right-3 text-xs font-bold bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">
+          ✨ Лучшее совпадение
+        </span>
+      )}
+      {!isMe && !isTopMatch && commonInterests.length >= 2 && (
         <span className="absolute top-3 right-3 text-xs font-bold bg-purple-500/20 text-purple-500 px-2 py-0.5 rounded-full">
           🔥 Совпадение
         </span>
       )}
 
+      {/* Avatar + name */}
       <div className="flex items-center gap-3">
         <div
           className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0"
           style={{
-            background: commonInterests.length >= 2
-              ? 'linear-gradient(135deg,#9333ea,#ec4899)'
-              : 'linear-gradient(135deg,var(--accent,#4f46e5),#9333ea)',
+            background:
+              isTopMatch || commonInterests.length >= 2
+                ? 'linear-gradient(135deg,#9333ea,#ec4899)'
+                : 'linear-gradient(135deg,var(--accent,#4f46e5),#9333ea)',
           }}
         >
           {initials}
@@ -130,24 +167,35 @@ function AttendeeCard({
         </div>
       </div>
 
+      {/* Compatibility bar */}
       {!isMe && commonInterests.length > 0 && (
         <CompatibilityBar score={commonInterests.length} />
       )}
 
+      {/* Interest tags */}
       {interests.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {interests.map((i) => (
+          {interests.map(i => (
             <InterestBadge key={i} interest={i} highlight={commonInterests.includes(i.trim())} />
           ))}
         </div>
       )}
 
+      {/* Match score badge (задача 4) */}
+      {!isMe && matchScore > 0 && (
+        <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full font-semibold self-start">
+          🔥 {matchScore} общих интереса
+        </span>
+      )}
+
+      {/* Comment */}
       {attendee.comment && (
         <p className="text-sm italic leading-snug" style={{ color: 'var(--text-muted)' }}>
           «{attendee.comment}»
         </p>
       )}
 
+      {/* Looking indicator */}
       {attendee.is_looking && !isMe && (
         <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-500">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -157,6 +205,8 @@ function AttendeeCard({
     </div>
   );
 }
+
+// ─── main component ──────────────────────────────────────────────────────────
 
 export default function EventAttendees({ eventId }: { eventId: string }) {
   const [attendees, setAttendees] = useState<Attendee[]>([]);
@@ -173,6 +223,7 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
   const [token, setToken] = useState<string | null>(null);
   const [myUserId, setMyUserId] = useState<number | null>(null);
 
+  // ── read token once on mount ──
   useEffect(() => {
     const t = localStorage.getItem('token');
     setToken(t);
@@ -186,20 +237,23 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
     }
   }, []);
 
+  // ── fetch current user interests (задача 1) ──
   useEffect(() => {
     if (!token) return;
     fetch(`${API_BASE}/users/me`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.ok ? r.json() : null)
+      .then(r => (r.ok ? r.json() : null))
       .then(u => {
-        if (u?.interests)
-          setMyInterests(u.interests.split(',').map((s: string) => s.trim()).filter(Boolean));
+        if (u?.interests) setMyInterests(splitInterests(u.interests));
       })
       .catch(() => {});
   }, [token]);
 
+  // ── fetchers ──
   const fetchAttendees = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/attendees/${eventId}${onlyLooking ? '?only_looking=true' : ''}`);
+      const res = await fetch(
+        `${API_BASE}/attendees/${eventId}${onlyLooking ? '?only_looking=true' : ''}`
+      );
       if (res.ok) setAttendees(await res.json());
     } catch {}
   }, [eventId, onlyLooking]);
@@ -229,15 +283,22 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
     Promise.all([fetchAttendees(), fetchMyStatus()]).finally(() => setLoading(false));
   }, [fetchAttendees, fetchMyStatus, tokenReady]);
 
+  // ── scoring helpers (задача 2) ──
+  const getMatchScore = useCallback(
+    (attendee: Attendee): number => calcMatchScore(myInterests, attendee, myUserId),
+    [myInterests, myUserId]
+  );
+
   const getCommonInterests = useCallback(
     (attendee: Attendee): string[] => {
-      if (!myInterests.length || !attendee.interests || attendee.user_id === myUserId) return [];
-      const their = attendee.interests.split(',').map(s => s.trim()).filter(Boolean);
+      if (attendee.user_id === myUserId || !myInterests.length) return [];
+      const their = splitInterests(attendee.interests);
       return myInterests.filter(i => their.includes(i));
     },
     [myInterests, myUserId]
   );
 
+  // ── all unique interests for filter chips ──
   const allInterests = useMemo(() => {
     const set = new Set<string>();
     attendees.forEach(a => {
@@ -246,26 +307,45 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
     return Array.from(set).filter(Boolean).sort();
   }, [attendees]);
 
+  // ── sorted + filtered list (задача 3: свою карточку всегда первой) ──
   const processedAttendees = useMemo(() => {
     let list = [...attendees];
+
     if (filterInterest) {
-      list = list.filter(a => a.interests?.split(',').map(s => s.trim()).includes(filterInterest));
+      list = list.filter(a =>
+        a.interests?.split(',').map(s => s.trim()).includes(filterInterest)
+      );
     }
+
     if (sortBy === 'match') {
       list.sort((a, b) => {
-        const sa = getCommonInterests(a).length;
-        const sb = getCommonInterests(b).length;
-        if (sb !== sa) return sb - sa;
+        // свою карточку — всегда первой
         if (a.user_id === myUserId) return -1;
         if (b.user_id === myUserId) return 1;
-        return 0;
+        // остальных — по matchScore DESC
+        return getMatchScore(b) - getMatchScore(a);
       });
     } else {
       list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }
-    return list;
-  }, [attendees, sortBy, filterInterest, getCommonInterests, myUserId]);
 
+    return list;
+  }, [attendees, sortBy, filterInterest, getMatchScore, myUserId]);
+
+  // ── top-match id (задача 5) ──
+  const topMatchUserId = useMemo(() => {
+    // ищем участника (не себя) с максимальным score > 0
+    let best: Attendee | null = null;
+    let bestScore = 0;
+    for (const a of attendees) {
+      if (a.user_id === myUserId) continue;
+      const s = getMatchScore(a);
+      if (s > bestScore) { bestScore = s; best = a; }
+    }
+    return bestScore > 0 ? best?.user_id ?? null : null;
+  }, [attendees, getMatchScore, myUserId]);
+
+  // ── join / leave ──
   const handleJoin = async () => {
     if (!token) { window.location.href = '/login'; return; }
     setJoining(true);
@@ -314,7 +394,7 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
 
   return (
     <div className="rounded-2xl shadow-sm overflow-hidden" style={cardStyle}>
-      {/* Header */}
+      {/* ── Header ── */}
       <div
         className="px-6 py-5 flex flex-wrap items-center justify-between gap-3"
         style={{ borderBottom: '1px solid var(--border)' }}
@@ -332,6 +412,7 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
             <p className="text-xs text-emerald-500 mt-0.5">{lookingCount} ищут компанию</p>
           )}
         </div>
+
         <div className="flex items-center gap-2 flex-wrap">
           {/* Sort buttons */}
           <div
@@ -379,10 +460,7 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
             <button
               onClick={() => setShowForm(v => !v)}
               className="text-sm font-bold px-4 py-1.5 rounded-full transition hover:opacity-80"
-              style={{
-                border: '1px solid var(--accent, #4f46e5)',
-                color: 'var(--accent, #4f46e5)',
-              }}
+              style={{ border: '1px solid var(--accent, #4f46e5)', color: 'var(--accent, #4f46e5)' }}
             >
               ✏️ Изменить
             </button>
@@ -390,7 +468,7 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
         </div>
       </div>
 
-      {/* Interest filter chips */}
+      {/* ── Interest filter chips ── */}
       {allInterests.length > 0 && (
         <div
           className="px-6 py-3 flex gap-2 flex-wrap"
@@ -413,8 +491,18 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
               onClick={() => setFilterInterest(int === filterInterest ? '' : int)}
               className="text-xs px-3 py-1 rounded-full font-medium transition"
               style={{
-                background: filterInterest === int ? 'var(--accent, #4f46e5)' : myInterests.includes(int) ? 'var(--badge-bg, #eef2ff)' : 'var(--surface-2)',
-                color: filterInterest === int ? '#fff' : myInterests.includes(int) ? 'var(--accent, #4f46e5)' : 'var(--text-muted)',
+                background:
+                  filterInterest === int
+                    ? 'var(--accent, #4f46e5)'
+                    : myInterests.includes(int)
+                    ? 'var(--badge-bg, #eef2ff)'
+                    : 'var(--surface-2)',
+                color:
+                  filterInterest === int
+                    ? '#fff'
+                    : myInterests.includes(int)
+                    ? 'var(--accent, #4f46e5)'
+                    : 'var(--text-muted)',
                 border: `1px solid ${filterInterest === int ? 'var(--accent, #4f46e5)' : 'var(--border)'}`,
               }}
             >
@@ -424,7 +512,7 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
         </div>
       )}
 
-      {/* Join form */}
+      {/* ── Join / edit form ── */}
       {showForm && (
         <div
           className="px-6 py-4"
@@ -442,11 +530,7 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
             placeholder="Коротко о себе или пожелания для компании (необязательно)"
             rows={2}
             className="w-full text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
-            style={{
-              background: 'var(--surface)',
-              border: '1px solid var(--border)',
-              color: 'var(--text)',
-            }}
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
           />
           <p className="text-xs mb-3 text-right" style={{ color: 'var(--text-muted)' }}>
             {comment.length}/200
@@ -469,7 +553,8 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
           </label>
           <div className="flex gap-2">
             <button
-              onClick={handleJoin} disabled={joining}
+              onClick={handleJoin}
+              disabled={joining}
               className="flex-1 text-white text-sm font-bold py-2 rounded-xl hover:opacity-90 transition disabled:opacity-60"
               style={{ background: 'var(--accent-gradient, linear-gradient(135deg,#4f46e5,#7c3aed))' }}
             >
@@ -477,12 +562,10 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
             </button>
             {myStatus.attending && (
               <button
-                onClick={handleLeave} disabled={joining}
+                onClick={handleLeave}
+                disabled={joining}
                 className="px-4 text-sm rounded-xl transition disabled:opacity-60"
-                style={{
-                  color: '#ef4444',
-                  border: '1px solid color-mix(in oklch, #ef4444 40%, transparent)',
-                }}
+                style={{ color: '#ef4444', border: '1px solid color-mix(in oklch, #ef4444 40%, transparent)' }}
               >
                 Отменить
               </button>
@@ -490,10 +573,7 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
             <button
               onClick={() => setShowForm(false)}
               className="px-4 text-sm rounded-xl transition hover:opacity-80"
-              style={{
-                color: 'var(--text-muted)',
-                border: '1px solid var(--border)',
-              }}
+              style={{ color: 'var(--text-muted)', border: '1px solid var(--border)' }}
             >
               ✕
             </button>
@@ -501,14 +581,16 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
         </div>
       )}
 
-      {/* Attendees list */}
+      {/* ── Attendees list ── */}
       <div className="p-6">
         {myInterests.length > 0 && sortBy === 'match' && attendees.length > 1 && (
           <p className="text-xs mb-4 flex items-center gap-1" style={{ color: 'var(--accent)' }}>
             <span>🎯</span> Участники отсортированы по совпадению интересов с вашим профилем
           </p>
         )}
+
         {loading ? (
+          // skeleton loader — не трогаем
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {[1, 2, 3].map(i => (
               <div key={i} className="h-24 rounded-2xl animate-pulse" style={{ background: 'var(--surface-2)' }} />
@@ -531,7 +613,9 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
                 key={a.id}
                 attendee={a}
                 isMe={a.user_id === myUserId}
+                isTopMatch={a.user_id === topMatchUserId}
                 commonInterests={getCommonInterests(a)}
+                matchScore={getMatchScore(a)}
               />
             ))}
           </div>
