@@ -22,13 +22,31 @@ const AuthContext = createContext<AuthContextValue>({
   logout: () => {},
 });
 
+/** Cookie helpers ---------------------------------------------------------- */
+
+function setCookie(name: string, value: string, maxAge: number) {
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; SameSite=Lax`;
+}
+
+function deleteCookie(name: string) {
+  document.cookie = `${name}=; path=/; max-age=0`;
+}
+
+function getCookieValue(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+/** Provider ---------------------------------------------------------------- */
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser]   = useState<AuthUser | null>(null);
 
-  // Читаем сессию из localStorage при монтировании
+  // Initialise from cookie (primary source) or fall back to localStorage
   useEffect(() => {
-    const t = localStorage.getItem('token');
+    const t = getCookieValue('token') ?? localStorage.getItem('token');
     if (t) {
       try {
         const p = JSON.parse(atob(t.split('.')[1]));
@@ -58,6 +76,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback((t: string, u: AuthUser) => {
+    // Persist to cookie (7 days) so the Next.js middleware can read it server-side
+    setCookie('token', t, 604800);
+    // Keep localStorage as a fallback for client-side reads
     localStorage.setItem('token', t);
     localStorage.setItem('username', u.username);
     localStorage.setItem('email', u.email);
@@ -66,6 +87,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    // Clear both the cookie and localStorage
+    deleteCookie('token');
     ['token', 'user_id', 'username', 'email'].forEach(k => localStorage.removeItem(k));
     setToken(null);
     setUser(null);
