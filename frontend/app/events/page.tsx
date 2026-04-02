@@ -36,10 +36,10 @@ function firstDayOfMonth(year: number, month: number) {
 }
 
 const RU_MONTHS = [
-  '\u042f\u043d\u0432\u0430\u0440\u044c','\u0424\u0435\u0432\u0440\u0430\u043b\u044c','\u041c\u0430\u0440\u0442','\u0410\u043f\u0440\u0435\u043b\u044c','\u041c\u0430\u0439','\u0418\u044e\u043d\u044c',
-  '\u0418\u044e\u043b\u044c','\u0410\u0432\u0433\u0443\u0441\u0442','\u0421\u0435\u043d\u0442\u044f\u0431\u0440\u044c','\u041e\u043a\u0442\u044f\u0431\u0440\u044c','\u041d\u043e\u044f\u0431\u0440\u044c','\u0414\u0435\u043a\u0430\u0431\u0440\u044c',
+  'Январь','Февраль','Март','Апрель','Май','Июнь',
+  'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь',
 ];
-const RU_DAYS_SHORT = ['\u041f\u043d','\u0412\u0442','\u0421\u0440','\u0427\u0442','\u041f\u0442','\u0421\u0431','\u0412\u0441'];
+const RU_DAYS_SHORT = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
 
 function EventCalendar({
   events, selectedDate, onSelectDate,
@@ -159,14 +159,14 @@ function EventCalendar({
           style={{ borderTop: '1px solid var(--divider)' }}
         >
           <p className="text-xs font-semibold" style={{ color: 'var(--primary)' }}>
-            \uD83D\uDCC5 {displayDate(selectedDate, { day: 'numeric', month: 'long', year: 'numeric' })}
+            📅 {displayDate(selectedDate, { day: 'numeric', month: 'long', year: 'numeric' })}
           </p>
           <button
             onClick={() => onSelectDate(null)}
             className="text-xs transition"
             style={{ color: 'var(--text-faint)' }}
           >
-            \u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u2715
+            Сбросить ×
           </button>
         </div>
       )}
@@ -197,9 +197,7 @@ export default function EventsPage() {
   const [isSingleDayFilter, setIsSingleDayFilter] = useState(false);
 
   const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // sentinel ref — div под сеткой карточек, за которым следит IntersectionObserver
   const sentinelRef  = useRef<HTMLDivElement>(null);
-  // флаг, чтобы observer не дёргал loadMore пока уже идёт запрос
   const loadingRef   = useRef(false);
   const todayStr = localIsoDate(new Date());
 
@@ -241,7 +239,7 @@ export default function EventsPage() {
       if (to)   params.set('actual_until', String(localEndTs(to)));
 
       const res = await fetch(`${API_BASE}/kudago/events?${params}`);
-      if (!res.ok) throw new Error(`\u041e\u0448\u0438\u0431\u043a\u0430 ${res.status}`);
+      if (!res.ok) throw new Error(`Ошибка ${res.status}`);
       const data = await res.json();
       const incoming: KudaGoEvent[] = data.results || [];
       setTotal(data.count ?? null);
@@ -258,7 +256,7 @@ export default function EventsPage() {
 
       setEvents(prev => append ? [...prev, ...filtered] : filtered);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : '\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f \u043e\u0448\u0438\u0431\u043a\u0430');
+      setError(e instanceof Error ? e.message : 'Неизвестная ошибка');
     } finally {
       setLoading(false);
       setLoadingMore(false);
@@ -266,14 +264,11 @@ export default function EventsPage() {
     }
   }, []);
 
-  // сброс страницы при смене фильтров
   useEffect(() => {
     setPage(1);
     load(1, search, category, isFree, dateFrom, dateTo, false, isSingleDayFilter);
   }, [search, category, isFree, dateFrom, dateTo, isSingleDayFilter, load]);
 
-  // ─── IntersectionObserver — авто-загрузка при появлении sentinel ────────
-  // pageRef/hasMoreRef нужны чтобы не держать устаревший замыкательный контекст
   const pageRef    = useRef(page);
   const hasMoreRef = useRef(hasMore);
   const searchRef        = useRef(search);
@@ -284,7 +279,6 @@ export default function EventsPage() {
   const isSingleDayRef   = useRef(isSingleDayFilter);
   const isFallbackRef    = useRef(false);
 
-  // синхронизируем рефы при каждом рендере
   pageRef.current          = page;
   hasMoreRef.current       = hasMore;
   searchRef.current        = search;
@@ -322,7 +316,6 @@ export default function EventsPage() {
         }
       },
       {
-        // триггер когда sentinel появился на 50% высоты viewport снизу
         rootMargin: '0px 0px 200px 0px',
         threshold: 0,
       },
@@ -338,7 +331,6 @@ export default function EventsPage() {
     debounceRef.current = setTimeout(() => setSearch(val), 500);
   };
 
-  // ручная кнопка — запасной вариант
   const loadMore = () => {
     const next = page + 1;
     setPage(next);
@@ -377,13 +369,12 @@ export default function EventsPage() {
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
 
-      {/* Header / filters */}
       <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--divider)' }}>
         <div className="container mx-auto px-4 py-8">
-          <h1 className="text-3xl font-black" style={{ color: 'var(--text)' }}>\u0421\u043e\u0431\u044b\u0442\u0438\u044f \u0432 \u041a\u0430\u0437\u0430\u043d\u0438</h1>
+          <h1 className="text-3xl font-black" style={{ color: 'var(--text)' }}>События в Казани</h1>
           {total !== null && !loading && (
             <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
-              {total.toLocaleString('ru-RU')} \u043c\u0435\u0440\u043e\u043f\u0440\u0438\u044f\u0442\u0438\u0439
+              {total.toLocaleString('ru-RU')} мероприятий
             </p>
           )}
 
@@ -399,7 +390,7 @@ export default function EventsPage() {
               <input
                 type="text" value={searchInput}
                 onChange={e => onSearchChange(e.target.value)}
-                placeholder="\u041f\u043e\u0438\u0441\u043a \u0441\u043e\u0431\u044b\u0442\u0438\u0439..."
+                placeholder="Поиск событий..."
                 style={{ ...inputStyle, paddingLeft: '2.25rem', width: '100%' }}
                 onFocus={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.boxShadow = '0 0 0 3px var(--primary-ring)'; }}
                 onBlur={e  => { e.currentTarget.style.borderColor = 'var(--border)';   e.currentTarget.style.boxShadow = 'none'; }}
@@ -413,7 +404,7 @@ export default function EventsPage() {
                 onFocus={e => { e.currentTarget.style.borderColor = 'var(--primary)'; }}
                 onBlur={e  => { e.currentTarget.style.borderColor = 'var(--border)'; }}
               >
-                <option value="">\u0412\u0441\u0435 \u043a\u0430\u0442\u0435\u0433\u043e\u0440\u0438\u0438</option>
+                <option value="">Все категории</option>
                 {categories.map(cat => <option key={cat.slug} value={cat.slug}>{cat.name}</option>)}
               </select>
             )}
@@ -428,12 +419,12 @@ export default function EventsPage() {
                 border: '1px solid var(--border)',
               }}
             >
-              \uD83C\uDD13 \u0411\u0435\u0441\u043f\u043b\u0430\u0442\u043d\u043e
+              🆓 Бесплатно
             </button>
 
             {/* Date from */}
             <div className="flex items-center gap-1.5">
-              <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>\u0421</label>
+              <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>С</label>
               <input type="date" value={dateFrom} min={todayStr}
                 onChange={e => {
                   setDateFrom(e.target.value);
@@ -449,7 +440,7 @@ export default function EventsPage() {
 
             {/* Date to */}
             <div className="flex items-center gap-1.5">
-              <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>\u041f\u043e</label>
+              <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>По</label>
               <input type="date" value={dateTo} min={dateFrom || todayStr}
                 onChange={e => {
                   setDateTo(e.target.value);
@@ -471,7 +462,7 @@ export default function EventsPage() {
                   border: '1px solid var(--border)',
                 }}
               >
-                \u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u2715
+                Сбросить ×
               </button>
             )}
           </div>
@@ -494,8 +485,8 @@ export default function EventsPage() {
                   boxShadow: 'var(--shadow-sm)',
                 }}
               >
-                <span>\uD83D\uDCC5 \u041a\u0430\u043b\u0435\u043d\u0434\u0430\u0440\u044c \u0441\u043e\u0431\u044b\u0442\u0438\u0439</span>
-                <span style={{ color: 'var(--text-faint)' }}>{calOpen ? '\u25b2' : '\u25bc'}</span>
+                <span>📅 Календарь событий</span>
+                <span style={{ color: 'var(--text-faint)' }}>{calOpen ? '▲' : '▼'}</span>
               </button>
 
               {calOpen && (
@@ -517,10 +508,10 @@ export default function EventsPage() {
                     }}
                   >
                     <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--primary)' }}>
-                      \u0421\u043e\u0431\u044b\u0442\u0438\u044f {displayDate(calSelectedDate, { day: 'numeric', month: 'long' })}
+                      События {displayDate(calSelectedDate, { day: 'numeric', month: 'long' })}
                     </p>
                     {dayEvents.length === 0 ? (
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>\u0421\u043e\u0431\u044b\u0442\u0438\u0439 \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e</p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Событий не найдено</p>
                     ) : (
                       <ul className="space-y-2">
                         {dayEvents.slice(0, 5).map(e => (
@@ -539,7 +530,7 @@ export default function EventsPage() {
                         ))}
                         {dayEvents.length > 5 && (
                           <p className="text-[10px]" style={{ color: 'var(--primary)' }}>
-                            \u0438 \u0435\u0449\u0451 {dayEvents.length - 5}...
+                            и ещё {dayEvents.length - 5}...
                           </p>
                         )}
                       </ul>
@@ -558,13 +549,13 @@ export default function EventsPage() {
                 }}
               >
                 <p className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-faint)' }}>
-                  \u0411\u044b\u0441\u0442\u0440\u044b\u0435 \u0444\u0438\u043b\u044c\u0442\u0440\u044b
+                  Быстрые фильтры
                 </p>
                 {([
-                  { label: '\uD83D\uDD50 \u0421\u0435\u0433\u043e\u0434\u043d\u044f',     offset: 0 },
-                  { label: '\uD83D\uDCC6 \u0417\u0430\u0432\u0442\u0440\u0430',      offset: 1 },
-                  { label: '\uD83D\uDDD3 \u042d\u0442\u0430 \u043d\u0435\u0434\u0435\u043b\u044f',  offset: 7 },
-                  { label: '\uD83D\uDCC5 \u042d\u0442\u043e\u0442 \u043c\u0435\u0441\u044f\u0446', offset: 30 },
+                  { label: '🕐 Сегодня',     offset: 0 },
+                  { label: '📆 Завтра',      offset: 1 },
+                  { label: '🗓 Эта неделя',  offset: 7 },
+                  { label: '📅 Этот месяц', offset: 30 },
                 ] as { label: string; offset: number }[]).map(({ label, offset }) => {
                   const fromDate = new Date();
                   if (offset === 1) fromDate.setDate(fromDate.getDate() + 1);
@@ -614,25 +605,25 @@ export default function EventsPage() {
                     color: 'var(--primary)',
                   }}
                 >
-                  \uD83D\uDCC5
+                  📅
                   {dateFrom && dateTo && dateFrom === dateTo
                     ? displayDate(dateFrom, { day: 'numeric', month: 'long' })
                     : [
-                        dateFrom && `\u0441 ${displayDate(dateFrom, { day: 'numeric', month: 'short' })}`,
-                        dateTo   && `\u043f\u043e ${displayDate(dateTo,   { day: 'numeric', month: 'short' })}`,
+                        dateFrom && `с ${displayDate(dateFrom, { day: 'numeric', month: 'short' })}`,
+                        dateTo   && `по ${displayDate(dateTo,   { day: 'numeric', month: 'short' })}`,
                       ].filter(Boolean).join(' ')}
                   <button
                     onClick={() => { setDateFrom(''); setDateTo(''); setCalSelectedDate(null); setIsSingleDayFilter(false); }}
                     className="ml-1 transition"
                     style={{ color: 'var(--text-faint)' }}
-                  >\u2715</button>
+                  >×</button>
                 </span>
                 {isFallback && (
                   <span
                     className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full"
                     style={{ background: 'var(--warning-hl)', color: 'var(--warning)', border: '1px solid var(--warning-hl)' }}
                   >
-                    \u26a1 \u041f\u043e\u043a\u0430\u0437\u0430\u043d\u044b \u0441\u043e\u0431\u044b\u0442\u0438\u044f \u0438\u0437 \u043e\u0431\u0449\u0435\u0439 \u0432\u044b\u0431\u043e\u0440\u043a\u0438
+                    ⚡ Показаны события из общей выборки
                   </span>
                 )}
               </div>
@@ -659,14 +650,14 @@ export default function EventsPage() {
             {/* Error */}
             {error && (
               <div className="flex flex-col items-center py-24 gap-4">
-                <span className="text-5xl">\uD83D\uDE15</span>
-                <p className="text-lg" style={{ color: 'var(--text)' }}>\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0441\u043e\u0431\u044b\u0442\u0438\u044f</p>
+                <span className="text-5xl">😕</span>
+                <p className="text-lg" style={{ color: 'var(--text)' }}>Не удалось загрузить события</p>
                 <p className="text-sm" style={{ color: 'var(--error)' }}>{error}</p>
                 <button
                   onClick={() => load(1, search, category, isFree, dateFrom, dateTo, false, isSingleDayFilter)}
                   className="gv-btn-primary"
                 >
-                  \u041f\u043e\u043f\u0440\u043e\u0431\u043e\u0432\u0430\u0442\u044c \u0441\u043d\u043e\u0432\u0430
+                  Попробовать снова
                 </button>
               </div>
             )}
@@ -676,14 +667,14 @@ export default function EventsPage() {
               <>
                 {displayEvents.length === 0 ? (
                   <div className="flex flex-col items-center py-24 gap-4 text-center">
-                    <span className="text-6xl">\uD83C\uDFAD</span>
-                    <p className="text-lg" style={{ color: 'var(--text-muted)' }}>\u041d\u0438\u0447\u0435\u0433\u043e \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e</p>
+                    <span className="text-6xl">🎭</span>
+                    <p className="text-lg" style={{ color: 'var(--text-muted)' }}>Ничего не найдено</p>
                     {hasActive && (
                       <button onClick={clearFilters}
                         className="text-sm font-medium transition"
                         style={{ color: 'var(--primary)' }}
                       >
-                        \u0421\u0431\u0440\u043e\u0441\u0438\u0442\u044c \u0444\u0438\u043b\u044c\u0442\u0440\u044b
+                        Сбросить фильтры
                       </button>
                     )}
                   </div>
@@ -696,7 +687,6 @@ export default function EventsPage() {
                 {/* sentinel — невидимый div, за которым следит IntersectionObserver */}
                 {!isFallback && hasMore && events.length > 0 && (
                   <div ref={sentinelRef} className="mt-10 flex flex-col items-center gap-3">
-                    {/* спиннер при авто-загрузке */}
                     {loadingMore && (
                       <div className="flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
                         <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
@@ -705,10 +695,9 @@ export default function EventsPage() {
                           <path className="opacity-75" fill="currentColor"
                             d="M4 12a8 8 0 018-8v8H4z" />
                         </svg>
-                        <span className="text-sm font-medium">\u0417\u0430\u0433\u0440\u0443\u0436\u0430\u0435\u043c...</span>
+                        <span className="text-sm font-medium">Загружаем...</span>
                       </div>
                     )}
-                    {/* резервная кнопка — видна только когда не загружается */}
                     {!loadingMore && (
                       <button
                         onClick={loadMore}
@@ -719,7 +708,7 @@ export default function EventsPage() {
                           color: 'var(--primary)',
                         }}
                       >
-                        \u0417\u0430\u0433\u0440\u0443\u0437\u0438\u0442\u044c \u0435\u0449\u0451
+                        Загрузить ещё
                       </button>
                     )}
                   </div>
