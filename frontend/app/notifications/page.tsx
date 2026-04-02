@@ -17,7 +17,9 @@ interface PendingRequest {
   party_id: number;
   event_title?: string;
   created_at?: string;
-  isNew?: boolean; // flash indicator for real-time arrivals
+  isNew?: boolean;
+  /** user_id из Socket.IO payload — нужен для real-time карточек (id < 0) */
+  realUserId?: number;
 }
 
 interface NewPartyRequestPayload {
@@ -32,8 +34,8 @@ export default function NotificationsPage() {
   const router = useRouter();
   const [requests, setRequests]     = useState<PendingRequest[]>([]);
   const [loading, setLoading]       = useState(true);
-  const [acting, setActing]         = useState<number | null>(null);
-  const [liveCount, setLiveCount]   = useState(0); // count of real-time arrivals
+  const [acting, setActing]         = useState<string | null>(null);
+  const [liveCount, setLiveCount]   = useState(0);
   const socketRef = useRef<Socket | null>(null);
 
   // ── Initial HTTP load ──────────────────────────────────────────────────────
@@ -54,7 +56,7 @@ export default function NotificationsPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Socket.IO — connect only on this page, disconnect on unmount ───────────
+  // ── Socket.IO ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!user?.id) return;
 
@@ -67,8 +69,6 @@ export default function NotificationsPage() {
 
     socket.on('new_party_request', (payload: NewPartyRequestPayload) => {
       const newRequest: PendingRequest = {
-        // Use a temporary negative id so it doesn't clash with real DB ids
-        // before the creator approves/rejects (page refresh would fix it)
         id: -(Date.now()),
         user_id: payload.user_id,
         username: payload.username,
@@ -76,11 +76,11 @@ export default function NotificationsPage() {
         event_title: payload.party_title,
         created_at: new Date().toISOString(),
         isNew: true,
+        realUserId: payload.user_id,
       };
       setRequests(prev => [newRequest, ...prev]);
       setLiveCount(c => c + 1);
 
-      // Remove flash after 3 s
       setTimeout(() => {
         setRequests(prev =>
           prev.map(r => r.id === newRequest.id ? { ...r, isNew: false } : r)
@@ -97,20 +97,41 @@ export default function NotificationsPage() {
   // ── Actions ────────────────────────────────────────────────────────────────
   const respond = async (requestId: number, action: 'approve' | 'reject') => {
     if (!token) return;
-    // Real-time cards have negative ids — can't call API until page refresh
-    // gives them a real id; just remove them from UI optimistically.
-    if (requestId < 0) {
-      setRequests(prev => prev.filter(r => r.id !== requestId));
-      return;
-    }
-    setActing(requestId);
+
+    const actingKey = String(requestId);
+    setActing(actingKey);
+
     try {
-      await apiFetch(`${API_BASE}/parties/requests/${requestId}/${action}`, {
-        method: 'POST',
-      });
+      if (requestId < 0) {
+        // Real-time карточка: используем endpoint по party_id + user_id
+        const req = requests.find(r => r.id === requestId);
+        if (!req?.realUserId) {
+          // На крайний случай — убираем из UI, если данных нет
+          setRequests(prev => prev.filter(r => r.id !== requestId));
+          return;
+        }
+        // 'approve' → 'accept', 'reject' → 'reject'
+        const verb = action === 'approve' ? 'accept' : 'reject';
+        const res = await apiFetch(
+          `${API_BASE}/parties/${req.party_id}/members/${req.realUserId}/${verb}`,
+          { method: 'POST' }
+        );
+        if (!res.ok) throw new Error();
+      } else {
+        // Обычная карточка из HTTP-загрузки: используем request_id
+        const res = await apiFetch(
+          `${API_BASE}/parties/requests/${requestId}/${action}`,
+          { method: 'POST' }
+        );
+        if (!res.ok) throw new Error();
+      }
+
       setRequests(prev => prev.filter(r => r.id !== requestId));
-    } catch {}
-    finally { setActing(null); }
+    } catch {
+      // Оставляем карточку на месте при ошибке — пусть создатель повторит
+    } finally {
+      setActing(null);
+    }
   };
 
   if (!user) return null;
@@ -256,20 +277,20 @@ export default function NotificationsPage() {
 
                 <div className="flex gap-2 shrink-0">
                   <button
-                    disabled={acting === req.id}
+                    disabled={acting === String(req.id)}
                     onClick={() => respond(req.id, 'approve')}
                     className="px-4 py-2 rounded-xl text-sm font-semibold transition"
                     style={{ background: 'var(--success-hl)', color: 'var(--success)' }}
                   >
-                    {acting === req.id ? '...' : '✓ Принять'}
+                    {acting === String(req.id) ? '...' : '✓ Принять'}
                   </button>
                   <button
-                    disabled={acting === req.id}
+                    disabled={acting === String(req.id)}
                     onClick={() => respond(req.id, 'reject')}
                     className="px-4 py-2 rounded-xl text-sm font-semibold transition"
                     style={{ background: 'var(--error-hl)', color: 'var(--error)' }}
                   >
-                    {acting === req.id ? '...' : '✕ Отклонить'}
+                    {acting === String(req.id) ? '...' : '✕ Отклонить'}
                   </button>
                 </div>
               </div>
