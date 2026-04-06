@@ -32,6 +32,18 @@ export default function PartyChat({
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // 1. Load history from DB
+  useEffect(() => {
+    if (!isAcceptedMember || !currentUserId) return;
+    fetch(`${API_BASE}/messages/party_${partyId}?limit=100`)
+      .then(r => r.ok ? r.json() : [])
+      .then((data: Message[]) => {
+        if (Array.isArray(data)) setMessages(data);
+      })
+      .catch(() => {});
+  }, [partyId, isAcceptedMember, currentUserId]);
+
+  // 2. Socket connection
   useEffect(() => {
     if (!isAcceptedMember || !currentUserId) return;
 
@@ -51,6 +63,9 @@ export default function PartyChat({
 
     return () => {
       socket.emit('leave_party_chat', { partyId });
+      socket.off('connect');
+      socket.off('disconnect');
+      socket.off('receive_party_message');
       socket.disconnect();
       socketRef.current = null;
     };
@@ -127,14 +142,12 @@ export default function PartyChat({
                   isOwn ? 'flex-row-reverse' : 'flex-row'
                 }`}
               >
-                {/* Avatar — кликабельна, ведёт на /users/[userId] */}
                 {!isOwn && (
                   <Link
                     href={`/users/${msg.userId}`}
                     className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 transition hover:opacity-75 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                     style={{
-                      background:
-                        'linear-gradient(135deg,#4f46e5,#9333ea)',
+                      background: 'linear-gradient(135deg,#4f46e5,#9333ea)',
                     }}
                     title={msg.username}
                     aria-label={`Профиль ${msg.username}`}
@@ -150,7 +163,6 @@ export default function PartyChat({
                     isOwn ? 'items-end' : 'items-start'
                   }`}
                 >
-                  {/* Username — кликабелен */}
                   {!isOwn && (
                     <Link
                       href={`/users/${msg.userId}`}

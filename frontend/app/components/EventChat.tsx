@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { io, Socket } from 'socket.io-client';
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:8000';
+const API_BASE   = process.env.NEXT_PUBLIC_API_URL    || 'http://localhost:8000';
 
 interface Message {
   message: string;
@@ -12,8 +13,6 @@ interface Message {
   username: string;
   timestamp: string;
 }
-
-let socketInstance: Socket | null = null;
 
 export default function EventChat({
   eventId,
@@ -27,32 +26,46 @@ export default function EventChat({
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [connected, setConnected] = useState(false);
+  const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // 1. Load history from DB
   useEffect(() => {
-    if (!socketInstance) {
-      socketInstance = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
-    }
-    const socket = socketInstance;
+    fetch(`${API_BASE}/messages/event_${eventId}?limit=100`)
+      .then(r => r.ok ? r.json() : [])
+      .then((data: Message[]) => {
+        if (Array.isArray(data)) setMessages(data);
+      })
+      .catch(() => {});
+  }, [eventId]);
 
-    socket.on('connect', () => {
+  // 2. Socket connection
+  useEffect(() => {
+    const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
+    socketRef.current = socket;
+
+    const join = () => {
       setConnected(true);
       socket.emit('join_event_chat', eventId);
-    });
-    if (socket.connected) {
-      setConnected(true);
-      socket.emit('join_event_chat', eventId);
-    }
+    };
+
+    socket.on('connect', join);
+    if (socket.connected) join();
+
+    socket.on('disconnect', () => setConnected(false));
 
     const handleMessage = (data: Message) => {
-      setMessages(prev => [...prev, data].slice(-50));
+      setMessages(prev => [...prev, data].slice(-200));
     };
     socket.on('receive_message', handleMessage);
 
     return () => {
-      socket.off('receive_message', handleMessage);
-      socket.off('connect');
       socket.emit('leave_event_chat', eventId);
+      socket.off('connect', join);
+      socket.off('disconnect');
+      socket.off('receive_message', handleMessage);
+      socket.disconnect();
+      socketRef.current = null;
     };
   }, [eventId]);
 
@@ -62,8 +75,8 @@ export default function EventChat({
 
   const sendMessage = () => {
     const text = input.trim();
-    if (!socketInstance || !text) return;
-    socketInstance.emit('send_message', {
+    if (!socketRef.current || !text) return;
+    socketRef.current.emit('send_message', {
       eventId,
       message: text,
       userId: currentUserId,
@@ -128,7 +141,7 @@ export default function EventChat({
           </div>
         ) : (
           messages.map((m, i) => {
-            const isMe = m.userId === currentUserId;
+            const isMe = String(m.userId) === String(currentUserId);
             return (
               <div
                 key={i}
@@ -136,7 +149,6 @@ export default function EventChat({
                   isMe ? 'flex-row-reverse' : 'flex-row'
                 }`}
               >
-                {/* Avatar — кликабельна, ведёт на /users/[userId] */}
                 {!isMe && (
                   <Link
                     href={`/users/${m.userId}`}
@@ -152,7 +164,6 @@ export default function EventChat({
                   </Link>
                 )}
 
-                {/* Bubble */}
                 <div
                   className={`max-w-xs lg:max-w-md px-3 py-2 rounded-2xl text-sm ${
                     isMe ? 'rounded-tr-sm' : 'rounded-tl-sm'
@@ -165,7 +176,6 @@ export default function EventChat({
                     border: isMe ? 'none' : '1px solid var(--border)',
                   }}
                 >
-                  {/* Username — кликабелен, ведёт на /users/[userId] */}
                   {!isMe && (
                     <Link
                       href={`/users/${m.userId}`}
