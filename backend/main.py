@@ -74,26 +74,6 @@ async def join_event_chat(sid, event_id: str):
     await sio.emit('user_joined', {'sid': sid}, room=f'event_{event_id}')
 
 
-@app.get("/messages/{room}")
-def get_messages(room: str, limit: int = Query(default=50, le=200), db: Session = Depends(get_db)):
-    rows = (
-        db.query(ChatMessage)
-        .filter(ChatMessage.room == room)
-        .order_by(ChatMessage.timestamp.asc())
-        .limit(limit)
-        .all()
-    )
-    return [
-        {
-            "message":   r.message,
-            "userId":    r.user_id,
-            "username":  r.username,
-            "timestamp": r.timestamp.isoformat(),
-        }
-        for r in rows
-    ]
-
-
 @sio.on('send_message')
 async def send_message(sid, data: dict):
     event_id = data['eventId']
@@ -258,6 +238,28 @@ def update_profile(
     db.commit()
     db.refresh(user)
     return user
+
+
+# ===== MESSAGES (chat history) =====
+
+@app.get("/messages/{room}")
+def get_messages(room: str, limit: int = Query(default=50, le=200), db: Session = Depends(get_db)):
+    rows = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.room == room)
+        .order_by(ChatMessage.timestamp.asc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "message":   r.message,
+            "userId":    r.user_id,
+            "username":  r.username,
+            "timestamp": r.timestamp.isoformat(),
+        }
+        for r in rows
+    ]
 
 
 # ===== EVENTS =====
@@ -676,8 +678,7 @@ def approve_request(
     if accepted_count + 1 >= party.max_members:
         raise HTTPException(status_code=400, detail="Компания уже заполнена")
     member.status = "accepted"
-    # Автозакрытие: создатель + уже принятые + только что принятый
-    new_total = accepted_count + 2  # +1 создатель, +1 только что принятый
+    new_total = accepted_count + 2
     if new_total >= party.max_members:
         party.is_open = False
     db.commit()
@@ -813,7 +814,6 @@ async def join_party(
     db.add(m)
     db.commit()
 
-    # Уведомляем создателя партии в реальном времени
     await sio.emit(
         "new_party_request",
         {
@@ -876,8 +876,7 @@ def accept_member(
     if not m:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     m.status = "accepted"
-    # Автозакрытие: создатель + уже принятые + только что принятый
-    new_total = accepted_count + 2  # +1 создатель, +1 только что принятый
+    new_total = accepted_count + 2
     if new_total >= party.max_members:
         party.is_open = False
     db.commit()
