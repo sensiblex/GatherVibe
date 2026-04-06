@@ -23,6 +23,13 @@ def _table_exists(table_name: str) -> bool:
     return table_name in inspector.get_table_names()
 
 
+def _column_exists(table_name: str, column_name: str) -> bool:
+    bind = op.get_bind()
+    inspector = inspect(bind)
+    columns = [col['name'] for col in inspector.get_columns(table_name)]
+    return column_name in columns
+
+
 def upgrade() -> None:
     if not _table_exists('users'):
         op.create_table(
@@ -48,17 +55,31 @@ def upgrade() -> None:
             sa.Column('description', sa.Text(), nullable=True),
             sa.Column('date_time', sa.DateTime(), nullable=True),
             sa.Column('location', sa.String(), nullable=True),
+            sa.Column('address', sa.String(), nullable=True),
             sa.Column('city', sa.String(), nullable=True),
             sa.Column('category', sa.String(), nullable=True),
+            sa.Column('price', sa.Float(), nullable=True),
             sa.Column('max_participants', sa.Integer(), nullable=True),
             sa.Column('current_participants', sa.Integer(), nullable=True),
             sa.Column('image_url', sa.String(), nullable=True),
+            sa.Column('external_link', sa.String(), nullable=True),
             sa.Column('is_active', sa.Boolean(), nullable=True),
             sa.Column('created_by', sa.Integer(), nullable=True),
             sa.Column('created_at', sa.DateTime(), nullable=True),
+            sa.Column('updated_at', sa.DateTime(), nullable=True),
             sa.PrimaryKeyConstraint('id'),
         )
         op.create_index(op.f('ix_events_id'), 'events', ['id'], unique=False)
+    else:
+        # Таблица уже существует — добавляем недостающие колонки
+        for col_name, col_type in [
+            ('address', sa.String()),
+            ('price', sa.Float()),
+            ('external_link', sa.String()),
+            ('updated_at', sa.DateTime()),
+        ]:
+            if not _column_exists('events', col_name):
+                op.add_column('events', sa.Column(col_name, col_type, nullable=True))
 
     if not _table_exists('event_attendees'):
         op.create_table(
