@@ -1,10 +1,11 @@
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 # TODO: вынести в .env перед деплоем
-SECRET_KEY = "gathervibe_secret_key_for_course_project_2024_change_this_in_production"
+SECRET_KEY = os.getenv("SECRET_KEY", "gathervibe_secret_key_for_course_project_2024_change_this_in_production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 дней
 
