@@ -5,15 +5,9 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import axios from 'axios';
 import Navbar from '../components/Navbar';
+import { INTERESTS_LIST, getInterestLabel } from '../lib/interests';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-// Задача 3: 14 интересов
-const INTEREST_OPTIONS = [
-  'музыка', 'кино', 'театр', 'выставки', 'спорт', 'йога',
-  'рок', 'джаз', 'классика', 'фестивали', 'мастер-классы', 'танцы',
-  'литература', 'фотография',
-];
 
 interface User {
   id: number;
@@ -44,17 +38,18 @@ function EditProfileModal({
   const [username, setUsername] = useState(user.username);
   const [city, setCity] = useState(user.city || '');
   const [bio, setBio] = useState(user.bio || '');
+  // Парсим id-строку из БД: "concert,cinema" → ['concert', 'cinema']
   const [selectedInterests, setSelectedInterests] = useState<string[]>(
     user.interests ? user.interests.split(',').map(s => s.trim()).filter(Boolean) : []
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const toggleInterest = (interest: string) => {
+  const toggleInterest = (id: string) => {
     setSelectedInterests(prev =>
-      prev.includes(interest)
-        ? prev.filter(i => i !== interest)
-        : [...prev, interest]
+      prev.includes(id)
+        ? prev.filter(i => i !== id)
+        : [...prev, id]
     );
   };
 
@@ -70,6 +65,7 @@ function EditProfileModal({
           username: username.trim(),
           city: city.trim() || null,
           bio: bio.trim() || null,
+          // Хранить без пробелов: "concert,cinema" — единый формат с register
           interests: selectedInterests.length > 0 ? selectedInterests.join(',') : null,
         },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -157,27 +153,27 @@ function EditProfileModal({
             </p>
           </div>
 
-          {/* Interests — pill checkboxes */}
+          {/* Interests — единый каталог из lib/interests */}
           <div>
             <label className="block text-sm font-semibold mb-2" style={{ color: 'var(--text)' }}>
               Интересы
             </label>
             <div className="flex flex-wrap gap-2">
-              {INTEREST_OPTIONS.map(interest => {
-                const active = selectedInterests.includes(interest);
+              {INTERESTS_LIST.map(({ id, label }) => {
+                const active = selectedInterests.includes(id);
                 return (
                   <button
-                    key={interest}
+                    key={id}
                     type="button"
-                    onClick={() => toggleInterest(interest)}
+                    onClick={() => toggleInterest(id)}
                     className="text-sm px-3 py-1.5 rounded-full font-medium transition hover:opacity-80"
                     style={{
-                      background: active ? '#e0e7ff' : '#ffffff',
-                      color: active ? '#4338ca' : '#6b7280',
-                      border: `1px solid ${active ? '#a5b4fc' : '#e5e7eb'}`,
+                      background: active ? 'var(--primary-hl)' : 'var(--surface-2)',
+                      color: active ? 'var(--primary)' : 'var(--text-muted)',
+                      border: `1px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
                     }}
                   >
-                    {interest}
+                    {label}
                   </button>
                 );
               })}
@@ -197,7 +193,7 @@ function EditProfileModal({
             <button
               onClick={onClose}
               className="px-4 py-2.5 rounded-xl text-sm transition hover:opacity-80"
-              style={{ border: '1px solid #e5e7eb', color: '#6b7280' }}
+              style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}
             >
               Отмена
             </button>
@@ -272,7 +268,8 @@ export default function ProfilePage() {
   );
 
   const initials = user?.username?.slice(0, 2).toUpperCase() || 'U';
-  const interestsList = user?.interests
+  // Парсим id из БД: "concert,cinema" → ['concert', 'cinema']
+  const interestIds = user?.interests
     ? user.interests.split(',').map(s => s.trim()).filter(Boolean)
     : [];
 
@@ -317,7 +314,6 @@ export default function ProfilePage() {
             <div className="flex-1 text-center sm:text-left">
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3">
                 <h1 className="text-2xl font-black" style={{ color: 'var(--text)' }}>{user?.username}</h1>
-                {/* ── Задача 3: кнопка редактирования в шапке ── */}
                 <button
                   onClick={() => setEditOpen(true)}
                   className="text-xs px-3 py-1.5 rounded-full font-semibold transition hover:opacity-90 shadow-sm"
@@ -362,15 +358,16 @@ export default function ProfilePage() {
                 </p>
               )}
 
-              {interestsList.length > 0 && (
+              {/* Теги интересов: отображаем label по id через getInterestLabel */}
+              {interestIds.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-3">
-                  {interestsList.map(i => (
+                  {interestIds.map(id => (
                     <span
-                      key={i}
+                      key={id}
                       className="text-xs px-2.5 py-1 rounded-full font-medium"
-                      style={{ background: 'var(--badge-bg, #eef2ff)', color: 'var(--accent, #4f46e5)' }}
+                      style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
                     >
-                      {i}
+                      {getInterestLabel(id)}
                     </span>
                   ))}
                 </div>
