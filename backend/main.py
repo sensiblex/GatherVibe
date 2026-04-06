@@ -24,6 +24,18 @@ import kudago_api
 from pydantic import BaseModel
 import time
 
+from sqlalchemy import Column, Integer, String, Text, DateTime
+from database import Base as _Base
+
+class ChatMessage(_Base):
+    __tablename__ = "chat_messages"
+    id          = Column(Integer, primary_key=True, index=True)
+    room        = Column(String, nullable=False, index=True)   # e.g. "event_42" or "party_7"
+    user_id     = Column(String, nullable=False)
+    username    = Column(String, nullable=False)
+    message     = Column(Text, nullable=False)
+    timestamp   = Column(DateTime, default=datetime.utcnow, nullable=False)
+
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
@@ -32,6 +44,7 @@ models.user.Base.metadata.create_all(bind=engine)
 models.event.Base.metadata.create_all(bind=engine)
 models.attendee.Base.metadata.create_all(bind=engine)
 models.party.Base.metadata.create_all(bind=engine)
+ChatMessage.__table__.create(bind=engine, checkfirst=True)
 
 
 app = FastAPI(title="GatherVibe API")
@@ -61,15 +74,48 @@ async def join_event_chat(sid, event_id: str):
     await sio.emit('user_joined', {'sid': sid}, room=f'event_{event_id}')
 
 
+@app.get("/messages/{room}")
+def get_messages(room: str, limit: int = Query(default=50, le=200), db: Session = Depends(get_db)):
+    rows = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.room == room)
+        .order_by(ChatMessage.timestamp.asc())
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "message":   r.message,
+            "userId":    r.user_id,
+            "username":  r.username,
+            "timestamp": r.timestamp.isoformat(),
+        }
+        for r in rows
+    ]
+
+
 @sio.on('send_message')
 async def send_message(sid, data: dict):
     event_id = data['eventId']
     msg = {
-        'message': data['message'],
-        'userId': data.get('userId', sid),
-        'username': data.get('username', 'Аноним'),
-        'timestamp': datetime.now().isoformat()
+        'message':   data['message'],
+        'userId':    data.get('userId', sid),
+        'username':  data.get('username', 'Аноним'),
+        'timestamp': datetime.utcnow().isoformat()
     }
+    # Persist to DB
+    db = SessionLocal()
+    try:
+        db.add(ChatMessage(
+            room=f'event_{event_id}',
+            user_id=str(msg['userId']),
+            username=msg['username'],
+            message=msg['message'],
+            timestamp=datetime.utcnow(),
+        ))
+        db.commit()
+    finally:
+        db.close()
     await sio.emit('receive_message', msg, room=f'event_{event_id}')
 
 
@@ -96,12 +142,25 @@ async def join_party_chat(sid, data: dict):
 async def send_party_message(sid, data: dict):
     party_id = data['partyId']
     msg = {
-        'message': data['message'],
-        'userId': data.get('userId', sid),
-        'username': data.get('username', 'Аноним'),
-        'timestamp': datetime.now().isoformat(),
-        'partyId': party_id,
+        'message':   data['message'],
+        'userId':    data.get('userId', sid),
+        'username':  data.get('username', 'Аноним'),
+        'timestamp': datetime.utcnow().isoformat(),
+        'partyId':   party_id,
     }
+    # Persist to DB
+    db = SessionLocal()
+    try:
+        db.add(ChatMessage(
+            room=f'party_{party_id}',
+            user_id=str(msg['userId']),
+            username=msg['username'],
+            message=msg['message'],
+            timestamp=datetime.utcnow(),
+        ))
+        db.commit()
+    finally:
+        db.close()
     await sio.emit('receive_party_message', msg, room=f'party_{party_id}')
 
 
