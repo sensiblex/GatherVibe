@@ -4,29 +4,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '../components/Navbar';
+import { INTERESTS_LIST } from '../lib/interests';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-const INTERESTS_LIST = [
-  { id: 'concert',     label: '🎵 Концерты',       },
-  { id: 'theater',     label: '🎭 Театр',           },
-  { id: 'exhibition',  label: '🖼 Выставки',        },
-  { id: 'cinema',      label: '🎬 Кино',            },
-  { id: 'standup',     label: '🎤 Стендап',         },
-  { id: 'sport',       label: '⚽ Спорт',           },
-  { id: 'festival',    label: '🎪 Фестивали',       },
-  { id: 'quest',       label: '🗺 Квесты',          },
-  { id: 'gastro',      label: '🍽 Гастрономия',     },
-  { id: 'nature',      label: '🌿 Природа',         },
-  { id: 'gaming',      label: '🎮 Игры',            },
-  { id: 'art',         label: '🎨 Мастер-классы',   },
-  { id: 'science',     label: '🔬 Наука',           },
-  { id: 'dance',       label: '💃 Танцы',           },
-  { id: 'travel',      label: '✈️ Путешествия',    },
-  { id: 'photo',       label: '📷 Фотография',      },
-  { id: 'books',       label: '📚 Книги / Лектории',},
-  { id: 'yoga',        label: '🧘 Йога / Wellness', },
-];
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -65,7 +45,8 @@ export default function RegisterPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
-          interests: Array.from(selected).join(', '),
+          // Хранить без пробелов: "concert,cinema" — единый формат с profile
+          interests: Array.from(selected).join(','),
         }),
       });
       if (!res.ok) {
