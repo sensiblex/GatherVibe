@@ -1,6 +1,19 @@
 version: '3.9'
 
 services:
+  db:
+    image: postgres:15-alpine
+    container_name: gathervibe_db
+    environment:
+      POSTGRES_USER: gathervibe_user
+      POSTGRES_PASSWORD: gathervibe_pass
+      POSTGRES_DB: gathervibe_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - gathervibe_net
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -10,9 +23,12 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
-      - backend_db:/app/db
+    env_file:
+      - ./backend/.env
     environment:
-      - DATABASE_URL=sqlite:///./db/gathervibe.db
+      - DATABASE_URL=postgresql://gathervibe_user:gathervibe_pass@db:5432/gathervibe_db
+    depends_on:
+      - db
     restart: unless-stopped
     networks:
       - gathervibe_net
@@ -37,7 +53,7 @@ services:
       - gathervibe_net
 
 volumes:
-  backend_db:
+  postgres_data:
 
 networks:
   gathervibe_net:
