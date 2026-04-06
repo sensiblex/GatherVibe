@@ -306,12 +306,13 @@ def get_event(event_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/events", response_model=EventResponse)
-def create_event(event: EventCreate, db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)):
-    from jwt_handler import verify_token
-    payload = verify_token(token)
-    if payload is None:
-        raise HTTPException(status_code=401, detail="Неверный токен")
-    db_event = Event(**event.dict(), created_by=payload.get("id"), current_participants=0)
+def create_event(
+    event: EventCreate,
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme),
+):
+    user = get_current_user_from_token(token, db)
+    db_event = Event(**event.dict(), created_by=user.id, current_participants=0)
     db.add(db_event)
     db.commit()
     db.refresh(db_event)
@@ -935,32 +936,13 @@ def health_check():
     return {"status": "ok", "service": "gathervibe-backend"}
 
 
-@app.get("/users")
-def get_users(db: Session = Depends(get_db)):
-    users = db.query(User).all()
-    return {"users": users, "count": len(users)}
-
-
-@app.post("/test-user")
-def create_test_user(db: Session = Depends(get_db)):
-    existing = db.query(User).filter(User.email == "test@example.com").first()
-    if existing:
-        return {"message": "Тестовый пользователь уже есть", "user_id": existing.id}
-    test_user = User(
-        email="test@example.com", username="ТестовыйПользователь",
-        hashed_password=hash_password("123456"), city="Москва", interests="музыка,кино,искусство"
-    )
-    db.add(test_user)
-    db.commit()
-    db.refresh(test_user)
-    return {"message": "Тестовый пользователь создан", "user_id": test_user.id}
-
-
-@app.delete("/test-user")
-def delete_test_user(db: Session = Depends(get_db)):
-    db.query(User).filter(User.email == "test@example.com").delete()
-    db.commit()
-    return {"ok": True}
+@app.get("/users", response_model=List[UserResponse])
+def get_users(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    get_current_user_from_token(token, db)   # auth check only
+    return db.query(User).all()
 
 
 @app.post("/register", response_model=UserResponse)
