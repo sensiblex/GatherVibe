@@ -29,23 +29,22 @@ export default function PartyChat({
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [connected, setConnected] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-
-  // 1. Load history from DB
-  useEffect(() => {
-    if (!isAcceptedMember || !currentUserId) return;
-    fetch(`${API_BASE}/messages/party_${partyId}?limit=100`)
-      .then(r => r.ok ? r.json() : [])
-      .then((data: Message[]) => {
-        if (Array.isArray(data)) setMessages(data);
-      })
-      .catch(() => {});
-  }, [partyId, isAcceptedMember, currentUserId]);
 
   // 2. Socket connection
   useEffect(() => {
     if (!isAcceptedMember || !currentUserId) return;
+
+    // Load history
+    fetch(`${API_BASE}/messages/party_${partyId}?limit=50`)
+      .then(r => r.ok ? r.json() : [])
+      .then((history: Message[]) => {
+        setMessages(history);
+        setHistoryLoaded(true);
+      })
+      .catch(() => setHistoryLoaded(true));
 
     const socket = io(API_BASE, { transports: ['websocket'] });
     socketRef.current = socket;

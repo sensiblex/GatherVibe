@@ -26,21 +26,21 @@ export default function EventChat({
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [connected, setConnected] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // 1. Load history from DB
-  useEffect(() => {
-    fetch(`${API_BASE}/messages/event_${eventId}?limit=100`)
-      .then(r => r.ok ? r.json() : [])
-      .then((data: Message[]) => {
-        if (Array.isArray(data)) setMessages(data);
-      })
-      .catch(() => {});
-  }, [eventId]);
-
   // 2. Socket connection
   useEffect(() => {
+    // Load history
+    fetch(`${SOCKET_URL}/messages/event_${eventId}?limit=50`)
+      .then(r => r.ok ? r.json() : [])
+      .then((history: Message[]) => {
+        setMessages(history);
+        setHistoryLoaded(true);
+      })
+      .catch(() => setHistoryLoaded(true));
+
     const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
     socketRef.current = socket;
 
