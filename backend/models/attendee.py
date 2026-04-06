@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.sql import func
+from datetime import datetime
 from database import Base
 
 
@@ -12,6 +13,12 @@ class EventAttendee(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     comment = Column(String, nullable=True)  # short message, up to 200 chars
     is_looking = Column(Boolean, default=True)  # True = looking for company
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # server_default для БД + python default для in-memory объекта до refresh
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        default=datetime.utcnow,
+        nullable=False,
+    )
 
     __table_args__ = (UniqueConstraint("event_id", "user_id", name="uq_event_user"),)

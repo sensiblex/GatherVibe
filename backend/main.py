@@ -437,14 +437,30 @@ def join_event(
         db.refresh(existing)
         row = existing
     else:
-        row = EventAttendee(event_id=event_id, user_id=user.id,
-                            comment=body.comment, is_looking=body.is_looking)
+        row = EventAttendee(
+            event_id=event_id,
+            user_id=user.id,
+            comment=body.comment,
+            is_looking=body.is_looking,
+        )
         db.add(row)
         db.commit()
         db.refresh(row)
-    return AttendeeOut(id=row.id, user_id=user.id, username=user.username,
-                       city=user.city, interests=user.interests,
-                       comment=row.comment, is_looking=row.is_looking, created_at=row.created_at)
+
+    # Гарантируем, что created_at никогда не будет None
+    # (server_default возвращается после refresh, но добавляем fallback на всякий случай)
+    created_at = row.created_at or datetime.utcnow()
+
+    return AttendeeOut(
+        id=row.id,
+        user_id=user.id,
+        username=user.username,
+        city=user.city,
+        interests=user.interests,
+        comment=row.comment,
+        is_looking=row.is_looking,
+        created_at=created_at,
+    )
 
 
 @app.delete("/attendees/{event_id}", status_code=204)
@@ -486,7 +502,8 @@ def get_matches(
         result.append(AttendeeMatchOut(
             id=a.id, user_id=u.id, username=u.username, city=u.city,
             interests=u.interests, comment=a.comment,
-            is_looking=a.is_looking, created_at=a.created_at,
+            is_looking=a.is_looking,
+            created_at=a.created_at or datetime.utcnow(),
             common_count=common,
         ))
 
@@ -522,9 +539,12 @@ def get_attendees(
         query = query.filter(EventAttendee.is_looking == True)
     rows = query.order_by(EventAttendee.created_at.desc()).all()
     return [
-        AttendeeOut(id=a.id, user_id=u.id, username=u.username, city=u.city,
-                    interests=u.interests, comment=a.comment,
-                    is_looking=a.is_looking, created_at=a.created_at)
+        AttendeeOut(
+            id=a.id, user_id=u.id, username=u.username, city=u.city,
+            interests=u.interests, comment=a.comment,
+            is_looking=a.is_looking,
+            created_at=a.created_at or datetime.utcnow(),
+        )
         for a, u in rows
     ]
 
