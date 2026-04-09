@@ -26,20 +26,16 @@ const CATEGORY_LABELS: Record<string, string> = {
   master_class: '🎓 Мастер-класс',
 };
 
-// Расписание работы по дням недели (use_place_schedule)
-// Строится на основе известного расписания Национального музея РТ и
-// общепринятого формата KudaGo — при наличии schedules[] данные берутся оттуда
 const WEEKDAY_SHORT: Record<number, string> = {
   1: 'Пн', 2: 'Вт', 3: 'Ср', 4: 'Чт', 5: 'Пт', 6: 'Сб', 0: 'Вс',
 };
 
 interface ScheduleEntry {
-  weekday: number; // 0=вс, 1=пн … 6=сб (совпадает с Date.getDay)
-  from: string;    // "10:00"
-  to: string;      // "20:00"
+  weekday: number;
+  from: string;
+  to: string;
 }
 
-// ── Unified event shape ────────────────────────────────────────────────────────
 interface UnifiedEvent {
   id: string;
   source: 'local' | 'kudago';
@@ -77,7 +73,6 @@ interface UnifiedEvent {
   participants?: Array<{ role: string; name: string; image_url: string | null }>;
 }
 
-// ── Date formatting ───────────────────────────────────────────────────────────
 function formatIsoDate(iso: string): string {
   return new Date(iso).toLocaleString('ru-RU', {
     day: 'numeric', month: 'long', year: 'numeric',
@@ -131,7 +126,6 @@ function getFilteredDates(allDates: UnifiedEvent['all_dates']): UnifiedEvent['al
   return filtered;
 }
 
-// ── Normalise ─────────────────────────────────────────────────────────────────
 function normaliseLocal(data: Record<string, unknown>): UnifiedEvent {
   return {
     id: String(data.id),
@@ -152,10 +146,6 @@ function normaliseKudago(data: Record<string, unknown>): UnifiedEvent {
   const allDates = (data.all_dates as UnifiedEvent['all_dates']) ?? [];
   const isPermanent = Boolean(data.is_permanent) ||
     allDates.some(d => d.is_endless || d.is_startless || d.use_place_schedule);
-
-  // Если use_place_schedule — расписание берётся со страницы места;
-  // пробуем взять schedules из all_dates[0] если есть, иначе пусто
-  // (фронтенд может запросить /kudago/places/{place_id} отдельно)
   const placeSchedules: ScheduleEntry[] = [];
 
   return {
@@ -191,13 +181,9 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-// ── Компонент расписания постоянного события ──────────────────────────────────
 function PermanentSchedule({ schedules }: { schedules?: ScheduleEntry[] }) {
-  // Если schedules переданы с бэка — используем их;
-  // иначе показываем стандартный блок "по расписанию места"
   const hasSchedule = schedules && schedules.length > 0;
 
-  // Группируем смежные дни с одинаковым временем для компактного отображения
   function groupSchedule(entries: ScheduleEntry[]): { label: string; time: string }[] {
     const sorted = [...entries].sort((a, b) => a.weekday - b.weekday);
     const groups: { days: number[]; from: string; to: string }[] = [];
@@ -223,7 +209,6 @@ function PermanentSchedule({ schedules }: { schedules?: ScheduleEntry[] }) {
         border: '1px solid color-mix(in oklch, var(--primary) 20%, var(--border))',
       }}
     >
-      {/* Заголовок */}
       <div className="flex items-center gap-2 mb-4">
         <span className="text-lg">🔁</span>
         <div>
@@ -247,7 +232,6 @@ function PermanentSchedule({ schedules }: { schedules?: ScheduleEntry[] }) {
           ))}
         </div>
       ) : (
-        // Если расписание не пришло — показываем информационный текст
         <div className="space-y-2">
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
             Точное расписание уточняйте на сайте места проведения.
@@ -272,7 +256,6 @@ function PermanentSchedule({ schedules }: { schedules?: ScheduleEntry[] }) {
   );
 }
 
-// ── Skeleton / NotFound / UnauthBanner ───────────────────────────────────────
 function EventSkeleton() {
   return (
     <div className="animate-pulse space-y-6">
@@ -334,7 +317,6 @@ function UnauthBanner() {
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
 export default function EventDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -453,7 +435,6 @@ export default function EventDetailPage() {
                       {CATEGORY_LABELS[c] ?? c}
                     </span>
                   ))}
-                  {/* Бейдж постоянного события */}
                   {event.is_permanent && (
                     <span className="text-xs px-3 py-1 rounded-full font-semibold bg-violet-100 text-violet-700">
                       🔁 Круглый год
@@ -563,12 +544,12 @@ export default function EventDetailPage() {
                   </div>
                 )}
 
-                {/* ── Блок расписания для постоянных событий ── */}
+                {/* Блок расписания для постоянных событий */}
                 {event.source === 'kudago' && event.is_permanent && (
                   <PermanentSchedule schedules={event.place_schedules} />
                 )}
 
-                {/* ── Разовые даты (только если НЕ постоянное событие) ── */}
+                {/* Разовые даты (только если НЕ постоянное событие) */}
                 {event.source === 'kudago' && !event.is_permanent && event.all_dates && (() => {
                   const filteredDates = getFilteredDates(event.all_dates);
                   return filteredDates.length > 1 ? (
@@ -637,18 +618,6 @@ export default function EventDetailPage() {
 
               </div>
             </div>
-
-            {event.source === 'kudago' && (
-              <p className="text-xs text-center" style={{ color: 'var(--text-faint)' }}>
-                Данные предоставлены{' '}
-                <a href="https://kudago.com" target="_blank" rel="noopener noreferrer"
-                  className="underline hover:opacity-70 transition"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  KudaGo
-                </a>
-              </p>
-            )}
 
             {!user && <UnauthBanner />}
 

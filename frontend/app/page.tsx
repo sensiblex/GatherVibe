@@ -8,7 +8,7 @@ const STEPS = [
   {
     emoji: '🔍',
     title: 'Находи события',
-    desc: 'Реальные мероприятия из KudaGo — концерты, выставки, мастер-классы и фестивали.',
+    desc: 'Тысячи мероприятий — концерты, выставки, мастер-классы и фестивали.',
     num: '01',
   },
   {
@@ -51,7 +51,7 @@ export default function Home() {
           <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold mb-8 shadow-sm"
             style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--primary)' }}>
             <span className="w-2 h-2 rounded-full animate-pulse-dot" style={{ background: 'var(--primary)' }} />
-            Реальные события через KudaGo API
+            Актуальные события в твоём городе
           </span>
 
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black leading-tight mb-6" style={{ color: 'var(--text)' }}>
