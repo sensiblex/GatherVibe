@@ -1,317 +1,537 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Image from 'next/image';
 import Link from 'next/link';
-import Navbar from '../../components/Navbar';
-import EventAttendees from '../../components/EventAttendees';
+import Navbar from '../../../app/components/Navbar';
+import EventAttendees from '../../../app/components/EventAttendees';
+import EventChat from '../../../app/components/EventChat';
+import EventParty from '../../../app/components/EventParty';
+import { apiFetch } from '../../lib/apiFetch';
+import { useAuth } from '../../context/AuthContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toLabel(val: any): string {
-  if (!val && val !== 0) return '';
-  if (typeof val === 'string') return val;
-  if (typeof val === 'number') return String(val);
-  if (typeof val === 'object') return String(val.name ?? val.slug ?? val.title ?? val.id ?? '');
-  return String(val);
-}
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toKey(val: any, idx: number): string {
-  return toLabel(val) || String(idx);
+// KudaGo IDs are large numbers (100000+). Local DB IDs are small (< 10000).
+// We detect source by trying local first, then kudago on 404.
+const CATEGORY_LABELS: Record<string, string> = {
+  concert: '🎵 Концерт',
+  theater: '🎭 Театр',
+  exhibition: '🎨 Выставка',
+  festival: '🎪 Фестиваль',
+  sport: '⚽ Спорт',
+  standup: '🎤 Стендап',
+  cinema: '🎬 Кино',
+  lecture: '📚 Лекция',
+  tour: '🗺️ Экскурсия',
+  party: '🎉 Вечеринка',
+  master_class: '🎓 Мастер-класс',
+};
+
+// ── Unified event shape for the view layer ────────────────────────────────────
+interface UnifiedEvent {
+  id: string;           // always a string for eventId usage
+  source: 'local' | 'kudago';
+  title: string;
+  description: string | null;
+  body_text?: string | null;
+  location: string | null;
+  city: string | null;
+  date_time: string | null;   // ISO for local, null for kudago (uses start_date/time)
+  start_date?: string | null; // kudago
+  start_time?: string | null; // kudago
+  all_dates?: Array<{
+    start: string | null;
+    end: string | null;
+    start_time: string | null;
+    end_time: string | null;
+    is_continuous: boolean;
+    is_endless: boolean;
+  }>;
+  category: string | null;
+  categories?: string[];
+  image_url: string | null;
+  is_free?: boolean;
+  price?: string;
+  age_restriction?: string | null;
+  place_title?: string;
+  place_address?: string;
+  place_phone?: string;
+  place_subway?: string;
+  site_url?: string;
+  participants?: Array<{ role: string; name: string; image_url: string | null }>;
 }
 
-interface EventImage { url: string; source_name: string; source_link: string; }
-interface EventDate {
-  start: string | null; end: string | null;
-  start_time: string | null; end_time: string | null;
-  is_continuous: boolean; is_endless: boolean;
-}
-interface Participant { role: string; name: string; image_url: string | null; }
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyArr = any[];
-
-interface EventDetail {
-  kudago_id: number;
-  title: string; short_title: string;
-  description: string; body_text: string;
-  categories: AnyArr; tags: AnyArr;
-  price: string; is_free: boolean;
-  age_restriction: string | number | null;
-  images: EventImage[]; cover_url: string | null;
-  all_dates: EventDate[];
-  start_date: string | null; start_time: string | null;
-  place_title: string; place_address: string;
-  place_phone: string; place_subway: string;
-  lat: number | null; lon: number | null;
-  participants: Participant[];
-  site_url: string;
-}
-
-function formatDate(dateStr: string | null, timeStr: string | null): string {
-  if (!dateStr) return 'Дата не указана';
-  return new Date(dateStr).toLocaleDateString('ru-RU', {
+// ── Date formatting ───────────────────────────────────────────────────────────
+function formatIsoDate(iso: string): string {
+  return new Date(iso).toLocaleString('ru-RU', {
     day: 'numeric', month: 'long', year: 'numeric',
-  }) + (timeStr ? ` в ${timeStr.slice(0, 5)}` : '');
+    hour: '2-digit', minute: '2-digit',
+  });
 }
 
+function formatKudagoDate(event: UnifiedEvent): string {
+  if (event.start_date) {
+    const d = event.start_date;
+    const t = event.start_time ? ` в ${event.start_time}` : '';
+    const [y, m, day] = d.split('-').map(Number);
+    const months = ['', 'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+    return `${day} ${months[m] ?? ''} ${y}${t}`;
+  }
+  return 'Дата уточняется';
+}
+
+function getDisplayDate(event: UnifiedEvent): string {
+  if (event.source === 'local' && event.date_time) return formatIsoDate(event.date_time);
+  return formatKudagoDate(event);
+}
+
+// ── Normalise API responses into UnifiedEvent ─────────────────────────────────
+function normaliseLocal(data: Record<string, unknown>): UnifiedEvent {
+  return {
+    id: String(data.id),
+    source: 'local',
+    title: String(data.title ?? ''),
+    description: (data.description as string) ?? null,
+    location: (data.location as string) ?? null,
+    city: (data.city as string) ?? null,
+    date_time: (data.date_time as string) ?? null,
+    category: (data.category as string) ?? null,
+    image_url: (data.image_url as string) ?? null,
+  };
+}
+
+function normaliseKudago(data: Record<string, unknown>): UnifiedEvent {
+  const imgs = (data.images as Array<{ url: string }>) ?? [];
+  const cats = (data.categories as string[]) ?? [];
+  return {
+    id: String(data.kudago_id ?? data.id ?? ''),
+    source: 'kudago',
+    title: String(data.title ?? ''),
+    description: (data.description as string) || null,
+    body_text: (data.body_text as string) || null,
+    location: (data.place_address as string) || null,
+    city: null,
+    date_time: null,
+    start_date: (data.start_date as string) ?? null,
+    start_time: (data.start_time as string) ?? null,
+    all_dates: (data.all_dates as UnifiedEvent['all_dates']) ?? [],
+    category: cats[0] ?? null,
+    categories: cats,
+    image_url: imgs[0]?.url ?? (data.cover_url as string) ?? null,
+    is_free: Boolean(data.is_free),
+    price: (data.price as string) || '',
+    age_restriction: (data.age_restriction as string) ?? null,
+    place_title: (data.place_title as string) || '',
+    place_address: (data.place_address as string) || '',
+    place_phone: (data.place_phone as string) || '',
+    place_subway: (data.place_subway as string) || '',
+    site_url: (data.site_url as string) || '',
+    participants: (data.participants as UnifiedEvent['participants']) ?? [],
+  };
+}
+
+// ── Strip HTML tags from KudaGo description ───────────────────────────────────
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// ── Skeleton ──────────────────────────────────────────────────────────────────
+function EventSkeleton() {
+  return (
+    <div className="animate-pulse space-y-6">
+      <div className="h-64 rounded-3xl" style={{ background: 'var(--surface-2)' }} />
+      <div className="space-y-3">
+        <div className="h-8 w-2/3 rounded-xl" style={{ background: 'var(--surface-2)' }} />
+        <div className="h-4 w-1/3 rounded-xl" style={{ background: 'var(--surface-2)' }} />
+        <div className="h-4 w-full rounded-xl" style={{ background: 'var(--surface-2)' }} />
+        <div className="h-4 w-5/6 rounded-xl" style={{ background: 'var(--surface-2)' }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Not found ─────────────────────────────────────────────────────────────────
+function NotFound() {
+  return (
+    <div className="text-center py-24 px-4">
+      <p className="text-6xl mb-4">🔍</p>
+      <h2 className="text-2xl font-black mb-2" style={{ color: 'var(--text)' }}>
+        Событие не найдено
+      </h2>
+      <p className="mb-8" style={{ color: 'var(--text-muted)' }}>
+        Оно могло быть удалено или ссылка неверна
+      </p>
+      <Link href="/events" className="gv-btn-primary px-6 py-3">
+        ← К списку событий
+      </Link>
+    </div>
+  );
+}
+
+// ── UnauthBanner ──────────────────────────────────────────────────────────────
+function UnauthBanner() {
+  return (
+    <div
+      className="rounded-2xl px-6 py-5 flex flex-col sm:flex-row items-center gap-4"
+      style={{
+        background: 'linear-gradient(135deg, var(--primary-hl), color-mix(in oklch, var(--primary) 8%, var(--surface)))',
+        border: '1px solid color-mix(in oklch, var(--primary) 25%, var(--border))',
+      }}
+    >
+      <div className="text-3xl">🔐</div>
+      <div className="flex-1 text-center sm:text-left">
+        <p className="font-bold" style={{ color: 'var(--text)' }}>Войдите, чтобы участвовать</p>
+        <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
+          Присоединяйтесь к событиям, создавайте компании и общайтесь в чате
+        </p>
+      </div>
+      <div className="flex gap-3 shrink-0">
+        <Link href="/login" className="gv-btn-primary px-5 py-2 text-sm">Войти</Link>
+        <Link
+          href="/register"
+          className="px-5 py-2 text-sm rounded-xl font-semibold transition hover:opacity-80"
+          style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
+        >
+          Регистрация
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function EventDetailPage() {
-  const params  = useParams();
-  const router  = useRouter();
-  const eventId = params?.id as string;
-  const [event, setEvent]         = useState<EventDetail | null>(null);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
-  const [activeImg, setActiveImg] = useState(0);
+  const params = useParams();
+  const router = useRouter();
+  const { user } = useAuth();
+
+  const eventId = String(params?.id ?? '');
+
+  const [event, setEvent] = useState<UnifiedEvent | null>(null);
+  const [status, setStatus] = useState<'loading' | 'ok' | 'notfound' | 'error'>('loading');
 
   useEffect(() => {
     if (!eventId) return;
-    fetch(`${API_BASE}/kudago/events/${eventId}`)
-      .then(r => { if (!r.ok) throw new Error(`Ошибка ${r.status}`); return r.json(); })
-      .then((d: EventDetail) => { setEvent(d); setActiveImg(0); })
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false));
+    setStatus('loading');
+
+    // Step 1: try local DB
+    apiFetch(`${API_BASE}/events/${eventId}`)
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          setEvent(normaliseLocal(data));
+          setStatus('ok');
+          return;
+        }
+
+        if (res.status !== 404) {
+          setStatus('error');
+          return;
+        }
+
+        // Step 2: local returned 404 → try KudaGo
+        const kg = await apiFetch(`${API_BASE}/kudago/events/${eventId}`);
+        if (kg.ok) {
+          const data = await kg.json();
+          setEvent(normaliseKudago(data));
+          setStatus('ok');
+        } else if (kg.status === 404) {
+          setStatus('notfound');
+        } else {
+          setStatus('error');
+        }
+      })
+      .catch(() => setStatus('error'));
   }, [eventId]);
 
-  if (loading) return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
-      <div className="container mx-auto px-4 py-10 animate-pulse">
-        <div className="h-4 w-40 bg-gray-200 rounded mb-8" />
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-          <div className="lg:col-span-2 space-y-4">
-            <div className="w-full h-96 bg-gray-200 rounded-3xl" />
-            <div className="flex gap-2">{[1,2,3].map(i=><div key={i} className="w-20 h-14 bg-gray-200 rounded-xl"/>)}</div>
-            <div className="h-8 bg-gray-200 rounded w-3/4" />
-            {[1,2,3].map(i=><div key={i} className="h-4 bg-gray-200 rounded"/>)}
-          </div>
-          <div className="space-y-4">
-            <div className="h-40 bg-gray-200 rounded-3xl" />
-            <div className="h-40 bg-gray-200 rounded-3xl" />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  // Category label: for kudago events we may get an array of slugs
+  const categoryLabel = (() => {
+    if (!event) return null;
+    const first = event.category;
+    if (!first) return null;
+    return CATEGORY_LABELS[first] ?? first;
+  })();
 
-  if (error || !event) return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
-      <div className="flex flex-col items-center justify-center py-32 gap-4">
-        <span className="text-5xl">😕</span>
-        <p className="text-gray-600">Не удалось загрузить событие</p>
-        <p className="text-red-400 text-sm">{error}</p>
-        <button onClick={() => router.back()}
-          className="bg-indigo-600 text-white px-6 py-2 rounded-xl hover:bg-indigo-700 transition">Назад</button>
-      </div>
-    </div>
-  );
+  const displayDate = event ? getDisplayDate(event) : '';
 
-  const images = Array.isArray(event.images) ? event.images : [];
-  const ageLabel = event.age_restriction ? `${event.age_restriction}+` : null;
+  // KudaGo events: use kudago_id as eventId for attendees/chat/party
+  const chatEventId = event?.id ?? eventId;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
-      <main className="container mx-auto px-4 py-10">
-        <nav className="flex items-center gap-2 text-sm text-gray-400 mb-8">
-          <Link href="/events" className="hover:text-indigo-600 transition">События</Link>
-          <span>/</span>
-          <span className="text-gray-700 line-clamp-1 max-w-xs">{event.short_title || event.title}</span>
-        </nav>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-          {/* LEFT COLUMN */}
-          <div className="lg:col-span-2 space-y-6">
-            {images.length > 0 ? (
-              <div className="space-y-3">
-                <div className="relative w-full h-80 sm:h-[420px] rounded-3xl overflow-hidden bg-gray-100 shadow-lg">
-                  <Image src={images[activeImg].url} alt={event.title}
-                    fill className="object-cover" unoptimized priority />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
-                  {images.length > 1 && (
-                    <>
-                      <button onClick={() => setActiveImg(p => (p - 1 + images.length) % images.length)}
-                        className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white w-10 h-10 rounded-full flex items-center justify-center transition text-lg">
-                        &#8592;
-                      </button>
-                      <button onClick={() => setActiveImg(p => (p + 1) % images.length)}
-                        className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/40 hover:bg-black/60 text-white w-10 h-10 rounded-full flex items-center justify-center transition text-lg">
-                        &#8594;
-                      </button>
-                      <span className="absolute bottom-4 right-4 bg-black/50 text-white text-xs px-2.5 py-1 rounded-full">
-                        {activeImg + 1} / {images.length}
-                      </span>
-                    </>
+      <main className="container mx-auto px-4 py-8 max-w-4xl">
+
+        {/* ── Back navigation ── */}
+        <button
+          onClick={() => router.back()}
+          className="flex items-center gap-2 text-sm font-semibold mb-6 transition hover:opacity-70"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7" />
+          </svg>
+          Назад
+        </button>
+
+        {/* ── States ── */}
+        {status === 'loading' && <EventSkeleton />}
+        {status === 'notfound' && <NotFound />}
+        {status === 'error' && (
+          <div className="text-center py-24">
+            <p className="text-5xl mb-4">⚠️</p>
+            <h2 className="text-xl font-black mb-2" style={{ color: 'var(--text)' }}>Ошибка загрузки</h2>
+            <p className="mb-6" style={{ color: 'var(--text-muted)' }}>Не удалось получить данные события</p>
+            <button onClick={() => window.location.reload()} className="gv-btn-primary px-6 py-3">
+              Попробовать снова
+            </button>
+          </div>
+        )}
+
+        {status === 'ok' && event && (
+          <div className="space-y-8">
+
+            {/* ── Event header card ── */}
+            <div className="gv-card overflow-hidden" style={{ padding: 0 }}>
+
+              {/* Cover image */}
+              {event.image_url && (
+                <div className="w-full h-56 sm:h-72 overflow-hidden">
+                  <img
+                    src={event.image_url}
+                    alt={event.title}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                </div>
+              )}
+
+              <div className="p-6 sm:p-8">
+
+                {/* Category + city + free badges */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {categoryLabel && (
+                    <span
+                      className="text-xs px-3 py-1 rounded-full font-semibold"
+                      style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
+                    >
+                      {categoryLabel}
+                    </span>
                   )}
-                  {images[activeImg]?.source_name && (
-                    <a href={images[activeImg].source_link || '#'} target="_blank" rel="noopener noreferrer"
-                      className="absolute bottom-4 left-4 bg-black/40 text-white text-xs px-2.5 py-1 rounded-full hover:bg-black/60 transition">
-                      © {images[activeImg].source_name}
+                  {/* Multiple KudaGo categories */}
+                  {event.source === 'kudago' && event.categories && event.categories.slice(1, 4).map(c => (
+                    <span
+                      key={c}
+                      className="text-xs px-3 py-1 rounded-full font-semibold"
+                      style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
+                    >
+                      {CATEGORY_LABELS[c] ?? c}
+                    </span>
+                  ))}
+                  {event.city && (
+                    <span
+                      className="text-xs px-3 py-1 rounded-full font-semibold flex items-center gap-1"
+                      style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
+                    >
+                      📍 {event.city}
+                    </span>
+                  )}
+                  {event.source === 'kudago' && event.is_free && (
+                    <span className="text-xs px-3 py-1 rounded-full font-semibold bg-emerald-100 text-emerald-700">
+                      🆓 Бесплатно
+                    </span>
+                  )}
+                  {event.source === 'kudago' && !event.is_free && event.price && (
+                    <span
+                      className="text-xs px-3 py-1 rounded-full font-semibold"
+                      style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
+                    >
+                      💰 {event.price}
+                    </span>
+                  )}
+                  {event.source === 'kudago' && event.age_restriction && (
+                    <span
+                      className="text-xs px-3 py-1 rounded-full font-semibold"
+                      style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
+                    >
+                      {event.age_restriction}+
+                    </span>
+                  )}
+                </div>
+
+                {/* Title */}
+                <h1 className="text-2xl sm:text-3xl font-black mb-4 leading-tight" style={{ color: 'var(--text)' }}>
+                  {event.title}
+                </h1>
+
+                {/* Meta info row */}
+                <div className="flex flex-wrap gap-4 mb-6">
+                  <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <rect x="3" y="4" width="18" height="18" rx="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    <span>{displayDate}</span>
+                  </div>
+
+                  {(event.place_address || event.location) && (
+                    <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
+                        <circle cx="12" cy="10" r="3" />
+                      </svg>
+                      <span>{event.place_title ? `${event.place_title} — ` : ''}{event.place_address || event.location}</span>
+                    </div>
+                  )}
+
+                  {event.place_subway && (
+                    <div className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--text-muted)' }}>
+                      <span>🚇</span>
+                      <span>{event.place_subway}</span>
+                    </div>
+                  )}
+
+                  {event.site_url && (
+                    <a
+                      href={event.site_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-sm font-medium transition hover:opacity-70"
+                      style={{ color: 'var(--primary)' }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                        <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+                        <polyline points="15 3 21 3 21 9" />
+                        <line x1="10" y1="14" x2="21" y2="3" />
+                      </svg>
+                      Сайт события
                     </a>
                   )}
                 </div>
-                {images.length > 1 && (
-                  <div className="flex gap-2 overflow-x-auto pb-1">
-                    {images.map((img, idx) => (
-                      <button key={idx} onClick={() => setActiveImg(idx)}
-                        className={`relative shrink-0 w-20 h-14 rounded-xl overflow-hidden border-2 transition ${
-                          idx === activeImg ? 'border-indigo-500' : 'border-transparent opacity-50 hover:opacity-80'
-                        }`}>
-                        <Image src={img.url} alt="" fill className="object-cover" unoptimized />
-                      </button>
-                    ))}
+
+                {/* Description */}
+                {event.description && (
+                  <div
+                    className="text-sm leading-relaxed whitespace-pre-line mb-4"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {stripHtml(event.description)}
                   </div>
                 )}
-              </div>
-            ) : (
-              <div className="w-full h-64 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-3xl flex items-center justify-center">
-                <span className="text-6xl opacity-20">🎭</span>
-              </div>
-            )}
 
-            <div>
-              <div className="flex flex-wrap gap-2 mb-3">
-                {event.is_free && (
-                  <span className="bg-emerald-100 text-emerald-700 text-sm font-bold px-3 py-1 rounded-full">Бесплатно</span>
+                {/* KudaGo body_text (longer description) */}
+                {event.source === 'kudago' && event.body_text && event.body_text !== event.description && (
+                  <div
+                    className="text-sm leading-relaxed mt-2"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    {stripHtml(event.body_text)}
+                  </div>
                 )}
-                {ageLabel && (
-                  <span className="bg-gray-100 text-gray-700 text-sm font-bold px-3 py-1 rounded-full">{ageLabel}</span>
-                )}
-                {Array.isArray(event.categories) && event.categories.map((cat, i) => {
-                  const label = toLabel(cat);
-                  if (!label) return null;
-                  return (
-                    <span key={toKey(cat, i)} className="bg-indigo-50 text-indigo-600 text-sm font-medium px-3 py-1 rounded-full capitalize">
-                      {label}
-                    </span>
-                  );
-                })}
-              </div>
-              <h1 className="text-3xl font-black text-gray-900 leading-tight">{event.title}</h1>
-            </div>
 
-            {event.description && (
-              <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-                <h2 className="text-base font-bold text-gray-800 mb-3">О мероприятии</h2>
-                <p className="text-gray-600 leading-relaxed whitespace-pre-line">{event.description}</p>
-                {event.body_text && event.body_text !== event.description && (
-                  <p className="text-gray-500 leading-relaxed mt-4 whitespace-pre-line">{event.body_text}</p>
-                )}
-              </div>
-            )}
-
-            {/* ===== MATCHING BLOCK ===== */}
-            <EventAttendees eventId={eventId} />
-
-            {Array.isArray(event.participants) && event.participants.length > 0 && (
-              <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-                <h2 className="text-base font-bold text-gray-800 mb-4">Участники</h2>
-                <div className="flex flex-wrap gap-4">
-                  {event.participants.map((p, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      {p.image_url ? (
-                        <div className="relative w-10 h-10 rounded-full overflow-hidden bg-gray-100 shrink-0">
-                          <Image src={p.image_url} alt={p.name} fill className="object-cover" unoptimized />
-                        </div>
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm shrink-0">
-                          {p.name?.charAt(0) || '?'}
-                        </div>
+                {/* Multiple dates for KudaGo */}
+                {event.source === 'kudago' && event.all_dates && event.all_dates.length > 1 && (
+                  <div className="mt-6">
+                    <p className="text-xs font-semibold uppercase tracking-wide mb-2"
+                      style={{ color: 'var(--text-faint)' }}
+                    >
+                      Все даты
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {event.all_dates.slice(0, 8).map((d, i) => (
+                        d.start && (
+                          <span
+                            key={i}
+                            className="text-xs px-3 py-1 rounded-full"
+                            style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                          >
+                            {d.start} {d.start_time ? `в ${d.start_time}` : ''}
+                          </span>
+                        )
+                      ))}
+                      {event.all_dates.length > 8 && (
+                        <span className="text-xs px-3 py-1 rounded-full"
+                          style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
+                        >
+                          +{event.all_dates.length - 8} ещё
+                        </span>
                       )}
-                      <div>
-                        <p className="font-semibold text-gray-800 text-sm">{p.name}</p>
-                        {p.role && <p className="text-xs text-gray-400">{toLabel(p.role)}</p>}
-                      </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                  </div>
+                )}
 
-            {Array.isArray(event.tags) && event.tags.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {event.tags.map((tag, i) => {
-                  const label = toLabel(tag);
-                  if (!label) return null;
-                  return (
-                    <span key={toKey(tag, i)} className="text-xs bg-gray-100 text-gray-500 px-3 py-1 rounded-full">#{label}</span>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                {/* Participants (KudaGo) */}
+                {event.source === 'kudago' && event.participants && event.participants.length > 0 && (
+                  <div className="mt-6">
+                    <p className="text-xs font-semibold uppercase tracking-wide mb-3"
+                      style={{ color: 'var(--text-faint)' }}
+                    >
+                      Участники
+                    </p>
+                    <div className="flex flex-wrap gap-3">
+                      {event.participants.map((p, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          {p.image_url && (
+                            <img
+                              src={p.image_url}
+                              alt={p.name}
+                              width={32}
+                              height={32}
+                              loading="lazy"
+                              className="w-8 h-8 rounded-full object-cover"
+                            />
+                          )}
+                          <div>
+                            <p className="text-sm font-medium" style={{ color: 'var(--text)' }}>{p.name}</p>
+                            {p.role && (
+                              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{p.role}</p>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-          {/* RIGHT COLUMN */}
-          <div className="space-y-5 lg:sticky lg:top-24 self-start">
-            <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-              <p className="text-xs text-gray-400 uppercase font-semibold tracking-wide mb-1">Стоимость</p>
-              {event.is_free ? (
-                <p className="text-2xl font-black text-emerald-600 mb-4">Бесплатно</p>
-              ) : event.price ? (
-                <p className="text-xl font-black text-gray-900 mb-4">{event.price}</p>
-              ) : (
-                <p className="text-gray-400 mb-4">Цена не указана</p>
-              )}
-              {event.site_url && (
-                <a href={event.site_url} target="_blank" rel="noopener noreferrer"
-                  className="block w-full text-center bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-xl font-bold hover:opacity-90 shadow-md shadow-indigo-100 transition">
-                  Перейти на сайт ↗
-                </a>
-              )}
+              </div>
             </div>
 
-            {Array.isArray(event.all_dates) && event.all_dates.length > 0 && (
-              <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-                <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-4">📅 Даты</h2>
-                <ul className="space-y-2">
-                  {event.all_dates.slice(0, 5).map((d, i) => (
-                    <li key={i} className="text-sm text-gray-600 flex items-start gap-2">
-                      <span className="text-indigo-400 mt-0.5">→</span>
-                      <span>
-                        {d.is_endless ? 'Постоянно' : formatDate(d.start, d.start_time)}
-                        {d.end && !d.is_endless && d.end !== d.start && (
-                          <span className="text-gray-400"> — {formatDate(d.end, d.end_time)}</span>
-                        )}
-                      </span>
-                    </li>
-                  ))}
-                  {event.all_dates.length > 5 && (
-                    <li className="text-xs text-gray-400">+{event.all_dates.length - 5} дат</li>
-                  )}
-                </ul>
-              </div>
+            {/* ── KudaGo source badge ── */}
+            {event.source === 'kudago' && (
+              <p className="text-xs text-center" style={{ color: 'var(--text-faint)' }}>
+                Данные предоставлены{' '}
+                <a href="https://kudago.com" target="_blank" rel="noopener noreferrer"
+                  className="underline hover:opacity-70 transition"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  KudaGo
+                </a>
+              </p>
             )}
 
-            {(event.place_title || event.place_address) && (
-              <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
-                <h2 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-4">📍 Место</h2>
-                {event.place_title && <p className="font-bold text-gray-900 mb-1">{event.place_title}</p>}
-                {event.place_address && <p className="text-sm text-gray-500 mb-2">{event.place_address}</p>}
-                {event.place_subway && (
-                  <p className="text-sm text-gray-500 flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 inline-block" />
-                    {toLabel(event.place_subway)}
-                  </p>
-                )}
-                {event.place_phone && (
-                  <a href={`tel:${event.place_phone}`} className="text-sm text-indigo-600 hover:text-indigo-800 mt-2 block">
-                    {event.place_phone}
-                  </a>
-                )}
-                {event.lat && event.lon && (
-                  <a href={`https://yandex.ru/maps/?pt=${event.lon},${event.lat}&z=16`}
-                    target="_blank" rel="noopener noreferrer"
-                    className="mt-4 flex items-center gap-2 text-sm text-indigo-500 hover:text-indigo-700 font-medium">
-                    🗺️ Открыть на карте
-                  </a>
-                )}
-              </div>
-            )}
+            {/* ── Unauth CTA ── */}
+            {!user && <UnauthBanner />}
+
+            {/* ── Interactive blocks (attendees, party, chat) ── */}
+            <EventAttendees eventId={chatEventId} />
+            <EventParty eventId={chatEventId} />
+            <EventChat
+              eventId={chatEventId}
+              currentUserId={user ? String(user.id) : ''}
+              currentUsername={user?.username ?? 'Аноним'}
+            />
+
           </div>
-        </div>
+        )}
       </main>
     </div>
   );

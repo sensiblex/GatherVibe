@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -21,59 +22,184 @@ interface MyStatus {
   comment?: string | null;
 }
 
-function InterestBadge({ interest }: { interest: string }) {
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+function splitInterests(raw: string | null | undefined): string[] {
+  return (raw || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+function calcMatchScore(myTags: string[], attendee: Attendee, myUserId: number | null): number {
+  if (attendee.user_id === myUserId || !myTags.length) return 0;
+  const theirTags = splitInterests(attendee.interests);
+  return myTags.filter(t => theirTags.includes(t)).length;
+}
+
+// ─── sub-components ─────────────────────────────────────────────────────────
+
+function InterestBadge({ interest, highlight }: { interest: string; highlight?: boolean }) {
   return (
-    <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full">
+    <span
+      className="text-xs px-2 py-0.5 rounded-full font-medium"
+      style={{
+        background: highlight ? 'var(--accent, #4f46e5)' : 'var(--badge-bg, #eef2ff)',
+        color: highlight ? '#fff' : 'var(--accent, #4f46e5)',
+      }}
+    >
       {interest.trim()}
     </span>
   );
 }
 
-function AttendeeCard({ attendee, isMe }: { attendee: Attendee; isMe: boolean }) {
+function CompatibilityBar({ score }: { score: number }) {
+  if (score === 0) return null;
+  const pct = Math.min(100, Math.round(score * 20));
+  return (
+    <div className="flex items-center gap-2">
+      <div
+        className="flex-1 h-1.5 rounded-full overflow-hidden"
+        style={{ background: 'var(--surface-2)' }}
+      >
+        <div
+          className="h-full rounded-full transition-all"
+          style={{
+            width: `${pct}%`,
+            background: 'linear-gradient(90deg, var(--accent, #4f46e5), #9333ea)',
+          }}
+        />
+      </div>
+      <span className="text-xs font-semibold shrink-0" style={{ color: 'var(--accent)' }}>
+        {score} совп.
+      </span>
+    </div>
+  );
+}
+
+function AttendeeCard({
+  attendee,
+  isMe,
+  isTopMatch,
+  commonInterests,
+  matchScore,
+}: {
+  attendee: Attendee;
+  isMe: boolean;
+  isTopMatch: boolean;
+  commonInterests: string[];
+  matchScore: number;
+}) {
   const initials = attendee.username.slice(0, 2).toUpperCase();
   const interests = attendee.interests
-    ? attendee.interests.split(',').filter(Boolean).slice(0, 4)
+    ? attendee.interests.split(',').filter(Boolean).slice(0, 5)
     : [];
+
+  const borderColor = isMe
+    ? 'var(--accent, #4f46e5)'
+    : isTopMatch
+    ? '#d8b4fe'
+    : commonInterests.length > 0
+    ? 'color-mix(in oklch, #9333ea 50%, var(--border))'
+    : 'var(--border)';
+
+  const boxShadow = isTopMatch
+    ? '0 0 0 2px #d8b4fe, 0 2px 8px 0 rgba(168,85,247,0.10)'
+    : undefined;
+
+  const bgColor = isMe
+    ? 'color-mix(in oklch, var(--accent, #4f46e5) 8%, var(--surface))'
+    : isTopMatch
+    ? 'color-mix(in oklch, #9333ea 7%, var(--surface))'
+    : commonInterests.length > 0
+    ? 'color-mix(in oklch, #9333ea 5%, var(--surface))'
+    : 'var(--surface)';
 
   return (
     <div
-      className={`relative flex flex-col gap-3 p-4 rounded-2xl border transition-all ${
-        isMe
-          ? 'border-indigo-300 bg-indigo-50/60 shadow-sm shadow-indigo-100'
-          : 'border-gray-100 bg-white hover:border-indigo-200 hover:shadow-sm'
-      }`}
+      className="relative flex flex-col gap-3 p-4 rounded-2xl transition-all hover:-translate-y-0.5"
+      style={{
+        background: bgColor,
+        border: `1px solid ${borderColor}`,
+        boxShadow,
+      }}
     >
+      {/* Labels */}
       {isMe && (
-        <span className="absolute top-3 right-3 text-xs font-bold text-indigo-500 bg-indigo-100 px-2 py-0.5 rounded-full">
+        <span
+          className="absolute top-3 right-3 text-xs font-bold px-2 py-0.5 rounded-full"
+          style={{ background: 'var(--badge-bg, #eef2ff)', color: 'var(--accent, #4f46e5)' }}
+        >
           Вы
         </span>
       )}
+      {!isMe && isTopMatch && (
+        <span className="absolute top-3 right-3 text-xs font-bold bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">
+          ✨ Лучшее совпадение
+        </span>
+      )}
+      {!isMe && !isTopMatch && commonInterests.length >= 2 && (
+        <span className="absolute top-3 right-3 text-xs font-bold bg-purple-500/20 text-purple-500 px-2 py-0.5 rounded-full">
+          🔥 Совпадение
+        </span>
+      )}
+
+      {/* Avatar + name — имя кликабельно, ведёт на /users/[id] */}
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm shrink-0">
+        <Link
+          href={`/users/${attendee.user_id}`}
+          className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 transition hover:opacity-80"
+          style={{
+            background:
+              isTopMatch || commonInterests.length >= 2
+                ? 'linear-gradient(135deg,#9333ea,#ec4899)'
+                : 'linear-gradient(135deg,var(--accent,#4f46e5),#9333ea)',
+          }}
+          aria-label={`Профиль ${attendee.username}`}
+        >
           {initials}
-        </div>
+        </Link>
         <div className="min-w-0">
-          <p className="font-bold text-gray-900 text-sm truncate">{attendee.username}</p>
+          <Link
+            href={`/users/${attendee.user_id}`}
+            className="font-bold text-sm truncate block transition hover:opacity-70"
+            style={{ color: 'var(--text)' }}
+          >
+            {attendee.username}
+          </Link>
           {attendee.city && (
-            <p className="text-xs text-gray-400 flex items-center gap-1">
+            <p className="text-xs flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
               <span>📍</span>{attendee.city}
             </p>
           )}
         </div>
       </div>
 
+      {/* Compatibility bar */}
+      {!isMe && commonInterests.length > 0 && (
+        <CompatibilityBar score={commonInterests.length} />
+      )}
+
+      {/* Interest tags */}
       {interests.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {interests.map((i) => <InterestBadge key={i} interest={i} />)}
+          {interests.map(i => (
+            <InterestBadge key={i} interest={i} highlight={commonInterests.includes(i.trim())} />
+          ))}
         </div>
       )}
 
+      {!isMe && matchScore > 0 && (
+        <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full font-semibold self-start">
+          🔥 {matchScore} общих интереса
+        </span>
+      )}
+
       {attendee.comment && (
-        <p className="text-sm text-gray-600 italic leading-snug">«{attendee.comment}»</p>
+        <p className="text-sm italic leading-snug" style={{ color: 'var(--text-muted)' }}>
+          «{attendee.comment}»
+        </p>
       )}
 
       {attendee.is_looking && !isMe && (
-        <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-500">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           Ищет компанию
         </div>
@@ -82,25 +208,51 @@ function AttendeeCard({ attendee, isMe }: { attendee: Attendee; isMe: boolean })
   );
 }
 
+// ─── main component ──────────────────────────────────────────────────────────
+
 export default function EventAttendees({ eventId }: { eventId: string }) {
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [myStatus, setMyStatus] = useState<MyStatus>({ attending: false });
+  const [myInterests, setMyInterests] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [comment, setComment] = useState('');
   const [isLooking, setIsLooking] = useState(true);
   const [onlyLooking, setOnlyLooking] = useState(false);
+  const [sortBy, setSortBy] = useState<'date' | 'match'>('match');
+  const [filterInterest, setFilterInterest] = useState<string>('');
+  const [token, setToken] = useState<string | null>(null);
+  const [myUserId, setMyUserId] = useState<number | null>(null);
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  const myUserId = typeof window !== 'undefined'
-    ? (() => { try { return JSON.parse(atob(localStorage.getItem('token')?.split('.')[1] || '')).user_id; } catch { return null; } })()
-    : null;
+  useEffect(() => {
+    const t = localStorage.getItem('token');
+    setToken(t);
+    if (t) {
+      try {
+        const payload = JSON.parse(atob(t.split('.')[1]));
+        setMyUserId(payload.user_id ?? null);
+      } catch {
+        setMyUserId(null);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    fetch(`${API_BASE}/users/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(u => {
+        if (u?.interests) setMyInterests(splitInterests(u.interests));
+      })
+      .catch(() => {});
+  }, [token]);
 
   const fetchAttendees = useCallback(async () => {
     try {
-      const url = `${API_BASE}/attendees/${eventId}${onlyLooking ? '?only_looking=true' : ''}`;
-      const res = await fetch(url);
+      const res = await fetch(
+        `${API_BASE}/attendees/${eventId}${onlyLooking ? '?only_looking=true' : ''}`
+      );
       if (res.ok) setAttendees(await res.json());
     } catch {}
   }, [eventId, onlyLooking]);
@@ -122,9 +274,65 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
     } catch {}
   }, [eventId, token]);
 
+  const [tokenReady, setTokenReady] = useState(false);
+  useEffect(() => { setTokenReady(true); }, [token]);
+
   useEffect(() => {
+    if (!tokenReady) return;
     Promise.all([fetchAttendees(), fetchMyStatus()]).finally(() => setLoading(false));
-  }, [fetchAttendees, fetchMyStatus]);
+  }, [fetchAttendees, fetchMyStatus, tokenReady]);
+
+  const getMatchScore = useCallback(
+    (attendee: Attendee): number => calcMatchScore(myInterests, attendee, myUserId),
+    [myInterests, myUserId]
+  );
+
+  const getCommonInterests = useCallback(
+    (attendee: Attendee): string[] => {
+      if (attendee.user_id === myUserId || !myInterests.length) return [];
+      const their = splitInterests(attendee.interests);
+      return myInterests.filter(i => their.includes(i));
+    },
+    [myInterests, myUserId]
+  );
+
+  const allInterests = useMemo(() => {
+    const set = new Set<string>();
+    attendees.forEach(a => {
+      if (a.interests) a.interests.split(',').forEach(i => set.add(i.trim()));
+    });
+    return Array.from(set).filter(Boolean).sort();
+  }, [attendees]);
+
+  const processedAttendees = useMemo(() => {
+    let list = [...attendees];
+    if (filterInterest) {
+      list = list.filter(a =>
+        a.interests?.split(',').map(s => s.trim()).includes(filterInterest)
+      );
+    }
+    if (sortBy === 'match') {
+      list.sort((a, b) => {
+        if (a.user_id === myUserId) return -1;
+        if (b.user_id === myUserId) return 1;
+        return getMatchScore(b) - getMatchScore(a);
+      });
+    } else {
+      list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }
+    return list;
+  }, [attendees, sortBy, filterInterest, getMatchScore, myUserId]);
+
+  const topMatchUserId = useMemo(() => {
+    let best: Attendee | null = null;
+    let bestScore = 0;
+    for (const a of attendees) {
+      if (a.user_id === myUserId) continue;
+      const s = getMatchScore(a);
+      if (s > bestScore) { bestScore = s; best = a; }
+    }
+    return bestScore > 0 ? best?.user_id ?? null : null;
+  }, [attendees, getMatchScore, myUserId]);
 
   const handleJoin = async () => {
     if (!token) { window.location.href = '/login'; return; }
@@ -160,45 +368,85 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
     setJoining(false);
   };
 
-  const lookingCount = attendees.filter((a) => a.is_looking).length;
+  const lookingCount = attendees.filter(a => a.is_looking).length;
+
+  const cardStyle = {
+    background: 'var(--card-bg, var(--surface))',
+    border: '1px solid var(--border)',
+  };
+
+  const sortBtnStyle = (active: boolean) => ({
+    background: active ? 'var(--accent, #4f46e5)' : 'var(--surface)',
+    color: active ? '#fff' : 'var(--text-muted)',
+  });
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      {/* Header */}
-      <div className="px-6 py-5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+    <div className="rounded-2xl shadow-sm overflow-hidden" style={cardStyle}>
+      {/* ── Header ── */}
+      <div
+        className="px-6 py-5 flex flex-wrap items-center justify-between gap-3"
+        style={{ borderBottom: '1px solid var(--border)' }}
+      >
         <div>
-          <h2 className="font-bold text-gray-900 text-base">
+          <h2 className="font-bold text-base" style={{ color: 'var(--text)' }}>
             🤝 Идут на событие
             {attendees.length > 0 && (
-              <span className="ml-2 text-sm font-normal text-gray-400">{attendees.length} чел.</span>
+              <span className="ml-2 text-sm font-normal" style={{ color: 'var(--text-muted)' }}>
+                {attendees.length} чел.
+              </span>
             )}
           </h2>
           {lookingCount > 0 && (
-            <p className="text-xs text-emerald-600 mt-0.5">{lookingCount} ищут компанию</p>
+            <p className="text-xs text-emerald-500 mt-0.5">{lookingCount} ищут компанию</p>
           )}
         </div>
-        <div className="flex items-center gap-3">
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <div
+            className="flex rounded-xl overflow-hidden text-xs font-semibold"
+            style={{ border: '1px solid var(--border)' }}
+          >
+            <button
+              onClick={() => setSortBy('match')}
+              className="px-3 py-1.5 transition"
+              style={sortBtnStyle(sortBy === 'match')}
+            >
+              🎯 По совпадению
+            </button>
+            <button
+              onClick={() => setSortBy('date')}
+              className="px-3 py-1.5 transition"
+              style={sortBtnStyle(sortBy === 'date')}
+            >
+              🕐 По дате
+            </button>
+          </div>
+
           <button
-            onClick={() => setOnlyLooking((v) => !v)}
-            className={`text-xs px-3 py-1.5 rounded-full border font-medium transition ${
-              onlyLooking
-                ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-gray-300'
-            }`}
+            onClick={() => setOnlyLooking(v => !v)}
+            className="text-xs px-3 py-1.5 rounded-full font-medium transition"
+            style={{
+              background: onlyLooking ? 'color-mix(in oklch, #22c55e 15%, var(--surface))' : 'var(--surface-2)',
+              border: `1px solid ${onlyLooking ? '#22c55e' : 'var(--border)'}`,
+              color: onlyLooking ? '#22c55e' : 'var(--text-muted)',
+            }}
           >
             {onlyLooking ? '✓ Только ищут' : 'Только ищут'}
           </button>
+
           {!myStatus.attending ? (
             <button
-              onClick={() => (token ? setShowForm((v) => !v) : (window.location.href = '/login'))}
-              className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-bold px-4 py-1.5 rounded-full hover:opacity-90 shadow-sm shadow-indigo-100 transition"
+              onClick={() => token ? setShowForm(v => !v) : (window.location.href = '/login')}
+              className="text-white text-sm font-bold px-4 py-1.5 rounded-full hover:opacity-90 shadow-sm transition"
+              style={{ background: 'var(--accent-gradient, linear-gradient(135deg,#4f46e5,#7c3aed))' }}
             >
               + Иду!
             </button>
           ) : (
             <button
-              onClick={() => setShowForm((v) => !v)}
-              className="text-sm font-bold px-4 py-1.5 rounded-full border border-indigo-300 text-indigo-600 hover:bg-indigo-50 transition"
+              onClick={() => setShowForm(v => !v)}
+              className="text-sm font-bold px-4 py-1.5 rounded-full transition hover:opacity-80"
+              style={{ border: '1px solid var(--accent, #4f46e5)', color: 'var(--accent, #4f46e5)' }}
             >
               ✏️ Изменить
             </button>
@@ -206,26 +454,78 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
         </div>
       </div>
 
-      {/* Join form */}
+      {/* ── Interest filter chips ── */}
+      {allInterests.length > 0 && (
+        <div
+          className="px-6 py-3 flex gap-2 flex-wrap"
+          style={{ borderBottom: '1px solid var(--border)' }}
+        >
+          <button
+            onClick={() => setFilterInterest('')}
+            className="text-xs px-3 py-1 rounded-full font-medium transition"
+            style={{
+              background: !filterInterest ? 'var(--accent, #4f46e5)' : 'var(--surface-2)',
+              color: !filterInterest ? '#fff' : 'var(--text-muted)',
+              border: `1px solid ${!filterInterest ? 'var(--accent, #4f46e5)' : 'var(--border)'}`,
+            }}
+          >
+            Все
+          </button>
+          {allInterests.map(int => (
+            <button
+              key={int}
+              onClick={() => setFilterInterest(int === filterInterest ? '' : int)}
+              className="text-xs px-3 py-1 rounded-full font-medium transition"
+              style={{
+                background:
+                  filterInterest === int
+                    ? 'var(--accent, #4f46e5)'
+                    : myInterests.includes(int)
+                    ? 'var(--badge-bg, #eef2ff)'
+                    : 'var(--surface-2)',
+                color:
+                  filterInterest === int
+                    ? '#fff'
+                    : myInterests.includes(int)
+                    ? 'var(--accent, #4f46e5)'
+                    : 'var(--text-muted)',
+                border: `1px solid ${filterInterest === int ? 'var(--accent, #4f46e5)' : 'var(--border)'}`,
+              }}
+            >
+              {myInterests.includes(int) ? '⭐ ' : ''}{int}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Join / edit form ── */}
       {showForm && (
-        <div className="px-6 py-4 bg-indigo-50/50 border-b border-indigo-100">
-          <p className="text-sm font-semibold text-gray-700 mb-3">
+        <div
+          className="px-6 py-4"
+          style={{
+            background: 'color-mix(in oklch, var(--accent, #4f46e5) 5%, var(--surface))',
+            borderBottom: '1px solid color-mix(in oklch, var(--accent, #4f46e5) 20%, var(--border))',
+          }}
+        >
+          <p className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>
             {myStatus.attending ? 'Обновить участие' : 'Расскажи о себе другим участникам'}
           </p>
           <textarea
             value={comment}
-            onChange={(e) => setComment(e.target.value.slice(0, 200))}
+            onChange={e => setComment(e.target.value.slice(0, 200))}
             placeholder="Коротко о себе или пожелания для компании (необязательно)"
             rows={2}
-            className="w-full text-sm border border-indigo-200 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white resize-none"
+            className="w-full text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text)' }}
           />
-          <p className="text-xs text-gray-400 mb-3 text-right">{comment.length}/200</p>
+          <p className="text-xs mb-3 text-right" style={{ color: 'var(--text-muted)' }}>
+            {comment.length}/200
+          </p>
           <label className="flex items-center gap-2 cursor-pointer mb-4">
             <div
-              onClick={() => setIsLooking((v) => !v)}
-              className={`w-10 h-5 rounded-full transition-colors relative ${
-                isLooking ? 'bg-emerald-500' : 'bg-gray-300'
-              }`}
+              onClick={() => setIsLooking(v => !v)}
+              className="w-10 h-5 rounded-full transition-colors relative"
+              style={{ background: isLooking ? '#22c55e' : 'var(--surface-2)' }}
             >
               <span
                 className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${
@@ -233,55 +533,87 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
                 }`}
               />
             </div>
-            <span className="text-sm text-gray-700">
-              {isLooking ? '🟢 Ищу компанию для похода' : '⚫ Просто отмечаюсь'}
+            <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>
+              Ищу компанию на это событие
             </span>
           </label>
           <div className="flex gap-2">
-            <button
-              onClick={handleJoin}
-              disabled={joining}
-              className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-bold py-2 rounded-xl hover:opacity-90 transition disabled:opacity-60"
-            >
-              {joining ? 'Сохранение...' : myStatus.attending ? 'Обновить' : 'Подтвердить участие'}
-            </button>
-            {myStatus.attending && (
+            {!myStatus.attending ? (
               <button
-                onClick={handleLeave}
+                onClick={handleJoin}
                 disabled={joining}
-                className="px-4 text-sm text-red-500 border border-red-200 rounded-xl hover:bg-red-50 transition disabled:opacity-60"
+                className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white hover:opacity-90 transition disabled:opacity-60"
+                style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
               >
-                Отменить
+                {joining ? 'Сохранение...' : '✓ Подтвердить участие'}
               </button>
+            ) : (
+              <>
+                <button
+                  onClick={handleJoin}
+                  disabled={joining}
+                  className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white hover:opacity-90 transition disabled:opacity-60"
+                  style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
+                >
+                  {joining ? 'Сохранение...' : '💾 Сохранить'}
+                </button>
+                <button
+                  onClick={handleLeave}
+                  disabled={joining}
+                  className="px-4 py-2.5 rounded-xl text-sm font-medium transition disabled:opacity-60"
+                  style={{
+                    color: '#ef4444',
+                    border: '1px solid color-mix(in oklch, #ef4444 40%, transparent)',
+                  }}
+                >
+                  Отписаться
+                </button>
+              </>
             )}
             <button
               onClick={() => setShowForm(false)}
-              className="px-4 text-sm text-gray-400 border border-gray-200 rounded-xl hover:bg-gray-50 transition"
+              className="px-4 py-2.5 rounded-xl text-sm transition"
+              style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}
             >
-              ✕
+              Отмена
             </button>
           </div>
         </div>
       )}
 
-      {/* Attendees list */}
+      {/* ── List ── */}
       <div className="p-6">
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="h-24 bg-gray-100 rounded-2xl animate-pulse" />
+            {[1, 2, 3].map(i => (
+              <div
+                key={i}
+                className="h-28 rounded-2xl animate-pulse"
+                style={{ background: 'var(--surface-2)' }}
+              />
             ))}
           </div>
-        ) : attendees.length === 0 ? (
+        ) : processedAttendees.length === 0 ? (
           <div className="text-center py-10">
             <p className="text-4xl mb-3">🎭</p>
-            <p className="text-gray-500 font-medium">Пока никто не отметился</p>
-            <p className="text-sm text-gray-400 mt-1">Будь первым — нажми «Иду!»</p>
+            <p className="font-medium" style={{ color: 'var(--text-muted)' }}>
+              {onlyLooking ? 'Никто не ищет компанию' : 'Пока никто не идёт'}
+            </p>
+            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+              Будь первым — нажми «+ Иду!»
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {attendees.map((a) => (
-              <AttendeeCard key={a.id} attendee={a} isMe={a.user_id === myUserId} />
+            {processedAttendees.map(a => (
+              <AttendeeCard
+                key={a.id}
+                attendee={a}
+                isMe={a.user_id === myUserId}
+                isTopMatch={a.user_id === topMatchUserId}
+                commonInterests={getCommonInterests(a)}
+                matchScore={getMatchScore(a)}
+              />
             ))}
           </div>
         )}
