@@ -104,7 +104,7 @@ function formatDate(dateStr: string | null, timeStr: string | null): string {
 
 // ──────────────────────────────────────────────────────────────────────
 export default function EventCard({ event }: { event: KudaGoEvent }) {
-  const ageLabel = event.age_restriction ? `${event.age_restriction}+` : null;
+  const ageLabel = event.age_restriction ? (typeof event.age_restriction === 'string' && event.age_restriction.endsWith('+') ? event.age_restriction : `${event.age_restriction}+`) : null;
 
   // ── Задача 5: счётчик участников ──
   const [attendeeCount, setAttendeeCount] = useState<number | null>(null);

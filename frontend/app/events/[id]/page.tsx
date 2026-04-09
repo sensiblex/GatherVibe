@@ -466,7 +466,7 @@ export default function EventDetailPage() {
                       className="text-xs px-3 py-1 rounded-full font-semibold"
                       style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
                     >
-                      {event.age_restriction}+
+                      {event.age_restriction && typeof event.age_restriction === 'string' && event.age_restriction.endsWith('+') ? event.age_restriction : `${event.age_restriction}+`}
                     </span>
                   )}
                 </div>
