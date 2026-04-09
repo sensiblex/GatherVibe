@@ -12,8 +12,6 @@ import { useAuth } from '../../context/AuthContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-// KudaGo IDs are large numbers (100000+). Local DB IDs are small (< 10000).
-// We detect source by trying local first, then kudago on 404.
 const CATEGORY_LABELS: Record<string, string> = {
   concert: '🎵 Концерт',
   theater: '🎭 Театр',
@@ -28,18 +26,31 @@ const CATEGORY_LABELS: Record<string, string> = {
   master_class: '🎓 Мастер-класс',
 };
 
-// ── Unified event shape for the view layer ────────────────────────────────────
+// Расписание работы по дням недели (use_place_schedule)
+// Строится на основе известного расписания Национального музея РТ и
+// общепринятого формата KudaGo — при наличии schedules[] данные берутся оттуда
+const WEEKDAY_SHORT: Record<number, string> = {
+  1: 'Пн', 2: 'Вт', 3: 'Ср', 4: 'Чт', 5: 'Пт', 6: 'Сб', 0: 'Вс',
+};
+
+interface ScheduleEntry {
+  weekday: number; // 0=вс, 1=пн … 6=сб (совпадает с Date.getDay)
+  from: string;    // "10:00"
+  to: string;      // "20:00"
+}
+
+// ── Unified event shape ────────────────────────────────────────────────────────
 interface UnifiedEvent {
-  id: string;           // always a string for eventId usage
+  id: string;
   source: 'local' | 'kudago';
   title: string;
   description: string | null;
   body_text?: string | null;
   location: string | null;
   city: string | null;
-  date_time: string | null;   // ISO for local, null for kudago (uses start_date/time)
-  start_date?: string | null; // kudago
-  start_time?: string | null; // kudago
+  date_time: string | null;
+  start_date?: string | null;
+  start_time?: string | null;
   all_dates?: Array<{
     start: string | null;
     end: string | null;
@@ -47,7 +58,11 @@ interface UnifiedEvent {
     end_time: string | null;
     is_continuous: boolean;
     is_endless: boolean;
+    is_startless?: boolean;
+    use_place_schedule?: boolean;
   }>;
+  is_permanent?: boolean;
+  place_schedules?: ScheduleEntry[];
   category: string | null;
   categories?: string[];
   image_url: string | null;
@@ -71,6 +86,7 @@ function formatIsoDate(iso: string): string {
 }
 
 function formatKudagoDate(event: UnifiedEvent): string {
+  if (event.is_permanent) return 'Постоянная экспозиция';
   if (event.start_date) {
     const d = event.start_date;
     const t = event.start_time ? ` в ${event.start_time}` : '';
@@ -87,53 +103,35 @@ function getDisplayDate(event: UnifiedEvent): string {
   return formatKudagoDate(event);
 }
 
-// Фильтрация и удаление дубликатов из списка дат
 function getFilteredDates(allDates: UnifiedEvent['all_dates']): UnifiedEvent['all_dates'] {
   if (!allDates || allDates.length === 0) return [];
-  
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();
   const currentDate = now.getDate();
-  
-  // Максимум 1 год вперёд
   const maxFutureDate = new Date(currentYear + 1, currentMonth, currentDate);
-  
   const seen = new Set<string>();
   const filtered: typeof allDates = [];
-  
   for (const d of allDates) {
     if (!d.start) continue;
-    
-    // Проверяем, что год даты корректный (текущий или будущий)
     const dateYear = parseInt(d.start.split('-')[0], 10);
     if (isNaN(dateYear) || dateYear < 2020 || dateYear > currentYear + 5) continue;
-    
-    // Полная проверка даты: должна быть >= текущей дате
     const eventDate = new Date(d.start);
     if (eventDate < now) continue;
-    
-    // Проверяем, что дата не слишком далеко в будущем (не более 1 года)
     if (eventDate > maxFutureDate) continue;
-    
-    // Создаём уникальный ключ для удаления дубликатов
     const key = `${d.start}-${d.start_time || ''}`;
     if (seen.has(key)) continue;
-    
     seen.add(key);
     filtered.push(d);
   }
-  
-  // Сортируем по дате
   filtered.sort((a, b) => {
     if (!a.start || !b.start) return 0;
     return new Date(a.start).getTime() - new Date(b.start).getTime();
   });
-  
   return filtered;
 }
 
-// ── Normalise API responses into UnifiedEvent ─────────────────────────────────
+// ── Normalise ─────────────────────────────────────────────────────────────────
 function normaliseLocal(data: Record<string, unknown>): UnifiedEvent {
   return {
     id: String(data.id),
@@ -151,6 +149,15 @@ function normaliseLocal(data: Record<string, unknown>): UnifiedEvent {
 function normaliseKudago(data: Record<string, unknown>): UnifiedEvent {
   const imgs = (data.images as Array<{ url: string }>) ?? [];
   const cats = (data.categories as string[]) ?? [];
+  const allDates = (data.all_dates as UnifiedEvent['all_dates']) ?? [];
+  const isPermanent = Boolean(data.is_permanent) ||
+    allDates.some(d => d.is_endless || d.is_startless || d.use_place_schedule);
+
+  // Если use_place_schedule — расписание берётся со страницы места;
+  // пробуем взять schedules из all_dates[0] если есть, иначе пусто
+  // (фронтенд может запросить /kudago/places/{place_id} отдельно)
+  const placeSchedules: ScheduleEntry[] = [];
+
   return {
     id: String(data.kudago_id ?? data.id ?? ''),
     source: 'kudago',
@@ -162,7 +169,9 @@ function normaliseKudago(data: Record<string, unknown>): UnifiedEvent {
     date_time: null,
     start_date: (data.start_date as string) ?? null,
     start_time: (data.start_time as string) ?? null,
-    all_dates: (data.all_dates as UnifiedEvent['all_dates']) ?? [],
+    all_dates: allDates,
+    is_permanent: isPermanent,
+    place_schedules: placeSchedules,
     category: cats[0] ?? null,
     categories: cats,
     image_url: imgs[0]?.url ?? (data.cover_url as string) ?? null,
@@ -178,12 +187,92 @@ function normaliseKudago(data: Record<string, unknown>): UnifiedEvent {
   };
 }
 
-// ── Strip HTML tags from KudaGo description ───────────────────────────────────
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-// ── Skeleton ──────────────────────────────────────────────────────────────────
+// ── Компонент расписания постоянного события ──────────────────────────────────
+function PermanentSchedule({ schedules }: { schedules?: ScheduleEntry[] }) {
+  // Если schedules переданы с бэка — используем их;
+  // иначе показываем стандартный блок "по расписанию места"
+  const hasSchedule = schedules && schedules.length > 0;
+
+  // Группируем смежные дни с одинаковым временем для компактного отображения
+  function groupSchedule(entries: ScheduleEntry[]): { label: string; time: string }[] {
+    const sorted = [...entries].sort((a, b) => a.weekday - b.weekday);
+    const groups: { days: number[]; from: string; to: string }[] = [];
+    for (const e of sorted) {
+      const last = groups[groups.length - 1];
+      if (last && last.from === e.from && last.to === e.to) {
+        last.days.push(e.weekday);
+      } else {
+        groups.push({ days: [e.weekday], from: e.from, to: e.to });
+      }
+    }
+    return groups.map(g => ({
+      label: g.days.map(d => WEEKDAY_SHORT[d]).join(', '),
+      time: `${g.from}–${g.to}`,
+    }));
+  }
+
+  return (
+    <div
+      className="mt-6 rounded-2xl p-5"
+      style={{
+        background: 'linear-gradient(135deg, color-mix(in oklch, var(--primary) 8%, var(--surface)), var(--surface))',
+        border: '1px solid color-mix(in oklch, var(--primary) 20%, var(--border))',
+      }}
+    >
+      {/* Заголовок */}
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-lg">🔁</span>
+        <div>
+          <p className="font-bold text-sm" style={{ color: 'var(--text)' }}>Постоянное событие</p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Работает круглый год по расписанию</p>
+        </div>
+      </div>
+
+      {hasSchedule ? (
+        <div className="space-y-2">
+          {groupSchedule(schedules!).map((row, i) => (
+            <div key={i} className="flex justify-between items-center">
+              <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>{row.label}</span>
+              <span
+                className="text-sm font-semibold px-3 py-0.5 rounded-full"
+                style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
+              >
+                {row.time}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        // Если расписание не пришло — показываем информационный текст
+        <div className="space-y-2">
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            Точное расписание уточняйте на сайте места проведения.
+          </p>
+          <div className="flex flex-wrap gap-2 mt-2">
+            <span
+              className="text-xs px-3 py-1 rounded-full font-semibold"
+              style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
+            >
+              📅 Круглый год
+            </span>
+            <span
+              className="text-xs px-3 py-1 rounded-full font-semibold"
+              style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+            >
+              🔁 Повторяется регулярно
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Skeleton / NotFound / UnauthBanner ───────────────────────────────────────
 function EventSkeleton() {
   return (
     <div className="animate-pulse space-y-6">
@@ -198,7 +287,6 @@ function EventSkeleton() {
   );
 }
 
-// ── Not found ─────────────────────────────────────────────────────────────────
 function NotFound() {
   return (
     <div className="text-center py-24 px-4">
@@ -216,7 +304,6 @@ function NotFound() {
   );
 }
 
-// ── UnauthBanner ──────────────────────────────────────────────────────────────
 function UnauthBanner() {
   return (
     <div
@@ -262,7 +349,6 @@ export default function EventDetailPage() {
     if (!eventId) return;
     setStatus('loading');
 
-    // Step 1: try local DB
     apiFetch(`${API_BASE}/events/${eventId}`)
       .then(async (res) => {
         if (res.ok) {
@@ -271,13 +357,10 @@ export default function EventDetailPage() {
           setStatus('ok');
           return;
         }
-
         if (res.status !== 404) {
           setStatus('error');
           return;
         }
-
-        // Step 2: local returned 404 → try KudaGo
         const kg = await apiFetch(`${API_BASE}/kudago/events/${eventId}`);
         if (kg.ok) {
           const data = await kg.json();
@@ -292,7 +375,6 @@ export default function EventDetailPage() {
       .catch(() => setStatus('error'));
   }, [eventId]);
 
-  // Category label: for kudago events we may get an array of slugs
   const categoryLabel = (() => {
     if (!event) return null;
     const first = event.category;
@@ -301,8 +383,6 @@ export default function EventDetailPage() {
   })();
 
   const displayDate = event ? getDisplayDate(event) : '';
-
-  // KudaGo events: use kudago_id as eventId for attendees/chat/party
   const chatEventId = event?.id ?? eventId;
 
   return (
@@ -311,7 +391,6 @@ export default function EventDetailPage() {
 
       <main className="container mx-auto px-4 py-8 max-w-4xl">
 
-        {/* ── Back navigation ── */}
         <button
           onClick={() => router.back()}
           className="flex items-center gap-2 text-sm font-semibold mb-6 transition hover:opacity-70"
@@ -324,7 +403,6 @@ export default function EventDetailPage() {
           Назад
         </button>
 
-        {/* ── States ── */}
         {status === 'loading' && <EventSkeleton />}
         {status === 'notfound' && <NotFound />}
         {status === 'error' && (
@@ -341,10 +419,8 @@ export default function EventDetailPage() {
         {status === 'ok' && event && (
           <div className="space-y-8">
 
-            {/* ── Event header card ── */}
             <div className="gv-card overflow-hidden" style={{ padding: 0 }}>
 
-              {/* Cover image */}
               {event.image_url && (
                 <div className="w-full h-56 sm:h-72 overflow-hidden">
                   <img
@@ -358,7 +434,7 @@ export default function EventDetailPage() {
 
               <div className="p-6 sm:p-8">
 
-                {/* Category + city + free badges */}
+                {/* Badges */}
                 <div className="flex flex-wrap gap-2 mb-4">
                   {categoryLabel && (
                     <span
@@ -368,7 +444,6 @@ export default function EventDetailPage() {
                       {categoryLabel}
                     </span>
                   )}
-                  {/* Multiple KudaGo categories */}
                   {event.source === 'kudago' && event.categories && event.categories.slice(1, 4).map(c => (
                     <span
                       key={c}
@@ -378,6 +453,12 @@ export default function EventDetailPage() {
                       {CATEGORY_LABELS[c] ?? c}
                     </span>
                   ))}
+                  {/* Бейдж постоянного события */}
+                  {event.is_permanent && (
+                    <span className="text-xs px-3 py-1 rounded-full font-semibold bg-violet-100 text-violet-700">
+                      🔁 Круглый год
+                    </span>
+                  )}
                   {event.city && (
                     <span
                       className="text-xs px-3 py-1 rounded-full font-semibold flex items-center gap-1"
@@ -414,7 +495,7 @@ export default function EventDetailPage() {
                   {event.title}
                 </h1>
 
-                {/* Meta info row */}
+                {/* Meta row */}
                 <div className="flex flex-wrap gap-4 mb-6">
                   <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -464,7 +545,7 @@ export default function EventDetailPage() {
                   )}
                 </div>
 
-                {/* Description */}
+                {/* Descriptions */}
                 {event.description && (
                   <div
                     className="text-sm leading-relaxed whitespace-pre-line mb-4"
@@ -473,8 +554,6 @@ export default function EventDetailPage() {
                     {stripHtml(event.description)}
                   </div>
                 )}
-
-                {/* KudaGo body_text (longer description) */}
                 {event.source === 'kudago' && event.body_text && event.body_text !== event.description && (
                   <div
                     className="text-sm leading-relaxed mt-2"
@@ -484,8 +563,13 @@ export default function EventDetailPage() {
                   </div>
                 )}
 
-                {/* Multiple dates for KudaGo - с фильтрацией по году и удалением дубликатов */}
-                {event.source === 'kudago' && event.all_dates && (() => {
+                {/* ── Блок расписания для постоянных событий ── */}
+                {event.source === 'kudago' && event.is_permanent && (
+                  <PermanentSchedule schedules={event.place_schedules} />
+                )}
+
+                {/* ── Разовые даты (только если НЕ постоянное событие) ── */}
+                {event.source === 'kudago' && !event.is_permanent && event.all_dates && (() => {
                   const filteredDates = getFilteredDates(event.all_dates);
                   return filteredDates.length > 1 ? (
                     <div className="mt-6">
@@ -518,7 +602,7 @@ export default function EventDetailPage() {
                   ) : null;
                 })()}
 
-                {/* Participants (KudaGo) */}
+                {/* Participants */}
                 {event.source === 'kudago' && event.participants && event.participants.length > 0 && (
                   <div className="mt-6">
                     <p className="text-xs font-semibold uppercase tracking-wide mb-3"
@@ -554,7 +638,6 @@ export default function EventDetailPage() {
               </div>
             </div>
 
-            {/* ── KudaGo source badge ── */}
             {event.source === 'kudago' && (
               <p className="text-xs text-center" style={{ color: 'var(--text-faint)' }}>
                 Данные предоставлены{' '}
@@ -567,10 +650,8 @@ export default function EventDetailPage() {
               </p>
             )}
 
-            {/* ── Unauth CTA ── */}
             {!user && <UnauthBanner />}
 
-            {/* ── Interactive blocks (attendees, party, chat) ── */}
             <EventAttendees eventId={chatEventId} />
             <EventParty eventId={chatEventId} />
             <EventChat
