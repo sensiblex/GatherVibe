@@ -345,9 +345,8 @@ async def parse_events(raw: Dict[str, Any]) -> List[Dict[str, Any]]:
                 start_date = dt.strftime("%Y-%m-%d")
                 start_time = dt.strftime("%H:%M")
         else:
-            # Нет будущих дат — событие уже прошло, не добавляем даты
-            # start_date и start_time остаются None, all_dates пуст
-            pass
+            # Нет будущих дат — событие уже прошло, пропускаем
+            continue  # ← ИСПРАВЛЕНИЕ
         
         place = e.get("place") or {}
         images = e.get("images") or []

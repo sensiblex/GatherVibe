@@ -168,7 +168,7 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
           )}
         </div>
 
-        {event.start_date && (
+        {formatDate(event.start_date, event.start_time) && (
           <span
             className="absolute bottom-3 right-3 text-xs font-semibold px-2.5 py-1 rounded-lg shadow-md"
             style={{
