@@ -118,6 +118,11 @@ def _safe_str(val) -> str:
     return str(val)
 
 
+def _is_permanent_date(d: dict) -> bool:
+    """Возвращает True если дата постоянная (is_endless или is_startless или use_place_schedule)."""
+    return bool(d.get("is_endless") or d.get("is_startless") or d.get("use_place_schedule"))
+
+
 def parse_events(raw: dict) -> list:
     import datetime
     import time
@@ -129,16 +134,36 @@ def parse_events(raw: dict) -> list:
         start_date = None
         start_time = None
         all_dates = []
-        
-        # Отфильтровать только будущие даты (start >= now_ts)
+        is_permanent = False
+
+        # Проверяем, есть ли постоянные даты (is_endless / is_startless / use_place_schedule)
+        permanent_dates = [d for d in raw_dates if _is_permanent_date(d)]
+
+        # Отфильтровать только будущие разовые даты (start >= now_ts)
         future_dates = []
         for d in raw_dates:
+            if _is_permanent_date(d):
+                continue
             start_ts = d.get("start")
             if start_ts is not None and start_ts >= now_ts:
                 future_dates.append(d)
-        
-        # all_dates должны содержать только будущие даты
-        if future_dates:
+
+        if permanent_dates:
+            # Постоянное событие — круглый год, расписание по месту
+            is_permanent = True
+            start_date = None
+            start_time = None
+            all_dates = [{
+                "start": None,
+                "end": None,
+                "start_time": None,
+                "end_time": None,
+                "is_continuous": permanent_dates[0].get("is_continuous", False),
+                "is_endless": permanent_dates[0].get("is_endless", False),
+                "is_startless": permanent_dates[0].get("is_startless", False),
+                "use_place_schedule": permanent_dates[0].get("use_place_schedule", False),
+            }]
+        elif future_dates:
             for d in future_dates:
                 start_ts = d.get("start")
                 end_ts = d.get("end")
@@ -160,7 +185,7 @@ def parse_events(raw: dict) -> list:
                     "is_continuous": d.get("is_continuous", False),
                     "is_endless": d.get("is_endless", False),
                 })
-            
+
             # Выбрать ближайшую будущую дату
             selected_date = None
             nearest_future_ts = float('inf')
@@ -169,14 +194,14 @@ def parse_events(raw: dict) -> list:
                 if start_ts and start_ts < nearest_future_ts:
                     nearest_future_ts = start_ts
                     selected_date = d
-            
+
             if selected_date and selected_date.get("start"):
                 dt = datetime.datetime.fromtimestamp(selected_date["start"])
                 start_date = dt.strftime("%Y-%m-%d")
                 start_time = dt.strftime("%H:%M")
         else:
-            # Нет будущих дат — событие уже прошло, пропускаем
-            continue  # ← ИСПРАВЛЕНИЕ: было `pass`, теперь `continue`
+            # Нет ни постоянных, ни будущих дат — событие уже прошло, пропускаем
+            continue
 
         place = e.get("place") or {}
         images = e.get("images") or []
@@ -199,6 +224,7 @@ def parse_events(raw: dict) -> list:
             "start_date": start_date,
             "start_time": start_time,
             "all_dates": all_dates,
+            "is_permanent": is_permanent,
             "place_title": _safe_str(place.get("title")),
             "place_address": _safe_str(place.get("address")),
             "place_phone": _safe_str(place.get("phone")),
@@ -218,15 +244,33 @@ def parse_event_detail(e: dict) -> dict:
     start_date = None
     start_time = None
     all_dates = []
-    
-    # Отфильтровать только будущие даты (start >= now_ts)
+    is_permanent = False
+
+    # Проверяем постоянные даты
+    permanent_dates = [d for d in raw_dates if _is_permanent_date(d)]
+
+    # Отфильтровать только будущие разовые даты (start >= now_ts)
     future_dates = []
     for d in raw_dates:
+        if _is_permanent_date(d):
+            continue
         start_ts = d.get("start")
         if start_ts is not None and start_ts >= now_ts:
             future_dates.append(d)
-    
-    if future_dates:
+
+    if permanent_dates:
+        is_permanent = True
+        all_dates = [{
+            "start": None,
+            "end": None,
+            "start_time": None,
+            "end_time": None,
+            "is_continuous": permanent_dates[0].get("is_continuous", False),
+            "is_endless": permanent_dates[0].get("is_endless", False),
+            "is_startless": permanent_dates[0].get("is_startless", False),
+            "use_place_schedule": permanent_dates[0].get("use_place_schedule", False),
+        }]
+    elif future_dates:
         for d in future_dates:
             start_ts = d.get("start")
             end_ts = d.get("end")
@@ -242,7 +286,7 @@ def parse_event_detail(e: dict) -> dict:
             all_dates.append({"start": sd, "end": ed, "start_time": st, "end_time": et,
                                "is_continuous": d.get("is_continuous", False),
                                "is_endless": d.get("is_endless", False)})
-        
+
         # Выбрать ближайшую будущую дату
         selected_date = None
         nearest_future_ts = float('inf')
@@ -251,14 +295,13 @@ def parse_event_detail(e: dict) -> dict:
             if start_ts and start_ts < nearest_future_ts:
                 nearest_future_ts = start_ts
                 selected_date = d
-        
+
         if selected_date and selected_date.get("start"):
             dt = datetime.datetime.fromtimestamp(selected_date["start"])
             start_date = dt.strftime("%Y-%m-%d")
             start_time = dt.strftime("%H:%M")
     else:
-        # Нет будущих дат — событие уже прошло, не добавляем даты
-        # start_date и start_time остаются None, all_dates пуст
+        # Нет ни постоянных, ни будущих дат
         pass
 
     place = e.get("place") or {}
@@ -291,6 +334,7 @@ def parse_event_detail(e: dict) -> dict:
         "start_date": start_date,
         "start_time": start_time,
         "all_dates": all_dates,
+        "is_permanent": is_permanent,
         "place_title": _safe_str(place.get("title")),
         "place_address": _safe_str(place.get("address")),
         "place_phone": _safe_str(place.get("phone")),
