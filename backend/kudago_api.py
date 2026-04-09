@@ -119,15 +119,27 @@ def _safe_str(val) -> str:
 
 
 def parse_events(raw: dict) -> list:
+    import datetime
+    import time
+    now_ts = int(time.time())
     results = raw.get("results", [])
     out = []
     for e in results:
-        dates = e.get("dates") or []
+        raw_dates = e.get("dates") or []
         start_date = None
         start_time = None
         all_dates = []
-        if dates:
-            for d in dates:
+        
+        # Отфильтровать только будущие даты (start >= now_ts)
+        future_dates = []
+        for d in raw_dates:
+            start_ts = d.get("start")
+            if start_ts is not None and start_ts >= now_ts:
+                future_dates.append(d)
+        
+        # all_dates должны содержать только будущие даты
+        if future_dates:
+            for d in future_dates:
                 start_ts = d.get("start")
                 end_ts = d.get("end")
                 sd = None
@@ -135,12 +147,10 @@ def parse_events(raw: dict) -> list:
                 ed = None
                 et = None
                 if start_ts:
-                    import datetime
                     dt = datetime.datetime.fromtimestamp(start_ts)
                     sd = dt.strftime("%Y-%m-%d")
                     st = dt.strftime("%H:%M")
                 if end_ts:
-                    import datetime
                     dt2 = datetime.datetime.fromtimestamp(end_ts)
                     ed = dt2.strftime("%Y-%m-%d")
                     et = dt2.strftime("%H:%M")
@@ -150,12 +160,24 @@ def parse_events(raw: dict) -> list:
                     "is_continuous": d.get("is_continuous", False),
                     "is_endless": d.get("is_endless", False),
                 })
-            first = dates[0]
-            if first.get("start"):
-                import datetime
-                dt = datetime.datetime.fromtimestamp(first["start"])
+            
+            # Выбрать ближайшую будущую дату
+            selected_date = None
+            nearest_future_ts = float('inf')
+            for d in future_dates:
+                start_ts = d.get("start")
+                if start_ts and start_ts < nearest_future_ts:
+                    nearest_future_ts = start_ts
+                    selected_date = d
+            
+            if selected_date and selected_date.get("start"):
+                dt = datetime.datetime.fromtimestamp(selected_date["start"])
                 start_date = dt.strftime("%Y-%m-%d")
                 start_time = dt.strftime("%H:%M")
+        else:
+            # Нет будущих дат — событие уже прошло, не добавляем даты
+            # start_date и start_time остаются None, all_dates пуст
+            pass
 
         place = e.get("place") or {}
         images = e.get("images") or []
@@ -190,34 +212,55 @@ def parse_events(raw: dict) -> list:
 
 
 def parse_event_detail(e: dict) -> dict:
-    dates = e.get("dates") or []
+    import datetime
+    import time
+    now_ts = int(time.time())
+    raw_dates = e.get("dates") or []
     start_date = None
     start_time = None
     all_dates = []
-    if dates:
-        for d in dates:
+    
+    # Отфильтровать только будущие даты (start >= now_ts)
+    future_dates = []
+    for d in raw_dates:
+        start_ts = d.get("start")
+        if start_ts is not None and start_ts >= now_ts:
+            future_dates.append(d)
+    
+    if future_dates:
+        for d in future_dates:
             start_ts = d.get("start")
             end_ts = d.get("end")
             sd = st = ed = et = None
             if start_ts:
-                import datetime
                 dt = datetime.datetime.fromtimestamp(start_ts)
                 sd = dt.strftime("%Y-%m-%d")
                 st = dt.strftime("%H:%M")
             if end_ts:
-                import datetime
                 dt2 = datetime.datetime.fromtimestamp(end_ts)
                 ed = dt2.strftime("%Y-%m-%d")
                 et = dt2.strftime("%H:%M")
             all_dates.append({"start": sd, "end": ed, "start_time": st, "end_time": et,
                                "is_continuous": d.get("is_continuous", False),
                                "is_endless": d.get("is_endless", False)})
-        first = dates[0]
-        if first.get("start"):
-            import datetime
-            dt = datetime.datetime.fromtimestamp(first["start"])
+        
+        # Выбрать ближайшую будущую дату
+        selected_date = None
+        nearest_future_ts = float('inf')
+        for d in future_dates:
+            start_ts = d.get("start")
+            if start_ts and start_ts < nearest_future_ts:
+                nearest_future_ts = start_ts
+                selected_date = d
+        
+        if selected_date and selected_date.get("start"):
+            dt = datetime.datetime.fromtimestamp(selected_date["start"])
             start_date = dt.strftime("%Y-%m-%d")
             start_time = dt.strftime("%H:%M")
+    else:
+        # Нет будущих дат — событие уже прошло, не добавляем даты
+        # start_date и start_time остаются None, all_dates пуст
+        pass
 
     place = e.get("place") or {}
     images = e.get("images") or []

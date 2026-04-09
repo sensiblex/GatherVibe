@@ -86,8 +86,18 @@ function translateTag(raw: string): string {
 }
 function formatDate(dateStr: string | null, timeStr: string | null): string {
   if (!dateStr) return '';
+  
+  const eventDate = new Date(dateStr);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  // Don't show date for past events
+  if (eventDate < today) {
+    return '';
+  }
+  
   return (
-    new Date(dateStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) +
+    eventDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) +
     (timeStr ? ` в ${timeStr.slice(0, 5)}` : '')
   );
 }

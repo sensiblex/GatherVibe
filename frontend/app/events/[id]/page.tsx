@@ -87,6 +87,52 @@ function getDisplayDate(event: UnifiedEvent): string {
   return formatKudagoDate(event);
 }
 
+// Фильтрация и удаление дубликатов из списка дат
+function getFilteredDates(allDates: UnifiedEvent['all_dates']): UnifiedEvent['all_dates'] {
+  if (!allDates || allDates.length === 0) return [];
+  
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  const currentDate = now.getDate();
+  
+  // Максимум 1 год вперёд
+  const maxFutureDate = new Date(currentYear + 1, currentMonth, currentDate);
+  
+  const seen = new Set<string>();
+  const filtered: typeof allDates = [];
+  
+  for (const d of allDates) {
+    if (!d.start) continue;
+    
+    // Проверяем, что год даты корректный (текущий или будущий)
+    const dateYear = parseInt(d.start.split('-')[0], 10);
+    if (isNaN(dateYear) || dateYear < 2020 || dateYear > currentYear + 5) continue;
+    
+    // Полная проверка даты: должна быть >= текущей дате
+    const eventDate = new Date(d.start);
+    if (eventDate < now) continue;
+    
+    // Проверяем, что дата не слишком далеко в будущем (не более 1 года)
+    if (eventDate > maxFutureDate) continue;
+    
+    // Создаём уникальный ключ для удаления дубликатов
+    const key = `${d.start}-${d.start_time || ''}`;
+    if (seen.has(key)) continue;
+    
+    seen.add(key);
+    filtered.push(d);
+  }
+  
+  // Сортируем по дате
+  filtered.sort((a, b) => {
+    if (!a.start || !b.start) return 0;
+    return new Date(a.start).getTime() - new Date(b.start).getTime();
+  });
+  
+  return filtered;
+}
+
 // ── Normalise API responses into UnifiedEvent ─────────────────────────────────
 function normaliseLocal(data: Record<string, unknown>): UnifiedEvent {
   return {
@@ -438,36 +484,39 @@ export default function EventDetailPage() {
                   </div>
                 )}
 
-                {/* Multiple dates for KudaGo */}
-                {event.source === 'kudago' && event.all_dates && event.all_dates.length > 1 && (
-                  <div className="mt-6">
-                    <p className="text-xs font-semibold uppercase tracking-wide mb-2"
-                      style={{ color: 'var(--text-faint)' }}
-                    >
-                      Все даты
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {event.all_dates.slice(0, 8).map((d, i) => (
-                        d.start && (
-                          <span
-                            key={i}
-                            className="text-xs px-3 py-1 rounded-full"
-                            style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                {/* Multiple dates for KudaGo - с фильтрацией по году и удалением дубликатов */}
+                {event.source === 'kudago' && event.all_dates && (() => {
+                  const filteredDates = getFilteredDates(event.all_dates);
+                  return filteredDates.length > 1 ? (
+                    <div className="mt-6">
+                      <p className="text-xs font-semibold uppercase tracking-wide mb-2"
+                        style={{ color: 'var(--text-faint)' }}
+                      >
+                        Все даты
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {filteredDates.slice(0, 8).map((d, i) => (
+                          d.start && (
+                            <span
+                              key={`${d.start}-${d.start_time}-${i}`}
+                              className="text-xs px-3 py-1 rounded-full"
+                              style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                            >
+                              {d.start} {d.start_time ? `в ${d.start_time}` : ''}
+                            </span>
+                          )
+                        ))}
+                        {filteredDates.length > 8 && (
+                          <span className="text-xs px-3 py-1 rounded-full"
+                            style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
                           >
-                            {d.start} {d.start_time ? `в ${d.start_time}` : ''}
+                            +{filteredDates.length - 8} ещё
                           </span>
-                        )
-                      ))}
-                      {event.all_dates.length > 8 && (
-                        <span className="text-xs px-3 py-1 rounded-full"
-                          style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
-                        >
-                          +{event.all_dates.length - 8} ещё
-                        </span>
-                      )}
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  ) : null;
+                })()}
 
                 {/* Participants (KudaGo) */}
                 {event.source === 'kudago' && event.participants && event.participants.length > 0 && (

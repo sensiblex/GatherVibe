@@ -69,7 +69,7 @@ def create_test_events():
         event = Event(
             **event_data,
             address=f"{event_data['location']}, {event_data['city']}",
-            date_time=datetime.now() + timedelta(days=i*3 + 1),  # разные даты
+            date_time=datetime.utcnow() + timedelta(days=i*3 + 1),  # разные даты
             created_by=0,  # системный пользователь
             is_active=True,
             image_url=f"https://picsum.photos/400/300?random={i}",  # случайное изображение

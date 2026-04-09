@@ -206,7 +206,8 @@ export default function EventsPage() {
       .then(r => r.json())
       .then((d: Category[]) => { if (Array.isArray(d)) setCategories(d); })
       .catch(() => {});
-    fetch(`${API_BASE}/kudago/events?location=kzn&page=1&page_size=100`)
+    const nowTs = Math.floor(Date.now() / 1000);
+    fetch(`${API_BASE}/kudago/events?location=kzn&page=1&page_size=100&actual_since=${nowTs}`)
       .then(r => r.json())
       .then(d => setAllEvents(d.results || []))
       .catch(() => {});
