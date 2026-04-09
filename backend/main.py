@@ -14,8 +14,10 @@ import models.user
 import models.event
 import models.attendee
 import models.party
+import models.chat_message
 from models.attendee import EventAttendee
 from models.party import EventParty, PartyMember
+from models.chat_message import ChatMessage
 from typing import Optional, List
 from datetime import datetime
 from models.event import Event
@@ -23,18 +25,6 @@ from schemas import EventCreate, EventResponse
 import kudago_api
 from pydantic import BaseModel
 import time
-
-from sqlalchemy import Column, Integer, String, Text, DateTime
-from database import Base as _Base
-
-class ChatMessage(_Base):
-    __tablename__ = "chat_messages"
-    id          = Column(Integer, primary_key=True, index=True)
-    room        = Column(String, nullable=False, index=True)   # e.g. "event_42" or "party_7"
-    user_id     = Column(String, nullable=False)
-    username    = Column(String, nullable=False)
-    message     = Column(Text, nullable=False)
-    timestamp   = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -44,7 +34,7 @@ models.user.Base.metadata.create_all(bind=engine)
 models.event.Base.metadata.create_all(bind=engine)
 models.attendee.Base.metadata.create_all(bind=engine)
 models.party.Base.metadata.create_all(bind=engine)
-ChatMessage.__table__.create(bind=engine, checkfirst=True)
+models.chat_message.Base.metadata.create_all(bind=engine)
 
 
 app = FastAPI(title="GatherVibe API")
@@ -69,27 +59,50 @@ async def disconnect(sid):
 # -- Event chat --
 
 @sio.on('join_event_chat')
-async def join_event_chat(sid, event_id: str):
+async def join_event_chat(sid, data: dict):
+    token = data.get('token')
+    if not token:
+        await sio.emit('error', {'message': 'Токен отсутствует'}, room=sid)
+        return
+    db = SessionLocal()
+    try:
+        user = get_user_from_socket_token(token, db)
+    except ValueError as e:
+        await sio.emit('error', {'message': str(e)}, room=sid)
+        db.close()
+        return
+    event_id = data['eventId']
     await sio.enter_room(sid, f'event_{event_id}')
-    await sio.emit('user_joined', {'sid': sid}, room=f'event_{event_id}')
+    await sio.emit('user_joined', {'sid': sid, 'userId': user.id, 'username': user.username}, room=f'event_{event_id}')
+    db.close()
 
 
 @sio.on('send_message')
 async def send_message(sid, data: dict):
+    token = data.get('token')
+    if not token:
+        await sio.emit('error', {'message': 'Токен отсутствует'}, room=sid)
+        return
+    db = SessionLocal()
+    try:
+        user = get_user_from_socket_token(token, db)
+    except ValueError as e:
+        await sio.emit('error', {'message': str(e)}, room=sid)
+        db.close()
+        return
     event_id = data['eventId']
     msg = {
         'message':   data['message'],
-        'userId':    data.get('userId', sid),
-        'username':  data.get('username', 'Аноним'),
+        'userId':    str(user.id),
+        'username':  user.username,
         'timestamp': datetime.utcnow().isoformat()
     }
     # Persist to DB
-    db = SessionLocal()
     try:
         db.add(ChatMessage(
             room=f'event_{event_id}',
-            user_id=str(msg['userId']),
-            username=msg['username'],
+            user_id=str(user.id),
+            username=user.username,
             message=msg['message'],
             timestamp=datetime.utcnow(),
         ))
@@ -108,33 +121,54 @@ async def leave_event_chat(sid, event_id: str):
 
 @sio.on('join_party_chat')
 async def join_party_chat(sid, data: dict):
+    token = data.get('token')
+    if not token:
+        await sio.emit('error', {'message': 'Токен отсутствует'}, room=sid)
+        return
+    db = SessionLocal()
+    try:
+        user = get_user_from_socket_token(token, db)
+    except ValueError as e:
+        await sio.emit('error', {'message': str(e)}, room=sid)
+        db.close()
+        return
     party_id = data['partyId']
-    user_id = data.get('userId')
     await sio.enter_room(sid, f'party_{party_id}')
     await sio.emit(
         'party_user_joined',
-        {'sid': sid, 'userId': user_id},
+        {'sid': sid, 'userId': user.id, 'username': user.username},
         room=f'party_{party_id}'
     )
+    db.close()
 
 
 @sio.on('send_party_message')
 async def send_party_message(sid, data: dict):
+    token = data.get('token')
+    if not token:
+        await sio.emit('error', {'message': 'Токен отсутствует'}, room=sid)
+        return
+    db = SessionLocal()
+    try:
+        user = get_user_from_socket_token(token, db)
+    except ValueError as e:
+        await sio.emit('error', {'message': str(e)}, room=sid)
+        db.close()
+        return
     party_id = data['partyId']
     msg = {
         'message':   data['message'],
-        'userId':    data.get('userId', sid),
-        'username':  data.get('username', 'Аноним'),
+        'userId':    str(user.id),
+        'username':  user.username,
         'timestamp': datetime.utcnow().isoformat(),
         'partyId':   party_id,
     }
     # Persist to DB
-    db = SessionLocal()
     try:
         db.add(ChatMessage(
             room=f'party_{party_id}',
-            user_id=str(msg['userId']),
-            username=msg['username'],
+            user_id=str(user.id),
+            username=user.username,
             message=msg['message'],
             timestamp=datetime.utcnow(),
         ))
@@ -194,6 +228,21 @@ def get_current_user_from_token(token: str, db: Session) -> User:
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
+    return user
+
+
+def get_user_from_socket_token(token: str, db: Session) -> User:
+    """Аутентификация пользователя по токену для Socket.IO."""
+    from jwt_handler import verify_token
+    payload = verify_token(token)
+    if payload is None:
+        raise ValueError("Неверный токен")
+    email = payload.get("sub")
+    if not email:
+        raise ValueError("Неверный токен")
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise ValueError("Пользователь не найден")
     return user
 
 
@@ -615,22 +664,6 @@ def _build_party_out(party: EventParty, db: Session) -> PartyOut:
     )
 
 
-@app.get("/parties/{event_id}", response_model=List[PartyOut])
-def get_parties(event_id: str, db: Session = Depends(get_db)):
-    parties = db.query(EventParty).filter(EventParty.event_id == event_id).order_by(
-        EventParty.created_at.desc()
-    ).all()
-    return [_build_party_out(p, db) for p in parties]
-
-
-@app.get("/parties/detail/{party_id}", response_model=PartyOut)
-def get_party_detail(party_id: int, db: Session = Depends(get_db)):
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    return _build_party_out(party, db)
-
-
 # ===== NOTIFICATIONS — pending requests for party creators =====
 
 class PendingRequestOut(BaseModel):
@@ -675,6 +708,22 @@ def get_my_pending_requests(
             created_at=member.joined_at,
         ))
     return result
+
+
+@app.get("/parties/{event_id}", response_model=List[PartyOut])
+def get_parties(event_id: str, db: Session = Depends(get_db)):
+    parties = db.query(EventParty).filter(EventParty.event_id == event_id).order_by(
+        EventParty.created_at.desc()
+    ).all()
+    return [_build_party_out(p, db) for p in parties]
+
+
+@app.get("/parties/detail/{party_id}", response_model=PartyOut)
+def get_party_detail(party_id: int, db: Session = Depends(get_db)):
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    return _build_party_out(party, db)
 
 
 @app.post("/parties/requests/{request_id}/approve", response_model=PartyOut)
@@ -827,9 +876,10 @@ async def join_party(
     ).first()
     if existing:
         if existing.status == 'rejected':
+            # Удаляем старую отклонённую запись, чтобы создать новую
             db.delete(existing)
             db.commit()
-        else:
+        elif existing.status in ['pending', 'accepted', 'left']:
             raise HTTPException(status_code=400, detail="Вы уже в этой компании или подали заявку")
     m = PartyMember(party_id=party_id, user_id=user.id, status="pending")
     db.add(m)
@@ -868,7 +918,8 @@ def leave_party(
         raise HTTPException(status_code=404, detail="Вы не состоите в этой компании")
     if member.status == 'rejected':
         raise HTTPException(status_code=400, detail="Вы не являетесь участником компании")
-    db.delete(member)
+    # Вместо удаления меняем статус на 'left'
+    member.status = 'left'
     db.commit()
     return {"ok": True}
 
@@ -922,7 +973,8 @@ def reject_member(
     ).first()
     if not m:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    db.delete(m)
+    # Вместо удаления меняем статус на 'rejected'
+    m.status = 'rejected'
     db.commit()
     return _build_party_out(party, db)
 
@@ -959,10 +1011,23 @@ def health_check():
 @app.get("/users", response_model=List[UserResponse])
 def get_users(
     token: str = Depends(oauth2_scheme),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    search: Optional[str] = Query(default=None),
+    city: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ):
     get_current_user_from_token(token, db)   # auth check only
-    return db.query(User).all()
+    query = db.query(User)
+    if search:
+        query = query.filter(
+            (User.username.ilike(f"%{search}%")) |
+            (User.email.ilike(f"%{search}%")) |
+            (User.interests.ilike(f"%{search}%"))
+        )
+    if city:
+        query = query.filter(User.city.ilike(f"%{city}%"))
+    return query.offset(skip).limit(limit).all()
 
 
 @app.post("/register", response_model=UserResponse)
