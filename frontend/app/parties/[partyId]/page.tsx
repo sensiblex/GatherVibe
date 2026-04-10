@@ -34,6 +34,22 @@ interface Party {
   created_at: string;
 }
 
+/** Safely extract a human-readable error string from any API error response */
+function extractErrorMessage(detail: unknown): string {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    // FastAPI validation errors: [{type, loc, msg, input}, ...]
+    return detail.map((e: any) => (typeof e?.msg === 'string' ? e.msg : JSON.stringify(e))).join('; ');
+  }
+  if (detail && typeof detail === 'object') {
+    const d = detail as any;
+    if (typeof d.msg === 'string') return d.msg;
+    if (typeof d.message === 'string') return d.message;
+    return JSON.stringify(d);
+  }
+  return 'Ошибка';
+}
+
 // ─── KickModal ─────────────────────────────────────────────────────
 function KickModal({
   member, partyId, token, onClose, onKicked,
@@ -53,7 +69,7 @@ function KickModal({
         body: JSON.stringify({ reason: reason.trim() || null }),
       });
       if (res.ok) { toast(`🚫 ${member.username} исключён из компании`, 'info'); onKicked(); onClose(); }
-      else { const d = await res.json(); toast(d.detail || 'Ошибка', 'error'); }
+      else { const d = await res.json(); toast(extractErrorMessage(d.detail), 'error'); }
     } catch {}
     setLoading(false);
   };
@@ -123,7 +139,7 @@ function EditPartyModal({ party, onClose, onSaved }: { party: Party; onClose: ()
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: form.title.trim(), description: form.description.trim() || null, max_members: form.max_members }),
       });
-      if (!res.ok) { const d = await res.json(); setError(d.detail ?? 'Ошибка'); }
+      if (!res.ok) { const d = await res.json(); setError(extractErrorMessage(d.detail)); }
       else { toast('Изменения сохранены', 'success'); onSaved(); onClose(); }
     } catch { setError('Ошибка сети'); }
     setSaving(false);
@@ -258,7 +274,7 @@ export default function PartyDetailPage() {
     try {
       const res = await apiFetch(`${API_BASE}/parties/${partyId}/join`, { method: 'POST' });
       if (res.ok) { toast('🙋 Заявка отправлена!', 'info'); fetchParty(); }
-      else { const d = await res.json(); toast(d.detail || 'Ошибка', 'error'); }
+      else { const d = await res.json(); toast(extractErrorMessage(d.detail), 'error'); }
     } catch {}
     setActionLoading(false);
   };
@@ -269,6 +285,7 @@ export default function PartyDetailPage() {
     try {
       const res = await apiFetch(`${API_BASE}/parties/${partyId}/leave`, { method: 'DELETE' });
       if (res.ok) { toast('Вы покинули компанию', 'info'); setChatOpen(false); fetchParty(); }
+      else { const d = await res.json(); toast(extractErrorMessage(d.detail), 'error'); }
     } catch {}
     setActionLoading(false);
   };
@@ -279,6 +296,7 @@ export default function PartyDetailPage() {
     try {
       const res = await apiFetch(`${API_BASE}/parties/${partyId}/close`, { method: 'POST' });
       if (res.ok) { toast('🔒 Набор закрыт', 'info'); fetchParty(); }
+      else { const d = await res.json(); toast(extractErrorMessage(d.detail), 'error'); }
     } catch {}
     setActionLoading(false);
   };
@@ -289,6 +307,7 @@ export default function PartyDetailPage() {
     try {
       const res = await apiFetch(`${API_BASE}/parties/${partyId}/members/${userId}/${action}`, { method: 'POST' });
       if (res.ok) { toast(action === 'accept' ? '✅ Принят' : '❌ Отклонён', action === 'accept' ? 'success' : 'error'); fetchParty(); }
+      else { const d = await res.json(); toast(extractErrorMessage(d.detail), 'error'); }
     } catch {}
     setActionLoading(false);
   };
