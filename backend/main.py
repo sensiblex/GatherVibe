@@ -660,7 +660,8 @@ def _build_party_out(party: EventParty, db: Session) -> PartyOut:
     creator = db.query(User).filter(User.id == party.creator_id).first()
     members_rows = db.query(PartyMember, User).join(User, PartyMember.user_id == User.id).filter(
         PartyMember.party_id == party.id,
-        PartyMember.user_id != party.creator_id
+        PartyMember.user_id != party.creator_id,
+        PartyMember.status.in_(['pending', 'accepted'])
     ).all()
     members = [
         PartyMemberOut(user_id=u.id, username=u.username, city=u.city,
@@ -773,7 +774,7 @@ def reject_request(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Reject (delete) a pending join request by PartyMember.id."""
+    """Reject a pending join request by PartyMember.id."""
     current_user = get_current_user_from_token(token, db)
     member = db.query(PartyMember).filter(PartyMember.id == request_id).first()
     if not member:
@@ -783,7 +784,8 @@ def reject_request(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может отклонять заявки")
-    db.delete(member)
+    # Вместо удаления меняем статус на 'rejected'
+    member.status = 'rejected'
     db.commit()
     return _build_party_out(party, db)
 
@@ -1034,7 +1036,6 @@ def get_users(
     if search:
         query = query.filter(
             (User.username.ilike(f"%{search}%")) |
-            (User.email.ilike(f"%{search}%")) |
             (User.interests.ilike(f"%{search}%"))
         )
     if city:
