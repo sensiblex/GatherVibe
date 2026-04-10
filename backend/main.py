@@ -189,10 +189,22 @@ async def leave_party_chat(sid, data: dict):
 @sio.on('subscribe_notifications')
 async def subscribe_notifications(sid, data: dict):
     """Creator subscribes to their personal notification room."""
-    user_id = data.get('userId')
+    token = data.get('token')
+    if not token:
+        await sio.emit('error', {'message': 'Токен отсутствует'}, room=sid)
+        return
+    db = SessionLocal()
+    try:
+        user = get_user_from_socket_token(token, db)
+    except ValueError as e:
+        await sio.emit('error', {'message': str(e)}, room=sid)
+        db.close()
+        return
+    user_id = user.id
     if user_id:
         await sio.enter_room(sid, f'creator_{user_id}')
         print(f"[notifications] {sid} subscribed to creator_{user_id}")
+    db.close()
 
 
 app.add_middleware(
@@ -710,20 +722,20 @@ def get_my_pending_requests(
     return result
 
 
-@app.get("/parties/{event_id}", response_model=List[PartyOut])
-def get_parties(event_id: str, db: Session = Depends(get_db)):
-    parties = db.query(EventParty).filter(EventParty.event_id == event_id).order_by(
-        EventParty.created_at.desc()
-    ).all()
-    return [_build_party_out(p, db) for p in parties]
-
-
 @app.get("/parties/detail/{party_id}", response_model=PartyOut)
 def get_party_detail(party_id: int, db: Session = Depends(get_db)):
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
         raise HTTPException(status_code=404, detail="Компания не найдена")
     return _build_party_out(party, db)
+
+
+@app.get("/parties/{event_id}", response_model=List[PartyOut])
+def get_parties(event_id: str, db: Session = Depends(get_db)):
+    parties = db.query(EventParty).filter(EventParty.event_id == event_id).order_by(
+        EventParty.created_at.desc()
+    ).all()
+    return [_build_party_out(p, db) for p in parties]
 
 
 @app.post("/parties/requests/{request_id}/approve", response_model=PartyOut)
