@@ -304,7 +304,14 @@ def update_profile(
 # ===== MESSAGES (chat history) =====
 
 @app.get("/messages/{room}")
-def get_messages(room: str, limit: int = Query(default=50, le=200), db: Session = Depends(get_db)):
+def get_messages(
+    room: str,
+    limit: int = Query(default=50, le=200),
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    # Проверяем, что пользователь авторизован
+    get_current_user_from_token(token, db)
     rows = (
         db.query(ChatMessage)
         .filter(ChatMessage.room == room)
@@ -537,6 +544,21 @@ def leave_event(
     db.commit()
 
 
+@app.get("/attendees/{event_id}/me")
+def get_my_attendance(
+    event_id: str,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user_from_token(token, db)
+    row = db.query(EventAttendee).filter(
+        EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
+    ).first()
+    if not row:
+        return {"attending": False}
+    return {"attending": True, "is_looking": row.is_looking, "comment": row.comment}
+
+
 @app.get("/attendees/{event_id}/matches", response_model=List[AttendeeMatchOut])
 def get_matches(
     event_id: str,
@@ -570,21 +592,6 @@ def get_matches(
 
     result.sort(key=lambda x: x.common_count, reverse=True)
     return result
-
-
-@app.get("/attendees/{event_id}/me")
-def get_my_attendance(
-    event_id: str,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user_from_token(token, db)
-    row = db.query(EventAttendee).filter(
-        EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
-    ).first()
-    if not row:
-        return {"attending": False}
-    return {"attending": True, "is_looking": row.is_looking, "comment": row.comment}
 
 
 @app.get("/attendees/{event_id}", response_model=List[AttendeeOut])
@@ -723,8 +730,16 @@ def get_my_pending_requests(
     return result
 
 
-@app.get("/parties/detail/{party_id}", response_model=PartyOut)
+@app.get("/parties/by-id/{party_id}", response_model=PartyOut)
 def get_party_detail(party_id: int, db: Session = Depends(get_db)):
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    return _build_party_out(party, db)
+
+@app.get("/parties/detail/{party_id}", response_model=PartyOut)
+def get_party_detail_public(party_id: int, db: Session = Depends(get_db)):
+    """Публичный эндпоинт для получения информации о компании без авторизации."""
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
         raise HTTPException(status_code=404, detail="Компания не найдена")
@@ -755,14 +770,31 @@ def approve_request(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может принимать участников")
+    # Создатель не считается как PartyMember со статусом "accepted", поэтому учитываем его отдельно
+    creator_is_member = db.query(PartyMember).filter(
+        PartyMember.party_id == party.id,
+        PartyMember.user_id == party.creator_id,
+        PartyMember.status == "accepted"
+    ).first() is not None
+    
+    # Подсчёт принятых участников (без создателя, если он не в members)
     accepted_count = db.query(PartyMember).filter(
         PartyMember.party_id == party.id, PartyMember.status == "accepted"
     ).count()
-    if accepted_count + 1 >= party.max_members:
+    
+    # Если создатель не в members, то он не учитывается в accepted_count
+    # Общее количество участников после принятия = accepted_count + 1 (новый) + (1 если создатель не в members)
+    total_after_accept = accepted_count + 1  # новый участник
+    if not creator_is_member:
+        total_after_accept += 1  # добавляем создателя
+    
+    if total_after_accept > party.max_members:
         raise HTTPException(status_code=400, detail="Компания уже заполнена")
+    
     member.status = "accepted"
-    new_total = accepted_count + 2
-    if new_total >= party.max_members:
+    
+    # Обновляем флаг is_open, если достигли лимита
+    if total_after_accept >= party.max_members:
         party.is_open = False
     db.commit()
     return _build_party_out(party, db)
@@ -883,7 +915,8 @@ async def join_party(
     accepted_count = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.status == "accepted"
     ).count()
-    if accepted_count + 1 >= party.max_members:
+    # accepted_count не учитывает создателя, поэтому +1 (создатель) +1 (новый участник) = +2
+    if accepted_count + 2 >= party.max_members:
         raise HTTPException(status_code=400, detail="Компания заполнена")
     existing = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.user_id == user.id
@@ -891,9 +924,13 @@ async def join_party(
     if existing:
         if existing.status == 'rejected':
             # Удаляем старую отклонённую запись, чтобы создать новую
-            db.delete(existing)
+            existing.status = 'pending'  # Reuse instead of deleting
             db.commit()
-        elif existing.status in ['pending', 'accepted', 'left']:
+        elif existing.status == 'left':
+            # Пользователь вышел ранее, разрешаем повторную заявку
+            existing.status = 'pending'
+            db.commit()
+        elif existing.status in ['pending', 'accepted']:
             raise HTTPException(status_code=400, detail="Вы уже в этой компании или подали заявку")
     m = PartyMember(party_id=party_id, user_id=user.id, status="pending")
     db.add(m)
@@ -954,7 +991,8 @@ def accept_member(
     accepted_count = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.status == "accepted"
     ).count()
-    if accepted_count + 1 >= party.max_members:
+    # accepted_count не учитывает создателя, поэтому +1 (создатель) +1 (новый участник) = +2
+    if accepted_count + 2 >= party.max_members:
         raise HTTPException(status_code=400, detail="Компания уже заполнена")
     m = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.user_id == user_id
