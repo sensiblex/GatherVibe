@@ -199,7 +199,11 @@ export default function EventsPage() {
   const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sentinelRef  = useRef<HTMLDivElement>(null);
   const loadingRef   = useRef(false);
-  const todayStr = localIsoDate(new Date());
+  const [todayStr, setTodayStr] = useState(localIsoDate(new Date()));
+  
+  useEffect(() => {
+    setTodayStr(localIsoDate(new Date()));
+  }, []);
 
   useEffect(() => {
     fetch(`${API_BASE}/kudago/categories`)

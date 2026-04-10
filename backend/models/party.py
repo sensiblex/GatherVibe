@@ -27,5 +27,6 @@ class PartyMember(Base):
     # pending → creator accepts/rejects
     status = Column(String(10), default="pending")  # 'pending' | 'accepted' | 'rejected'
     joined_at = Column(DateTime(timezone=True), server_default=func.now())
+    message = Column(String(100), nullable=True)  # optional short message when joining
 
     __table_args__ = (UniqueConstraint("party_id", "user_id", name="uq_party_user"),)

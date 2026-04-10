@@ -23,7 +23,7 @@ from datetime import datetime
 from models.event import Event
 from schemas import EventCreate, EventResponse
 import kudago_api
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import time
 
 
@@ -59,7 +59,32 @@ async def disconnect(sid):
 # -- Event chat --
 
 @sio.on('join_event_chat')
-async def join_event_chat(sid, data: dict):
+async def join_event_chat(sid, data):
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(f"join_event_chat received: sid={sid}, data={data}, type={type(data)}")
+    
+    # Handle both string (eventId) and dict formats for backward compatibility
+    if isinstance(data, str):
+        # Legacy format: data is just eventId string
+        event_id = data
+        token = None
+        logger.warning(f"Legacy string format detected, event_id={event_id}, token not provided")
+        # For now, we'll allow joining without token (anonymous)
+        # But we need to create a dummy user or skip authentication
+        # For simplicity, we'll skip token validation and use anonymous user
+        db = SessionLocal()
+        try:
+            # Create anonymous user representation
+            user_id = 0
+            username = "Аноним"
+            await sio.enter_room(sid, f'event_{event_id}')
+            await sio.emit('user_joined', {'sid': sid, 'userId': user_id, 'username': username}, room=f'event_{event_id}')
+        finally:
+            db.close()
+        return
+    
+    # New format: data is dict with token and eventId
     token = data.get('token')
     if not token:
         await sio.emit('error', {'message': 'Токен отсутствует'}, room=sid)
@@ -635,6 +660,10 @@ class PartyKickBody(BaseModel):
     reason: Optional[str] = None
 
 
+class PartyJoinBody(BaseModel):
+    message: Optional[str] = Field(None, max_length=100)
+
+
 class PartyMemberOut(BaseModel):
     user_id: int
     username: str
@@ -642,6 +671,7 @@ class PartyMemberOut(BaseModel):
     interests: Optional[str]
     status: str
     joined_at: datetime
+    message: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -672,7 +702,8 @@ def _build_party_out(party: EventParty, db: Session) -> PartyOut:
     ).all()
     members = [
         PartyMemberOut(user_id=u.id, username=u.username, city=u.city,
-                       interests=u.interests, status=m.status, joined_at=m.joined_at)
+                       interests=u.interests, status=m.status, joined_at=m.joined_at,
+                       message=m.message)
         for m, u in members_rows
     ]
     return PartyOut(
@@ -719,6 +750,7 @@ class PendingRequestOut(BaseModel):
     party_id: int
     event_title: Optional[str] = None
     created_at: datetime
+    message: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -752,6 +784,7 @@ def get_my_pending_requests(
             party_id=party.id,
             event_title=party.title,
             created_at=member.joined_at,
+            message=member.message,
         ))
     return result
 
@@ -908,6 +941,7 @@ def delete_party(
 @app.post("/parties/{party_id}/join", response_model=PartyOut)
 async def join_party(
     party_id: int,
+    body: PartyJoinBody,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
@@ -930,6 +964,7 @@ async def join_party(
         if existing.status == 'rejected':
             # Удаляем старую отклонённую запись, чтобы создать новую
             existing.status = 'pending'  # Reuse instead of deleting
+            existing.message = body.message
             db.commit()
             await sio.emit(
                 "new_party_request",
@@ -945,6 +980,7 @@ async def join_party(
         elif existing.status == 'left':
             # Пользователь вышел ранее, разрешаем повторную заявку
             existing.status = 'pending'
+            existing.message = body.message
             db.commit()
             await sio.emit(
                 "new_party_request",
@@ -959,7 +995,7 @@ async def join_party(
             return _build_party_out(party, db)
         elif existing.status in ['pending', 'accepted']:
             raise HTTPException(status_code=400, detail="Вы уже в этой компании или подали заявку")
-    m = PartyMember(party_id=party_id, user_id=user.id, status="pending")
+    m = PartyMember(party_id=party_id, user_id=user.id, status="pending", message=body.message)
     db.add(m)
     db.commit()
 
