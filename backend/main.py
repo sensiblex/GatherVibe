@@ -684,6 +684,32 @@ def _build_party_out(party: EventParty, db: Session) -> PartyOut:
     )
 
 
+def _check_and_close_party(party: EventParty, db: Session) -> None:
+    """Проверяет, не превышена ли вместимость партии после добавления нового участника.
+    Если после добавления участника будет достигнут лимит, закрывает партию.
+    Вызывает HTTPException(400) если партия уже заполнена.
+    """
+    creator_is_member = db.query(PartyMember).filter(
+        PartyMember.party_id == party.id,
+        PartyMember.user_id == party.creator_id,
+        PartyMember.status == "accepted"
+    ).first() is not None
+
+    accepted_count = db.query(PartyMember).filter(
+        PartyMember.party_id == party.id, PartyMember.status == "accepted"
+    ).count()
+
+    total_after_accept = accepted_count + 1  # новый участник
+    if not creator_is_member:
+        total_after_accept += 1  # добавляем создателя
+
+    if total_after_accept > party.max_members:
+        raise HTTPException(status_code=400, detail="Компания уже заполнена")
+
+    if total_after_accept >= party.max_members:
+        party.is_open = False
+
+
 # ===== NOTIFICATIONS — pending requests for party creators =====
 
 class PendingRequestOut(BaseModel):
@@ -770,32 +796,11 @@ def approve_request(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может принимать участников")
-    # Создатель не считается как PartyMember со статусом "accepted", поэтому учитываем его отдельно
-    creator_is_member = db.query(PartyMember).filter(
-        PartyMember.party_id == party.id,
-        PartyMember.user_id == party.creator_id,
-        PartyMember.status == "accepted"
-    ).first() is not None
     
-    # Подсчёт принятых участников (без создателя, если он не в members)
-    accepted_count = db.query(PartyMember).filter(
-        PartyMember.party_id == party.id, PartyMember.status == "accepted"
-    ).count()
-    
-    # Если создатель не в members, то он не учитывается в accepted_count
-    # Общее количество участников после принятия = accepted_count + 1 (новый) + (1 если создатель не в members)
-    total_after_accept = accepted_count + 1  # новый участник
-    if not creator_is_member:
-        total_after_accept += 1  # добавляем создателя
-    
-    if total_after_accept > party.max_members:
-        raise HTTPException(status_code=400, detail="Компания уже заполнена")
+    # Проверка вместимости и автоматическое закрытие партии при заполнении
+    _check_and_close_party(party, db)
     
     member.status = "accepted"
-    
-    # Обновляем флаг is_open, если достигли лимита
-    if total_after_accept >= party.max_members:
-        party.is_open = False
     db.commit()
     return _build_party_out(party, db)
 
@@ -926,10 +931,32 @@ async def join_party(
             # Удаляем старую отклонённую запись, чтобы создать новую
             existing.status = 'pending'  # Reuse instead of deleting
             db.commit()
+            await sio.emit(
+                "new_party_request",
+                {
+                    "party_id": party.id,
+                    "party_title": party.title,
+                    "user_id": user.id,
+                    "username": user.username,
+                },
+                room=f"creator_{party.creator_id}",
+            )
+            return _build_party_out(party, db)
         elif existing.status == 'left':
             # Пользователь вышел ранее, разрешаем повторную заявку
             existing.status = 'pending'
             db.commit()
+            await sio.emit(
+                "new_party_request",
+                {
+                    "party_id": party.id,
+                    "party_title": party.title,
+                    "user_id": user.id,
+                    "username": user.username,
+                },
+                room=f"creator_{party.creator_id}",
+            )
+            return _build_party_out(party, db)
         elif existing.status in ['pending', 'accepted']:
             raise HTTPException(status_code=400, detail="Вы уже в этой компании или подали заявку")
     m = PartyMember(party_id=party_id, user_id=user.id, status="pending")
@@ -988,21 +1015,14 @@ def accept_member(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может принимать участников")
-    accepted_count = db.query(PartyMember).filter(
-        PartyMember.party_id == party_id, PartyMember.status == "accepted"
-    ).count()
-    # accepted_count не учитывает создателя, поэтому +1 (создатель) +1 (новый участник) = +2
-    if accepted_count + 2 >= party.max_members:
-        raise HTTPException(status_code=400, detail="Компания уже заполнена")
+    # Проверка вместимости и автоматическое закрытие партии при заполнении
+    _check_and_close_party(party, db)
     m = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.user_id == user_id
     ).first()
     if not m:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     m.status = "accepted"
-    new_total = accepted_count + 2
-    if new_total >= party.max_members:
-        party.is_open = False
     db.commit()
     return _build_party_out(party, db)
 
