@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { io, Socket } from 'socket.io-client';
+import { useAuth } from '../context/AuthContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -26,6 +27,7 @@ export default function PartyChat({
   currentUsername,
   isAcceptedMember,
 }: Props) {
+  const { token } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [connected, setConnected] = useState(false);
@@ -33,12 +35,13 @@ export default function PartyChat({
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // 2. Socket connection
   useEffect(() => {
-    if (!isAcceptedMember || !currentUserId) return;
+    if (!isAcceptedMember || !currentUserId || !token) return;
 
     // Load history
-    fetch(`${API_BASE}/messages/party_${partyId}?limit=50`)
+    fetch(`${API_BASE}/messages/party_${partyId}?limit=50`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then(r => r.ok ? r.json() : [])
       .then((history: Message[]) => {
         setMessages(history);
@@ -51,7 +54,8 @@ export default function PartyChat({
 
     socket.on('connect', () => {
       setConnected(true);
-      socket.emit('join_party_chat', { partyId, userId: currentUserId });
+      // Pass token so backend can authenticate the user
+      socket.emit('join_party_chat', { partyId, token });
     });
 
     socket.on('disconnect', () => setConnected(false));
@@ -68,19 +72,18 @@ export default function PartyChat({
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [partyId, currentUserId, isAcceptedMember]);
+  }, [partyId, currentUserId, isAcceptedMember, token]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const send = () => {
-    if (!input.trim() || !socketRef.current || !currentUserId) return;
+    if (!input.trim() || !socketRef.current || !currentUserId || !token) return;
     socketRef.current.emit('send_party_message', {
       partyId,
       message: input.trim(),
-      userId: currentUserId,
-      username: currentUsername || 'Аноним',
+      token,
     });
     setInput('');
   };
@@ -209,7 +212,7 @@ export default function PartyChat({
         />
         <button
           onClick={send}
-          disabled={!input.trim() || !connected}
+          disabled={!input.trim() || !connected || !token}
           className="rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-4 py-2 text-sm text-white font-semibold disabled:opacity-40 hover:opacity-90 transition shrink-0"
         >
           Отправить

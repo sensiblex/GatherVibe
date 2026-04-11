@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { io, Socket } from 'socket.io-client';
+import { useAuth } from '../context/AuthContext';
 
 const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:8000';
 const API_BASE   = process.env.NEXT_PUBLIC_API_URL    || 'http://localhost:8000';
@@ -23,6 +24,7 @@ export default function EventChat({
   currentUserId: string;
   currentUsername: string;
 }) {
+  const { token } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [connected, setConnected] = useState(false);
@@ -30,10 +32,10 @@ export default function EventChat({
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // 2. Socket connection
   useEffect(() => {
-    // Load history
-    fetch(`${SOCKET_URL}/messages/event_${eventId}?limit=50`)
+    // Load history (requires auth header if backend demands it)
+    const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+    fetch(`${API_BASE}/messages/event_${eventId}?limit=50`, { headers })
       .then(r => r.ok ? r.json() : [])
       .then((history: Message[]) => {
         setMessages(history);
@@ -46,7 +48,8 @@ export default function EventChat({
 
     const join = () => {
       setConnected(true);
-      socket.emit('join_event_chat', eventId);
+      // Always send the new dict format with token so the backend authenticates
+      socket.emit('join_event_chat', { eventId, token: token ?? '' });
     };
 
     socket.on('connect', join);
@@ -67,7 +70,7 @@ export default function EventChat({
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [eventId]);
+  }, [eventId, token]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -75,12 +78,11 @@ export default function EventChat({
 
   const sendMessage = () => {
     const text = input.trim();
-    if (!socketRef.current || !text) return;
+    if (!socketRef.current || !text || !token) return;
     socketRef.current.emit('send_message', {
       eventId,
       message: text,
-      userId: currentUserId,
-      username: currentUsername,
+      token,
     });
     setInput('');
   };
@@ -227,7 +229,7 @@ export default function EventChat({
         />
         <button
           onClick={sendMessage}
-          disabled={!input.trim() || !connected}
+          disabled={!input.trim() || !connected || !token}
           className="px-4 py-2 rounded-xl font-bold text-sm text-white hover:opacity-90 transition disabled:opacity-40"
           style={{
             background:
