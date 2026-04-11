@@ -62,41 +62,27 @@ async def disconnect(sid):
 async def join_event_chat(sid, data):
     import logging
     logger = logging.getLogger(__name__)
-    logger.warning(f"join_event_chat received: sid={sid}, data={data}, type={type(data)}")
-    
-    # Handle both string (eventId) and dict formats for backward compatibility
-    if isinstance(data, str):
-        # Legacy format: data is just eventId string
-        event_id = data
-        token = None
-        logger.warning(f"Legacy string format detected, event_id={event_id}, token not provided")
-        # For now, we'll allow joining without token (anonymous)
-        # But we need to create a dummy user or skip authentication
-        # For simplicity, we'll skip token validation and use anonymous user
-        db = SessionLocal()
-        try:
-            # Create anonymous user representation
-            user_id = 0
-            username = "Аноним"
-            await sio.enter_room(sid, f'event_{event_id}')
-            await sio.emit('user_joined', {'sid': sid, 'userId': user_id, 'username': username}, room=f'event_{event_id}')
-        finally:
-            db.close()
+    if not isinstance(data, dict):
+        logger.warning(f"join_event_chat: отклонён запрос без токена, sid={sid}")
+        await sio.emit('error', {'message': 'Требуется авторизация'}, room=sid)
         return
-    
-    # New format: data is dict with token and eventId
     token = data.get('token')
     if not token:
-        await sio.emit('error', {'message': 'Токен отсутствует'}, room=sid)
+        logger.warning(f"join_event_chat: пустой токен, sid={sid}")
+        await sio.emit('error', {'message': 'Требуется авторизация'}, room=sid)
         return
     db = SessionLocal()
     try:
         user = get_user_from_socket_token(token, db)
     except ValueError as e:
-        await sio.emit('error', {'message': str(e)}, room=sid)
+        logger.warning(f"join_event_chat: невалидный токен, sid={sid}, error={e}")
+        await sio.emit('error', {'message': 'Требуется авторизация'}, room=sid)
         db.close()
         return
-    event_id = data['eventId']
+    event_id = data.get('eventId')
+    if not event_id:
+        db.close()
+        return
     await sio.enter_room(sid, f'event_{event_id}')
     await sio.emit('user_joined', {'sid': sid, 'userId': user.id, 'username': user.username}, room=f'event_{event_id}')
     db.close()
@@ -715,19 +701,15 @@ def _build_party_out(party: EventParty, db: Session) -> PartyOut:
 
 def _check_and_close_party(party: EventParty, db: Session) -> None:
     """Проверяет, не превышена ли вместимость партии после добавления нового участника."""
-    creator_is_member = db.query(PartyMember).filter(
+            # Считаем принятых участников, исключая создателя (он всегда занимает 1 слот)
+    accepted_excl_creator = db.query(PartyMember).filter(
         PartyMember.party_id == party.id,
-        PartyMember.user_id == party.creator_id,
-        PartyMember.status == "accepted"
-    ).first() is not None
-
-    accepted_count = db.query(PartyMember).filter(
-        PartyMember.party_id == party.id, PartyMember.status == "accepted"
+        PartyMember.status == "accepted",
+        PartyMember.user_id != party.creator_id,
     ).count()
 
-    total_after_accept = accepted_count + 1
-    if not creator_is_member:
-        total_after_accept += 1
+    # После принятия нового участника: создатель (1) + уже принятые + новый (1)
+    total_after_accept = 1 + accepted_excl_creator + 1
 
     if total_after_accept > party.max_members:
         raise HTTPException(status_code=400, detail="Компания уже заполнена")
@@ -946,7 +928,8 @@ async def join_party(
     accepted_count = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.status == "accepted"
     ).count()
-    if accepted_count + 2 >= party.max_members:
+        # +1 за создателя (он всегда занимает слот); pending не считается в лимит
+    if accepted_count + 1 >= party.max_members:
         raise HTTPException(status_code=400, detail="Компания заполнена")
     existing = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.user_id == user.id
