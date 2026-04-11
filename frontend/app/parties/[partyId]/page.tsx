@@ -3,21 +3,30 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { io, Socket } from 'socket.io-client';
 import Navbar from '../../components/Navbar';
 import PartyChat from '../../components/PartyChat';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from '../../components/Toast';
 import { apiFetch } from '../../lib/apiFetch';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE   = process.env.NEXT_PUBLIC_API_URL    || 'http://localhost:8000';
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:8000';
 const POLL_INTERVAL = 5000;
+
+interface PartyDeletedPayload {
+  party_id: number;
+  party_title: string;
+}
+
+type MemberStatus = 'pending' | 'accepted' | 'rejected' | 'left';
 
 interface PartyMember {
   user_id: number;
   username: string;
   city: string | null;
   interests: string | null;
-  status: 'pending' | 'accepted' | 'rejected';
+  status: MemberStatus;
   joined_at: string;
   message?: string | null;
 }
@@ -361,6 +370,26 @@ export default function PartyDetailPage() {
     const id = setInterval(fetchParty, POLL_INTERVAL);
     return () => clearInterval(id);
   }, [fetchParty]);
+
+  // Слушаем party_deleted — чтобы участники узнали о роспуске в реальном времени
+  useEffect(() => {
+    if (!partyId || !token) return;
+    const socket: Socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
+
+    socket.on('connect', () => {
+      socket.emit('join_party_chat', { token, partyId });
+    });
+
+    socket.on('party_deleted', (data: PartyDeletedPayload) => {
+      toast(`Компания "${data.party_title}" была распущена создателем`, 'error');
+      // Редирект обратно на страницу события через 3 секунды
+      setTimeout(() => {
+        router.push(`/events/${party?.event_id ?? ''}`);
+      }, 3000);
+    });
+
+    return () => { socket.disconnect(); };
+  }, [partyId, token, party?.event_id, router]);
 
   const handleLeave = async () => {
     if (!token) return;
