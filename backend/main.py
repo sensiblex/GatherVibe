@@ -1027,9 +1027,10 @@ def kick_member(
             PartyMember.party_id == party_id,
             PartyMember.status == 'accepted',
             PartyMember.user_id != user_id,
+            PartyMember.user_id != party.creator_id,
         ).count()
-        # +1 за создателя
-        if accepted_after + 1 < party.max_members:
+        # создатель (1) + оставшиеся принятые
+        if 1 + accepted_after < party.max_members:
             party.is_open = True
     db.commit()
     return _build_party_out(party, db)
