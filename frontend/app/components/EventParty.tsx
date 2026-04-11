@@ -31,6 +31,21 @@ export interface Party {
   created_at: string;
 }
 
+/** Safely extract a human-readable error string from any FastAPI error response */
+function extractErrorMessage(detail: unknown): string {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail.map((e: any) => (typeof e?.msg === 'string' ? e.msg : JSON.stringify(e))).join('; ');
+  }
+  if (detail && typeof detail === 'object') {
+    const d = detail as any;
+    if (typeof d.msg === 'string') return d.msg;
+    if (typeof d.message === 'string') return d.message;
+    return JSON.stringify(d);
+  }
+  return 'Ошибка';
+}
+
 const cardStyle = {
   background: 'var(--card-bg, var(--surface))',
   border: '1px solid var(--border)',
@@ -61,7 +76,7 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
         onUpdate();
       } else {
         const d = await res.json();
-        toast(d.detail || 'Не удалось отправить заявку', 'error');
+        toast(extractErrorMessage(d.detail), 'error');
       }
     } catch {}
     setLoading(false);
@@ -78,6 +93,9 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
       if (res.ok) {
         toast('Вы покинули компанию', 'info');
         onUpdate();
+      } else {
+        const d = await res.json();
+        toast(extractErrorMessage(d.detail), 'error');
       }
     } catch {}
     setLoading(false);
