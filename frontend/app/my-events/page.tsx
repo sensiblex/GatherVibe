@@ -9,9 +9,9 @@ import Navbar from '../components/Navbar';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface MyEventItem {
-  event_id: number;
+  event_id: string;
   title: string;
-  date_time: string;
+  date_ts: number | null;
   city: string | null;
   category: string | null;
   image_url: string | null;
@@ -133,9 +133,9 @@ export default function MyEventsPage() {
                   </p>
                   <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
                     📅{' '}
-                    {new Date(ev.date_time).toLocaleDateString('ru-RU', {
-                      day: 'numeric', month: 'long', year: 'numeric',
-                    })}
+                    {ev.date_ts
+                      ? new Date(ev.date_ts * 1000).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+                      : 'Дата не указана'}
                   </p>
                   {(ev.city || ev.location) && (
                     <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>

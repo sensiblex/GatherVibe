@@ -210,7 +210,16 @@ function AttendeeCard({
 
 // ─── main component ──────────────────────────────────────────────────────────
 
-export default function EventAttendees({ eventId }: { eventId: string }) {
+interface EventMeta {
+  title: string;
+  date_ts: number | null;
+  city: string | null;
+  image_url: string | null;
+  category: string | null;
+  location: string | null;
+}
+
+export default function EventAttendees({ eventId, eventMeta }: { eventId: string; eventMeta?: EventMeta }) {
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [myStatus, setMyStatus] = useState<MyStatus>({ attending: false });
   const [myInterests, setMyInterests] = useState<string[]>([]);
@@ -341,7 +350,16 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
       const res = await fetch(`${API_BASE}/attendees/${eventId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ comment: comment.trim() || null, is_looking: isLooking }),
+        body: JSON.stringify({
+          comment:         comment.trim() || null,
+          is_looking:      isLooking,
+          event_title:     eventMeta?.title     ?? null,
+          event_date_ts:   eventMeta?.date_ts   ?? null,
+          event_city:      eventMeta?.city       ?? null,
+          event_image_url: eventMeta?.image_url  ?? null,
+          event_category:  eventMeta?.category   ?? null,
+          event_location:  eventMeta?.location   ?? null,
+        }),
       });
       if (res.ok) {
         setMyStatus({ attending: true, is_looking: isLooking, comment: comment.trim() || null });

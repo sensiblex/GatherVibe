@@ -367,6 +367,21 @@ export default function EventDetailPage() {
   const displayDate = event ? getDisplayDate(event) : '';
   const chatEventId = event?.id ?? eventId;
 
+  const eventMeta = event ? {
+    title:     event.title,
+    date_ts:   event.date_time
+      ? Math.floor(new Date(event.date_time).getTime() / 1000)
+      : event.start_date
+        ? Math.floor(new Date(
+            event.start_date + (event.start_time ? `T${event.start_time}:00` : 'T00:00:00')
+          ).getTime() / 1000)
+        : null,
+    city:      event.city,
+    image_url: event.image_url,
+    category:  event.category,
+    location:  event.location,
+  } : undefined;
+
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
@@ -621,7 +636,7 @@ export default function EventDetailPage() {
 
             {!user && <UnauthBanner />}
 
-            <EventAttendees eventId={chatEventId} />
+            <EventAttendees eventId={chatEventId} eventMeta={eventMeta} />
             <EventParty eventId={chatEventId} />
             <EventChat
               eventId={chatEventId}

@@ -646,6 +646,13 @@ def kudago_locations():
 class AttendeeCreateBody(BaseModel):
     comment: Optional[str] = None
     is_looking: bool = True
+    # Метаданные события (кешируются для /users/me/events)
+    event_title:     Optional[str] = None
+    event_date_ts:   Optional[int] = None   # Unix-timestamp начала события
+    event_city:      Optional[str] = None
+    event_image_url: Optional[str] = None
+    event_category:  Optional[str] = None
+    event_location:  Optional[str] = None
 
 
 class AttendeeOut(BaseModel):
@@ -679,8 +686,14 @@ def join_event(
         EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
     ).first()
     if existing:
-        existing.comment = body.comment
+        existing.comment    = body.comment
         existing.is_looking = body.is_looking
+        if body.event_title     is not None: existing.event_title     = body.event_title
+        if body.event_date_ts   is not None: existing.event_date_ts   = body.event_date_ts
+        if body.event_city      is not None: existing.event_city      = body.event_city
+        if body.event_image_url is not None: existing.event_image_url = body.event_image_url
+        if body.event_category  is not None: existing.event_category  = body.event_category
+        if body.event_location  is not None: existing.event_location  = body.event_location
         db.commit()
         db.refresh(existing)
         row = existing
@@ -690,6 +703,12 @@ def join_event(
             user_id=user.id,
             comment=body.comment,
             is_looking=body.is_looking,
+            event_title=body.event_title,
+            event_date_ts=body.event_date_ts,
+            event_city=body.event_city,
+            event_image_url=body.event_image_url,
+            event_category=body.event_category,
+            event_location=body.event_location,
         )
         db.add(row)
         db.commit()
@@ -986,33 +1005,80 @@ def get_my_events(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    from sqlalchemy import cast, String as SAString
+    import time as _time
     user = get_current_user_from_token(token, db)
-    now = datetime.utcnow()
+    now_ts = int(_time.time())
 
-    rows = (
-        db.query(EventAttendee, Event)
-        .join(Event, EventAttendee.event_id == cast(Event.id, SAString))
-        .filter(EventAttendee.user_id == user.id, Event.is_active == True)
-        .order_by(Event.date_time.asc())
-        .all()
-    )
+    # 1. Все события где пользователь кликнул "Иду"
+    attendee_rows = db.query(EventAttendee).filter(
+        EventAttendee.user_id == user.id
+    ).all()
 
-    upcoming = []
-    past = []
-    for attendee, event in rows:
-        item = {
-            "event_id":   event.id,
-            "title":      event.title,
-            "date_time":  event.date_time.isoformat(),
-            "city":       event.city,
-            "category":   event.category,
-            "image_url":  event.image_url,
-            "location":   event.location,
-            "is_looking": attendee.is_looking,
-            "comment":    attendee.comment,
+    seen_event_ids = {a.event_id for a in attendee_rows}
+    items: dict = {}
+
+    for a in attendee_rows:
+        items[a.event_id] = {
+            "event_id":   a.event_id,
+            "title":      a.event_title or f"Событие #{a.event_id}",
+            "date_ts":    a.event_date_ts,
+            "city":       a.event_city,
+            "category":   a.event_category,
+            "image_url":  a.event_image_url,
+            "location":   a.event_location,
+            "is_looking": a.is_looking,
+            "comment":    a.comment,
         }
-        if event.date_time >= now:
+
+    # 2. Принятые участия в чужих компаниях
+    party_event_ids = set(
+        row[0] for row in (
+            db.query(EventParty.event_id)
+            .join(PartyMember, PartyMember.party_id == EventParty.id)
+            .filter(
+                PartyMember.user_id == user.id,
+                PartyMember.status == "accepted",
+                EventParty.creator_id != user.id,
+            )
+            .all()
+        )
+    ) - seen_event_ids
+
+    # Для событий из партий без записи в EventAttendee — подтягиваем из KudaGo
+    for event_id in party_event_ids:
+        try:
+            raw = kudago_api.get_event_by_id(int(event_id))
+            dates = raw.get("dates") or []
+            date_ts: Optional[int] = None
+            for d in dates:
+                ts = d.get("start")
+                if ts:
+                    date_ts = int(ts)
+                    break
+            images = raw.get("images") or []
+            image_url = images[0].get("image") if images else None
+            cats = raw.get("categories") or []
+            category = cats[0] if cats else None
+            place = raw.get("place") or {}
+            location = place.get("address") or place.get("title") or None
+            items[event_id] = {
+                "event_id":   event_id,
+                "title":      raw.get("title") or f"Событие #{event_id}",
+                "date_ts":    date_ts,
+                "city":       None,
+                "category":   category,
+                "image_url":  image_url,
+                "location":   location,
+                "is_looking": False,
+                "comment":    None,
+            }
+        except Exception:
+            pass  # KudaGo недоступен или ID не числовой — пропускаем
+
+    upcoming: list = []
+    past: list = []
+    for item in sorted(items.values(), key=lambda x: x["date_ts"] or 0):
+        if (item["date_ts"] or 0) >= now_ts:
             upcoming.append(item)
         else:
             past.append(item)

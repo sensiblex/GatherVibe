@@ -462,9 +462,9 @@ function MyPartiesTab({ userId }: { userId: number }) {
 
 // ──────────────────────────────────────────────────────────────────
 interface MyEventItem {
-  event_id: number;
+  event_id: string;
   title: string;
-  date_time: string;
+  date_ts: number | null;
   city: string | null;
   category: string | null;
   image_url: string | null;
@@ -547,7 +547,9 @@ function MyEventsTab() {
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm line-clamp-1" style={{ color: 'var(--text)' }}>{ev.title}</p>
                 <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                  {new Date(ev.date_time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  {ev.date_ts
+                    ? new Date(ev.date_ts * 1000).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+                    : 'Дата не указана'}
                   {ev.city ? ` · ${ev.city}` : ''}
                 </p>
                 {ev.category && (

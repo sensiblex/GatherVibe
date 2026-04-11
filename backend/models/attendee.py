@@ -21,4 +21,12 @@ class EventAttendee(Base):
         nullable=False,
     )
 
+    # Кешируем метаданные KudaGo-события при регистрации
+    event_title     = Column(String, nullable=True)
+    event_date_ts   = Column(Integer, nullable=True)   # Unix-timestamp начала события
+    event_city      = Column(String, nullable=True)
+    event_image_url = Column(String, nullable=True)
+    event_category  = Column(String, nullable=True)
+    event_location  = Column(String, nullable=True)
+
     __table_args__ = (UniqueConstraint("event_id", "user_id", name="uq_event_user"),)
