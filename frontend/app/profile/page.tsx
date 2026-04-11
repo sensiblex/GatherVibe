@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import axios from 'axios';
+import { apiFetch } from '../lib/apiFetch';
 import Navbar from '../components/Navbar';
 import { INTERESTS_LIST, getInterestLabel } from '../lib/interests';
 
@@ -362,6 +363,118 @@ async function uploadToImgbb(file: File): Promise<string> {
 }
 
 // ──────────────────────────────────────────────────────────────────
+type MemberStatus = 'pending' | 'accepted' | 'rejected' | 'left';
+
+interface PartyMemberOut {
+  user_id: number;
+  username: string;
+  status: MemberStatus;
+  joined_at: string;
+}
+
+interface PartyOut {
+  id: number;
+  event_id: string;
+  title: string;
+  description: string | null;
+  max_members: number;
+  creator_id: number;
+  creator_username: string;
+  is_open: boolean;
+  members: PartyMemberOut[];
+  created_at: string;
+}
+
+function MyPartiesTab({ userId }: { userId: number }) {
+  const [parties, setParties]   = useState<PartyOut[]>([]);
+  const [loading, setLoading]   = useState(true);
+
+  useEffect(() => {
+    apiFetch(`${API_BASE}/users/me/parties`)
+      .then(r => r.json())
+      .then((data: PartyOut[]) => setParties(Array.isArray(data) ? data : []))
+      .catch(() => setParties([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const created  = parties.filter(p => p.creator_id === userId);
+  const memberOf = parties.filter(p => p.creator_id !== userId);
+
+  const cardStyle: React.CSSProperties = {
+    background: 'var(--surface-2)',
+    border: '1px solid var(--border)',
+    borderRadius: '1rem',
+    padding: '1rem 1.25rem',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.25rem',
+  };
+
+  const renderList = (list: PartyOut[]) =>
+    list.map(p => {
+      const accepted = p.members.filter(m => m.status === 'accepted').length;
+      return (
+        <Link key={p.id} href={`/parties/${p.id}`} style={cardStyle}
+          className="hover:opacity-80 transition-opacity">
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-semibold text-sm line-clamp-1" style={{ color: 'var(--text)' }}>
+              {p.title}
+            </span>
+            <span
+              className="text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0"
+              style={p.is_open
+                ? { background: 'var(--success-hl)', color: 'var(--success)' }
+                : { background: 'var(--surface)', color: 'var(--text-faint)', border: '1px solid var(--border)' }}
+            >
+              {p.is_open ? 'Открыта' : 'Закрыта'}
+            </span>
+          </div>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {accepted + 1}/{p.max_members} участников · Событие #{p.event_id}
+          </span>
+        </Link>
+      );
+    });
+
+  if (loading) return (
+    <div className="space-y-2 animate-pulse">
+      {[1,2,3].map(i => <div key={i} className="h-14 rounded-2xl" style={{ background: 'var(--surface-2)' }} />)}
+    </div>
+  );
+
+  if (parties.length === 0) return (
+    <div className="text-center py-10">
+      <p className="text-4xl mb-3">👥</p>
+      <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Вы пока не состоите ни в одной компании</p>
+      <Link href="/events" className="mt-3 inline-block text-sm font-medium" style={{ color: 'var(--primary)' }}>
+        Найти события →
+      </Link>
+    </div>
+  );
+
+  return (
+    <div className="space-y-5">
+      {created.length > 0 && (
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--text-faint)' }}>
+            Созданные мной ({created.length})
+          </p>
+          <div className="space-y-2">{renderList(created)}</div>
+        </div>
+      )}
+      {memberOf.length > 0 && (
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--text-faint)' }}>
+            Участник ({memberOf.length})
+          </p>
+          <div className="space-y-2">{renderList(memberOf)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────
 export default function ProfilePage() {
   const router = useRouter();
   const [user, setUser]               = useState<User | null>(null);
@@ -371,6 +484,7 @@ export default function ProfilePage() {
   const [passOpen, setPassOpen]       = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
   const [avatarError, setAvatarError] = useState('');
+  const [activeTab, setActiveTab]     = useState<'info' | 'parties'>('info');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -636,42 +750,74 @@ export default function ProfilePage() {
           ))}
         </div>
 
-        {/* ── Settings ── */}
-        <div
-          className="rounded-3xl p-6"
-          style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}
-        >
-          <h2 className="text-base font-bold mb-4" style={{ color: 'var(--text)' }}>Настройки</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* ── Tabs ── */}
+        <div className="flex gap-2 mb-2">
+          {(['info', 'parties'] as const).map(tab => (
             <button
-              onClick={() => setEditOpen(true)}
-              className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition hover:opacity-90"
-              style={{ background: 'var(--accent, #4f46e5)', color: '#fff' }}
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className="px-4 py-2 rounded-xl text-sm font-semibold transition"
+              style={{
+                background: activeTab === tab ? 'var(--primary)' : 'var(--surface)',
+                color: activeTab === tab ? 'var(--text-inverse)' : 'var(--text-muted)',
+                border: '1px solid var(--border)',
+              }}
             >
-              ✏️ Редактировать профиль
+              {tab === 'info' ? '👤 Профиль' : '👥 Мои компании'}
             </button>
-            <button
-              onClick={() => setPassOpen(true)}
-              className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition hover:opacity-80"
-              style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-            >
-              🔒 Сменить пароль
-            </button>
-            <button
-              className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition hover:opacity-80"
-              style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-            >
-              🔐 Приватность
-            </button>
-          </div>
+          ))}
         </div>
 
-        <p className="text-center text-sm mt-8" style={{ color: 'var(--text-muted)' }}>
-          Хочешь посмотреть события?{' '}
-          <Link href="/events" className="font-medium transition" style={{ color: 'var(--primary)' }}>
-            Перейти →
-          </Link>
-        </p>
+        {/* ── My Parties tab ── */}
+        {activeTab === 'parties' && user && (
+          <div
+            className="rounded-3xl p-6 mb-6"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}
+          >
+            <MyPartiesTab userId={user.id} />
+          </div>
+        )}
+
+        {/* ── Settings (shown only on info tab) ── */}
+        {activeTab === 'info' && (
+          <>
+            <div
+              className="rounded-3xl p-6"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}
+            >
+              <h2 className="text-base font-bold mb-4" style={{ color: 'var(--text)' }}>Настройки</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <button
+                  onClick={() => setEditOpen(true)}
+                  className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition hover:opacity-90"
+                  style={{ background: 'var(--accent, #4f46e5)', color: '#fff' }}
+                >
+                  ✏️ Редактировать профиль
+                </button>
+                <button
+                  onClick={() => setPassOpen(true)}
+                  className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition hover:opacity-80"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                >
+                  🔒 Сменить пароль
+                </button>
+                <button
+                  className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition hover:opacity-80"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                >
+                  🔐 Приватность
+                </button>
+              </div>
+            </div>
+
+            <p className="text-center text-sm mt-8" style={{ color: 'var(--text-muted)' }}>
+              Хочешь посмотреть события?{' '}
+              <Link href="/events" className="font-medium transition" style={{ color: 'var(--primary)' }}>
+                Перейти →
+              </Link>
+            </p>
+          </>
+        )}
       </main>
     </div>
   );
