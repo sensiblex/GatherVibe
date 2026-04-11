@@ -19,6 +19,7 @@ interface PartyMember {
   interests: string | null;
   status: 'pending' | 'accepted' | 'rejected';
   joined_at: string;
+  message?: string | null;
 }
 
 interface Party {
@@ -38,7 +39,6 @@ interface Party {
 function extractErrorMessage(detail: unknown): string {
   if (typeof detail === 'string') return detail;
   if (Array.isArray(detail)) {
-    // FastAPI validation errors: [{type, loc, msg, input}, ...]
     return detail.map((e: any) => (typeof e?.msg === 'string' ? e.msg : JSON.stringify(e))).join('; ');
   }
   if (detail && typeof detail === 'object') {
@@ -48,6 +48,100 @@ function extractErrorMessage(detail: unknown): string {
     return JSON.stringify(d);
   }
   return 'Ошибка';
+}
+
+// ─── JoinModal ─────────────────────────────────────────────────────
+function JoinModal({
+  partyId,
+  partyTitle,
+  onClose,
+  onJoined,
+}: {
+  partyId: number;
+  partyTitle: string;
+  onClose: () => void;
+  onJoined: () => void;
+}) {
+  const { token } = useAuth();
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+  const MAX = 100;
+
+  const handleSubmit = async () => {
+    if (!token) { window.location.href = '/login'; return; }
+    setLoading(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/parties/${partyId}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: message.trim() || null }),
+      });
+      if (res.ok) {
+        toast('🙋 Заявка отправлена!', 'info');
+        onJoined();
+        onClose();
+      } else {
+        const d = await res.json();
+        toast(extractErrorMessage(d.detail), 'error');
+      }
+    } catch {}
+    setLoading(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div
+        className="w-full max-w-sm rounded-3xl overflow-hidden"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}
+      >
+        <div className="px-6 py-4 flex items-center justify-between"
+          style={{ background: 'linear-gradient(135deg,#9333ea,#ec4899)' }}>
+          <h3 className="text-white font-black text-base">🙋 Подать заявку</h3>
+          <button onClick={onClose} className="text-white/70 hover:text-white transition text-xl">✕</button>
+        </div>
+        <div className="px-6 py-5 flex flex-col gap-4">
+          <p className="text-sm" style={{ color: 'var(--text)' }}>
+            Вы хотите вступить в компанию{' '}
+            <span className="font-bold">{partyTitle}</span>.
+          </p>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+              Короткое сообщение (необязательно, макс. {MAX} симв.)
+            </label>
+            <textarea
+              className="gv-input resize-none"
+              rows={3}
+              maxLength={MAX}
+              placeholder="Например: Люблю рок, хочу пойти!"
+              value={message}
+              onChange={e => setMessage(e.target.value)}
+            />
+            <p className="text-xs text-right" style={{ color: message.length >= MAX ? 'var(--error)' : 'var(--text-faint)' }}>
+              {message.length}/{MAX}
+            </p>
+          </div>
+        </div>
+        <div className="px-6 pb-6 flex gap-3">
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="flex-1 py-2.5 text-sm text-white font-bold rounded-xl hover:opacity-90 transition disabled:opacity-60"
+            style={{ background: 'linear-gradient(135deg,#9333ea,#ec4899)' }}
+          >
+            {loading ? 'Отправка...' : '🙋 Отправить заявку'}
+          </button>
+          <button
+            onClick={onClose}
+            disabled={loading}
+            className="rounded-xl px-4 py-2.5 text-sm font-medium transition disabled:opacity-50 hover:opacity-80"
+            style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}
+          >
+            Отмена
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── KickModal ─────────────────────────────────────────────────────
@@ -232,13 +326,13 @@ export default function PartyDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
   const [kickTarget, setKickTarget] = useState<PartyMember | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const prevPartyRef = useRef<Party | null>(null);
 
   const fetchParty = useCallback(async () => {
     try {
-      // Публичный эндпоинт — не требует авторизации, используем apiFetch для единообразия
       const res = await apiFetch(`${API_BASE}/parties/detail/${partyId}`);
       if (!res.ok) throw new Error(`Ошибка ${res.status}`);
       const data: Party = await res.json();
@@ -267,17 +361,6 @@ export default function PartyDetailPage() {
     const id = setInterval(fetchParty, POLL_INTERVAL);
     return () => clearInterval(id);
   }, [fetchParty]);
-
-  const handleJoin = async () => {
-    if (!token) { window.location.href = '/login'; return; }
-    setActionLoading(true);
-    try {
-      const res = await apiFetch(`${API_BASE}/parties/${partyId}/join`, { method: 'POST' });
-      if (res.ok) { toast('🙋 Заявка отправлена!', 'info'); fetchParty(); }
-      else { const d = await res.json(); toast(extractErrorMessage(d.detail), 'error'); }
-    } catch {}
-    setActionLoading(false);
-  };
 
   const handleLeave = async () => {
     if (!token) return;
@@ -451,34 +534,45 @@ export default function PartyDetailPage() {
 
                 {/* Other members */}
                 {party.members.map(member => (
-                  <div key={member.user_id} className="flex items-center gap-3 p-3 rounded-xl"
+                  <div key={member.user_id} className="flex flex-col gap-2 p-3 rounded-xl"
                     style={member.user_id === myId ? myRowStyle : normalRowStyle}>
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
-                      {member.username.slice(0, 2).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
-                        {member.username}
-                        {member.user_id === myId && <span className="ml-1 text-xs" style={{ color: 'var(--primary)' }}>(вы)</span>}
-                      </p>
-                      {member.city && <p className="text-xs" style={{ color: 'var(--text-faint)' }}>📍 {member.city}</p>}
-                    </div>
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={statusBadgeStyle(member.status)}>
-                      {statusLabel(member.status)}
-                    </span>
-                    {isCreator && member.status === 'pending' && (
-                      <div className="flex gap-1 ml-1">
-                        <button onClick={() => handleDecision(member.user_id, 'accept')} disabled={actionLoading}
-                          className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition disabled:opacity-50" title="Принять">✓</button>
-                        <button onClick={() => handleDecision(member.user_id, 'reject')} disabled={actionLoading}
-                          className="text-xs px-2 py-1 bg-red-400 text-white rounded-lg hover:bg-red-500 transition disabled:opacity-50" title="Отклонить">✗</button>
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                        {member.username.slice(0, 2).toUpperCase()}
                       </div>
-                    )}
-                    {isCreator && member.status === 'accepted' && (
-                      <button onClick={() => setKickTarget(member)} disabled={actionLoading}
-                        className="ml-1 text-xs px-2 py-1 rounded-lg transition disabled:opacity-50 hover:opacity-80"
-                        style={{ background: 'var(--error-hl)', color: 'var(--error)', border: '1px solid color-mix(in oklch, var(--error) 30%, transparent)' }}
-                        title="Исключить">🚫 Кик</button>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
+                          {member.username}
+                          {member.user_id === myId && <span className="ml-1 text-xs" style={{ color: 'var(--primary)' }}>(вы)</span>}
+                        </p>
+                        {member.city && <p className="text-xs" style={{ color: 'var(--text-faint)' }}>📍 {member.city}</p>}
+                      </div>
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={statusBadgeStyle(member.status)}>
+                        {statusLabel(member.status)}
+                      </span>
+                      {isCreator && member.status === 'pending' && (
+                        <div className="flex gap-1 ml-1">
+                          <button onClick={() => handleDecision(member.user_id, 'accept')} disabled={actionLoading}
+                            className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition disabled:opacity-50" title="Принять">✓</button>
+                          <button onClick={() => handleDecision(member.user_id, 'reject')} disabled={actionLoading}
+                            className="text-xs px-2 py-1 bg-red-400 text-white rounded-lg hover:bg-red-500 transition disabled:opacity-50" title="Отклонить">✗</button>
+                        </div>
+                      )}
+                      {isCreator && member.status === 'accepted' && (
+                        <button onClick={() => setKickTarget(member)} disabled={actionLoading}
+                          className="ml-1 text-xs px-2 py-1 rounded-lg transition disabled:opacity-50 hover:opacity-80"
+                          style={{ background: 'var(--error-hl)', color: 'var(--error)', border: '1px solid color-mix(in oklch, var(--error) 30%, transparent)' }}
+                          title="Исключить">🚫 Кик</button>
+                      )}
+                    </div>
+                    {/* Show join message if present and viewer is creator */}
+                    {isCreator && member.status === 'pending' && member.message && (
+                      <div
+                        className="ml-12 text-xs px-3 py-2 rounded-xl italic"
+                        style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                      >
+                        💬 «{member.message}»
+                      </div>
                     )}
                   </div>
                 ))}
@@ -514,7 +608,7 @@ export default function PartyDetailPage() {
             <div className="rounded-2xl p-6 space-y-3" style={cardStyle}>
               <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Действия</h3>
               {canJoin && (
-                <button onClick={handleJoin} disabled={actionLoading}
+                <button onClick={() => setShowJoinModal(true)} disabled={actionLoading}
                   className="w-full gv-btn-primary text-sm py-2.5">
                   {actionLoading ? 'Отправка...' : '🙋 Подать заявку'}
                 </button>
@@ -575,6 +669,14 @@ export default function PartyDetailPage() {
         </div>
       </main>
 
+      {showJoinModal && party && (
+        <JoinModal
+          partyId={partyId}
+          partyTitle={party.title}
+          onClose={() => setShowJoinModal(false)}
+          onJoined={fetchParty}
+        />
+      )}
       {showEdit && party && (
         <EditPartyModal party={party} onClose={() => setShowEdit(false)} onSaved={fetchParty} />
       )}
