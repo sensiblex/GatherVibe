@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import Navbar from '../../../../components/Navbar';
-import { useAuth } from '../../../../context/AuthContext';
+import Navbar from '../../../components/Navbar';
+import { useAuth } from '../../../context/AuthContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -94,7 +94,6 @@ export default function CreatePartyPage() {
             boxShadow: 'var(--shadow-sm)',
           }}
         >
-          {/* Header */}
           <div className="px-8 py-6 bg-gradient-to-r from-purple-600 to-pink-600">
             <div className="flex items-center gap-3">
               <span className="text-4xl">🎉</span>
@@ -105,7 +104,6 @@ export default function CreatePartyPage() {
             </div>
           </div>
 
-          {/* Form */}
           <div className="px-8 py-6 flex flex-col gap-5">
             {error && (
               <div
@@ -120,12 +118,8 @@ export default function CreatePartyPage() {
               </div>
             )}
 
-            {/* Title */}
             <div className="flex flex-col gap-1.5">
-              <label
-                className="text-xs font-bold uppercase tracking-wide"
-                style={{ color: 'var(--text-muted)' }}
-              >
+              <label className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                 Название компании *
               </label>
               <input
@@ -140,12 +134,8 @@ export default function CreatePartyPage() {
               </span>
             </div>
 
-            {/* Description */}
             <div className="flex flex-col gap-1.5">
-              <label
-                className="text-xs font-bold uppercase tracking-wide"
-                style={{ color: 'var(--text-muted)' }}
-              >
+              <label className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                 Описание
               </label>
               <textarea
@@ -160,12 +150,8 @@ export default function CreatePartyPage() {
               </span>
             </div>
 
-            {/* Max members */}
             <div className="flex flex-col gap-1.5">
-              <label
-                className="text-xs font-bold uppercase tracking-wide"
-                style={{ color: 'var(--text-muted)' }}
-              >
+              <label className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                 Макс. количество участников
               </label>
               <div className="flex items-center gap-4">
@@ -173,40 +159,26 @@ export default function CreatePartyPage() {
                   type="button"
                   onClick={() => setForm(f => ({ ...f, max_members: Math.max(2, f.max_members - 1) }))}
                   className="w-10 h-10 rounded-full font-bold text-lg transition hover:opacity-80"
-                  style={{
-                    border: '1px solid var(--border)',
-                    color: 'var(--text-muted)',
-                    background: 'var(--surface-2)',
-                  }}
+                  style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}
                 >
                   −
                 </button>
-                <span
-                  className="text-2xl font-black w-8 text-center"
-                  style={{ color: 'var(--text)' }}
-                >
+                <span className="text-2xl font-black w-8 text-center" style={{ color: 'var(--text)' }}>
                   {form.max_members}
                 </span>
                 <button
                   type="button"
                   onClick={() => setForm(f => ({ ...f, max_members: Math.min(20, f.max_members + 1) }))}
                   className="w-10 h-10 rounded-full font-bold text-lg transition hover:opacity-80"
-                  style={{
-                    border: '1px solid var(--border)',
-                    color: 'var(--text-muted)',
-                    background: 'var(--surface-2)',
-                  }}
+                  style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}
                 >
                   +
                 </button>
-                <span className="text-sm" style={{ color: 'var(--text-faint)' }}>
-                  человек (включая вас)
-                </span>
+                <span className="text-sm" style={{ color: 'var(--text-faint)' }}>человек (включая вас)</span>
               </div>
             </div>
           </div>
 
-          {/* Actions */}
           <div className="px-8 pb-8 flex gap-3">
             <button
               onClick={handleCreate}
@@ -219,11 +191,7 @@ export default function CreatePartyPage() {
             <Link
               href={`/events/${eventId}`}
               className="px-5 py-3 rounded-xl text-sm font-medium transition hover:opacity-80"
-              style={{
-                border: '1px solid var(--border)',
-                color: 'var(--text-muted)',
-                background: 'var(--surface-2)',
-              }}
+              style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}
             >
               Отмена
             </Link>
