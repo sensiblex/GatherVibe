@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Navbar from '../components/Navbar';
 import EventCard, { KudaGoEvent } from '../components/EventCard';
 
@@ -189,6 +190,7 @@ export default function EventsPage() {
   const [category, setCategory]       = useState('');
   const [isFree, setIsFree]           = useState(false);
   const [categories, setCategories]   = useState<Category[]>([]);
+  const [sortBy, setSortBy]           = useState<'date' | 'price' | 'participants'>('date');
 
   const [dateFrom, setDateFrom]       = useState('');
   const [dateTo, setDateTo]           = useState('');
@@ -200,9 +202,25 @@ export default function EventsPage() {
   const sentinelRef  = useRef<HTMLDivElement>(null);
   const loadingRef   = useRef(false);
   const [todayStr, setTodayStr] = useState(localIsoDate(new Date()));
-  
+  const router = useRouter();
+
   useEffect(() => {
     setTodayStr(localIsoDate(new Date()));
+  }, []);
+
+  // Читаем начальные значения фильтров из URL
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const p = new URLSearchParams(window.location.search);
+    const q = p.get('search') || '';
+    if (q) { setSearchInput(q); setSearch(q); }
+    if (p.get('category'))   setCategory(p.get('category')!);
+    if (p.get('is_free') === 'true') setIsFree(true);
+    if (p.get('date_from'))  setDateFrom(p.get('date_from')!);
+    if (p.get('date_to'))    setDateTo(p.get('date_to')!);
+    if (p.get('sort_by') && ['date', 'price', 'participants'].includes(p.get('sort_by')!))
+      setSortBy(p.get('sort_by') as 'date' | 'price' | 'participants');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -216,6 +234,21 @@ export default function EventsPage() {
       .then(d => setAllEvents(d.results || []))
       .catch(() => {});
   }, []);
+
+  // Синхронизируем фильтры с URL (replace, чтобы не засорять историю)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const p = new URLSearchParams();
+    if (search)    p.set('search',    search);
+    if (category)  p.set('category',  category);
+    if (isFree)    p.set('is_free',   'true');
+    if (dateFrom)  p.set('date_from', dateFrom);
+    if (dateTo)    p.set('date_to',   dateTo);
+    if (sortBy !== 'date') p.set('sort_by', sortBy);
+    const qs = p.toString();
+    router.replace(qs ? `/events?${qs}` : '/events', { scroll: false });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, category, isFree, dateFrom, dateTo, sortBy]);
 
   const handleCalendarDate = (d: string | null) => {
     setCalSelectedDate(d);
@@ -283,6 +316,7 @@ export default function EventsPage() {
   const dateToRef        = useRef(dateTo);
   const isSingleDayRef   = useRef(isSingleDayFilter);
   const isFallbackRef    = useRef(false);
+  const sortByRef        = useRef(sortBy);
 
   pageRef.current          = page;
   hasMoreRef.current       = hasMore;
@@ -292,6 +326,7 @@ export default function EventsPage() {
   dateFromRef.current      = dateFrom;
   dateToRef.current        = dateTo;
   isSingleDayRef.current   = isSingleDayFilter;
+  sortByRef.current        = sortBy;
 
   useEffect(() => {
     const sentinel = sentinelRef.current;
@@ -346,18 +381,33 @@ export default function EventsPage() {
     setSearchInput(''); setSearch(''); setCategory('');
     setIsFree(false); setDateFrom(''); setDateTo('');
     setCalSelectedDate(null); setIsSingleDayFilter(false);
+    setSortBy('date');
   };
 
-  const hasActive = !!(search || category || isFree || dateFrom || dateTo);
+  const hasActive = !!(search || category || isFree || dateFrom || dateTo || sortBy !== 'date');
 
   const calDateFallbackEvents: KudaGoEvent[] = (
     calSelectedDate && !loading && events.length === 0 && !error
       ? allEvents.filter(e => e.start_date === calSelectedDate)
       : []
   );
-  const displayEvents = calDateFallbackEvents.length > 0 ? calDateFallbackEvents : events;
+  const baseEvents = calDateFallbackEvents.length > 0 ? calDateFallbackEvents : events;
   const isFallback = calDateFallbackEvents.length > 0;
   isFallbackRef.current = isFallback;
+
+  // Клиентская сортировка для KudaGo-событий
+  function parseKudaGoPrice(e: KudaGoEvent): number {
+    if (e.is_free) return 0;
+    const m = (e.price || '').match(/\d+/);
+    return m ? parseInt(m[0], 10) : 0;
+  }
+  const displayEvents = sortBy === 'date'
+    ? baseEvents
+    : [...baseEvents].sort((a, b) => {
+        if (sortBy === 'price') return parseKudaGoPrice(a) - parseKudaGoPrice(b);
+        // participants: нет данных у KudaGo — оставляем порядок API
+        return 0;
+      });
 
   const inputStyle = {
     background: 'var(--surface-2)',
@@ -457,6 +507,19 @@ export default function EventsPage() {
                 onBlur={e  => { e.currentTarget.style.borderColor = 'var(--border)'; }}
               />
             </div>
+
+            {/* Sort by */}
+            <select
+              value={sortBy}
+              onChange={e => setSortBy(e.target.value as 'date' | 'price' | 'participants')}
+              style={inputStyle}
+              onFocus={e => { e.currentTarget.style.borderColor = 'var(--primary)'; }}
+              onBlur={e  => { e.currentTarget.style.borderColor = 'var(--border)'; }}
+            >
+              <option value="date">По дате</option>
+              <option value="price">По цене</option>
+              <option value="participants">По популярности</option>
+            </select>
 
             {hasActive && (
               <button onClick={clearFilters}
