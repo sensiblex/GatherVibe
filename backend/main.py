@@ -218,6 +218,23 @@ async def subscribe_notifications(sid, data: dict):
     db.close()
 
 
+@sio.on('subscribe_user_notifications')
+async def subscribe_user_notifications(sid, data: dict):
+    """Applicant subscribes to their personal room to receive request_status_changed events."""
+    token = data.get('token')
+    if not token:
+        return
+    db = SessionLocal()
+    try:
+        user = get_user_from_socket_token(token, db)
+        await sio.enter_room(sid, f'user_{user.id}')
+        print(f"[notifications] {sid} subscribed to user_{user.id}")
+    except ValueError:
+        pass
+    finally:
+        db.close()
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -367,12 +384,26 @@ def get_messages(
 
 @app.get("/events", response_model=List[EventResponse])
 def get_events(
-    skip: int = 0, limit: int = 20,
-    city: Optional[str] = None, category: Optional[str] = None,
-    search: Optional[str] = None, db: Session = Depends(get_db)
+    skip: int = 0,
+    limit: int = 20,
+    city: Optional[str] = None,
+    category: Optional[str] = None,
+    search: Optional[str] = None,
+    # Фильтры по дате
+    date_from: Optional[datetime] = Query(default=None, description="События начиная с даты (ISO 8601)"),
+    date_to: Optional[datetime] = Query(default=None, description="События до даты (ISO 8601)"),
+    # Фильтры по цене
+    is_free: Optional[bool] = Query(default=None, description="True = только бесплатные, False = только платные"),
+    max_price: Optional[float] = Query(default=None, ge=0, description="Максимальная цена"),
+    # Фильтр по местам
+    has_spots: Optional[bool] = Query(default=None, description="True = только с доступными местами"),
+    # Сортировка
+    sort_by: Optional[str] = Query(default="date", pattern="^(date|price|participants)$"),
+    db: Session = Depends(get_db),
 ):
     now = datetime.utcnow()
     query = db.query(Event).filter(Event.is_active == True, Event.date_time >= now)
+
     if city:
         query = query.filter(Event.city.ilike(f"%{city}%"))
     if category:
@@ -383,7 +414,41 @@ def get_events(
             (Event.description.ilike(f"%{search}%")) |
             (Event.location.ilike(f"%{search}%"))
         )
-    return query.order_by(Event.date_time).offset(skip).limit(limit).all()
+
+    # Фильтрация по дате
+    if date_from:
+        query = query.filter(Event.date_time >= date_from)
+    if date_to:
+        query = query.filter(Event.date_time <= date_to)
+
+    # Фильтрация по цене
+    if is_free is True:
+        query = query.filter(
+            (Event.price == None) | (Event.price == 0)  # noqa: E711
+        )
+    elif is_free is False:
+        query = query.filter(Event.price > 0)
+    if max_price is not None:
+        query = query.filter(
+            (Event.price == None) | (Event.price <= max_price)  # noqa: E711
+        )
+
+    # Фильтрация по свободным местам
+    if has_spots is True:
+        query = query.filter(
+            (Event.max_participants == None) |  # noqa: E711
+            (Event.current_participants < Event.max_participants)
+        )
+
+    # Сортировка
+    if sort_by == "price":
+        query = query.order_by(Event.price.asc().nullsfirst())
+    elif sort_by == "participants":
+        query = query.order_by(Event.current_participants.desc())
+    else:
+        query = query.order_by(Event.date_time.asc())
+
+    return query.offset(skip).limit(limit).all()
 
 
 @app.get("/events/categories")
@@ -892,7 +957,7 @@ def get_parties(event_id: str, db: Session = Depends(get_db)):
 
 
 @app.post("/parties/requests/{request_id}/approve", response_model=PartyOut)
-def approve_request(
+async def approve_request(
     request_id: int,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -911,11 +976,17 @@ def approve_request(
     db.flush()                        # делаем статус видимым для _check_and_close_party
     _check_and_close_party(party, db)
     db.commit()
+    # Уведомляем заявителя о принятии
+    await sio.emit(
+        "request_status_changed",
+        {"status": "accepted", "party_id": party.id, "party_title": party.title},
+        room=f"user_{member.user_id}",
+    )
     return _build_party_out(party, db)
 
 
 @app.post("/parties/requests/{request_id}/reject", response_model=PartyOut)
-def reject_request(
+async def reject_request(
     request_id: int,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -932,6 +1003,12 @@ def reject_request(
         raise HTTPException(status_code=403, detail="Только создатель может отклонять заявки")
     member.status = 'rejected'
     db.commit()
+    # Уведомляем заявителя об отклонении
+    await sio.emit(
+        "request_status_changed",
+        {"status": "rejected", "party_id": party.id, "party_title": party.title},
+        room=f"user_{member.user_id}",
+    )
     return _build_party_out(party, db)
 
 
@@ -1138,7 +1215,7 @@ def kick_member(
 
 
 @app.post("/parties/{party_id}/members/{user_id}/accept", response_model=PartyOut)
-def accept_member(
+async def accept_member(
     party_id: int,
     user_id: int,
     token: str = Depends(oauth2_scheme),
@@ -1159,11 +1236,17 @@ def accept_member(
     db.flush()                        # делаем статус видимым для _check_and_close_party
     _check_and_close_party(party, db)
     db.commit()
+    # Уведомляем заявителя о принятии
+    await sio.emit(
+        "request_status_changed",
+        {"status": "accepted", "party_id": party.id, "party_title": party.title},
+        room=f"user_{m.user_id}",
+    )
     return _build_party_out(party, db)
 
 
 @app.post("/parties/{party_id}/members/{user_id}/reject", response_model=PartyOut)
-def reject_member(
+async def reject_member(
     party_id: int,
     user_id: int,
     token: str = Depends(oauth2_scheme),
@@ -1182,6 +1265,12 @@ def reject_member(
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     m.status = 'rejected'
     db.commit()
+    # Уведомляем заявителя об отклонении
+    await sio.emit(
+        "request_status_changed",
+        {"status": "rejected", "party_id": party.id, "party_title": party.title},
+        room=f"user_{m.user_id}",
+    )
     return _build_party_out(party, db)
 
 
