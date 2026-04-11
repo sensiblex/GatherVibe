@@ -36,8 +36,10 @@ export default function EventChat({
     // Load history (requires auth header if backend demands it)
     const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
     fetch(`${API_BASE}/messages/event_${eventId}?limit=50`, { headers })
-      .then(r => r.ok ? r.json() : [])
-      .then((history: Message[]) => {
+      .then(r => r.ok ? r.json() : { messages: [] })
+      .then((data: { messages: Message[] } | Message[]) => {
+        // API вернул { messages, has_more, oldest_id } — берём поле messages
+        const history = Array.isArray(data) ? data : data.messages ?? [];
         setMessages(history);
         setHistoryLoaded(true);
       })

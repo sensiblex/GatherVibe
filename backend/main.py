@@ -21,7 +21,7 @@ from models.chat_message import ChatMessage
 from typing import Optional, List
 from datetime import datetime
 from models.event import Event
-from schemas import EventCreate, EventResponse
+from schemas import EventCreate, EventResponse, EventUpdate
 import kudago_api
 from pydantic import BaseModel, Field
 import time
@@ -336,27 +336,31 @@ def update_profile(
 def get_messages(
     room: str,
     limit: int = Query(default=50, le=200),
+    before_id: Optional[int] = Query(default=None),
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
     # Проверяем, что пользователь авторизован
     get_current_user_from_token(token, db)
-    rows = (
-        db.query(ChatMessage)
-        .filter(ChatMessage.room == room)
-        .order_by(ChatMessage.timestamp.asc())
-        .limit(limit)
-        .all()
-    )
-    return [
-        {
-            "message":   r.message,
-            "userId":    r.user_id,
-            "username":  r.username,
-            "timestamp": r.timestamp.isoformat(),
-        }
-        for r in rows
-    ]
+    query = db.query(ChatMessage).filter(ChatMessage.room == room)
+    if before_id is not None:
+        query = query.filter(ChatMessage.id < before_id)
+    rows = query.order_by(ChatMessage.id.desc()).limit(limit).all()
+    rows = list(reversed(rows))  # возвращаем в хронологическом порядке
+    return {
+        "messages": [
+            {
+                "id":        r.id,
+                "message":   r.message,
+                "userId":    r.user_id,
+                "username":  r.username,
+                "timestamp": r.timestamp.isoformat(),
+            }
+            for r in rows
+        ],
+        "has_more":  len(rows) == limit,
+        "oldest_id": rows[0].id if rows else None,
+    }
 
 
 # ===== EVENTS =====
@@ -414,6 +418,53 @@ def create_event(
     db.commit()
     db.refresh(db_event)
     return db_event
+
+
+@app.patch("/events/{event_id}", response_model=EventResponse)
+def update_event(
+    event_id: int,
+    data: EventUpdate,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Редактирование события — только создатель."""
+    user = get_current_user_from_token(token, db)
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Событие не найдено")
+    if event.created_by != user.id:
+        raise HTTPException(status_code=403, detail="Только создатель может редактировать событие")
+
+    if data.date_time is not None:
+        if data.date_time < datetime.utcnow():
+            raise HTTPException(status_code=400, detail="Дата не может быть в прошлом")
+        event.date_time = data.date_time
+    if data.title is not None:
+        event.title = data.title
+    if data.description is not None:
+        event.description = data.description
+    if data.location is not None:
+        event.location = data.location
+    if data.address is not None:
+        event.address = data.address
+    if data.city is not None:
+        event.city = data.city
+    if data.category is not None:
+        event.category = data.category
+    if data.price is not None:
+        event.price = data.price
+    if data.max_participants is not None:
+        event.max_participants = data.max_participants
+    if data.image_url is not None:
+        event.image_url = data.image_url
+    if data.external_link is not None:
+        event.external_link = data.external_link
+    if data.is_active is not None:
+        event.is_active = data.is_active
+
+    db.commit()
+    db.refresh(event)
+    return event
 
 
 # ===== KUDAGO =====
@@ -547,6 +598,19 @@ def join_event(
 
     created_at = row.created_at or datetime.utcnow()
 
+    # Обновляем счётчик участников для локальных событий (не KudaGo)
+    try:
+        local_event = db.query(Event).filter(Event.id == int(event_id)).first()
+        if local_event:
+            local_event.current_participants = (
+                db.query(EventAttendee)
+                .filter(EventAttendee.event_id == event_id)
+                .count()
+            )
+            db.commit()
+    except (ValueError, TypeError):
+        pass  # event_id — строка KudaGo, пропускаем
+
     return AttendeeOut(
         id=row.id,
         user_id=user.id,
@@ -571,6 +635,19 @@ def leave_event(
         EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
     ).delete()
     db.commit()
+
+    # Обновляем счётчик участников для локальных событий (не KudaGo)
+    try:
+        local_event = db.query(Event).filter(Event.id == int(event_id)).first()
+        if local_event:
+            local_event.current_participants = (
+                db.query(EventAttendee)
+                .filter(EventAttendee.event_id == event_id)
+                .count()
+            )
+            db.commit()
+    except (ValueError, TypeError):
+        pass  # event_id — строка KudaGo, пропускаем
 
 
 @app.get("/attendees/{event_id}/me")
@@ -722,21 +799,22 @@ def _build_party_out(party: EventParty, db: Session) -> PartyOut:
 
 
 def _check_and_close_party(party: EventParty, db: Session) -> None:
-    """Проверяет, не превышена ли вместимость партии после добавления нового участника."""
-            # Считаем принятых участников, исключая создателя (он всегда занимает 1 слот)
-    accepted_excl_creator = db.query(PartyMember).filter(
-        PartyMember.party_id == party.id,
-        PartyMember.status == "accepted",
-        PartyMember.user_id != party.creator_id,
-    ).count()
+    """Проверяет вместимость партии. Вызывается ПОСЛЕ db.flush() с уже записанным
+    member.status = "accepted", поэтому считаем всех принятых напрямую.
+    """
+    # Считаем все accepted-строки в party_members (новый участник уже виден через flush)
+    accepted_total = (
+        db.query(PartyMember).filter(
+            PartyMember.party_id == party.id,
+            PartyMember.status == "accepted",
+        ).count()
+        + 1  # +1 за создателя — у него нет строки в party_members
+    )
 
-    # После принятия нового участника: создатель (1) + уже принятые + новый (1)
-    total_after_accept = 1 + accepted_excl_creator + 1
-
-    if total_after_accept > party.max_members:
+    if accepted_total > party.max_members:
         raise HTTPException(status_code=400, detail="Компания уже заполнена")
 
-    if total_after_accept >= party.max_members:
+    if accepted_total >= party.max_members:
         party.is_open = False
 
 
@@ -829,8 +907,9 @@ def approve_request(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может принимать участников")
-    _check_and_close_party(party, db)
     member.status = "accepted"
+    db.flush()                        # делаем статус видимым для _check_and_close_party
+    _check_and_close_party(party, db)
     db.commit()
     return _build_party_out(party, db)
 
@@ -1071,13 +1150,14 @@ def accept_member(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может принимать участников")
-    _check_and_close_party(party, db)
     m = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.user_id == user_id
     ).first()
     if not m:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     m.status = "accepted"
+    db.flush()                        # делаем статус видимым для _check_and_close_party
+    _check_and_close_party(party, db)
     db.commit()
     return _build_party_out(party, db)
 

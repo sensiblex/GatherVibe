@@ -42,8 +42,10 @@ export default function PartyChat({
     fetch(`${API_BASE}/messages/party_${partyId}?limit=50`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then(r => r.ok ? r.json() : [])
-      .then((history: Message[]) => {
+      .then(r => r.ok ? r.json() : { messages: [] })
+      .then((data: { messages: Message[] } | Message[]) => {
+        // API вернул { messages, has_more, oldest_id } — берём поле messages
+        const history = Array.isArray(data) ? data : data.messages ?? [];
         setMessages(history);
         setHistoryLoaded(true);
       })
