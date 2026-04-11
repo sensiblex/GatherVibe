@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import Navbar from '../../../components/Navbar';
-import { useAuth } from '../../../context/AuthContext';
+import Navbar from '../../../../components/Navbar';
+import { useAuth } from '../../../../context/AuthContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
