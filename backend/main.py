@@ -356,6 +356,25 @@ def update_profile(
     return user
 
 
+@app.patch("/users/me/privacy")
+def update_privacy(
+    data: PrivacyUpdate,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user_from_token(token, db)
+    if data.show_email     is not None: user.show_email     = data.show_email
+    if data.show_city      is not None: user.show_city      = data.show_city
+    if data.show_interests is not None: user.show_interests = data.show_interests
+    db.commit()
+    db.refresh(user)
+    return {
+        "show_email":     user.show_email,
+        "show_city":      user.show_city,
+        "show_interests": user.show_interests,
+    }
+
+
 # ===== MESSAGES (chat history) =====
 
 @app.get("/messages/{room}")
@@ -617,6 +636,12 @@ def kudago_locations():
 
 
 # ===== MATCHING / ATTENDEES =====
+
+class PrivacyUpdate(BaseModel):
+    show_email:     Optional[bool] = None
+    show_city:      Optional[bool] = None
+    show_interests: Optional[bool] = None
+
 
 class AttendeeCreateBody(BaseModel):
     comment: Optional[str] = None
@@ -916,6 +941,83 @@ def get_my_parties(
     all_parties = list({p.id: p for p in created + member_parties}.values())
     all_parties.sort(key=lambda p: p.created_at or datetime.min, reverse=True)
     return [_build_party_out(p, db) for p in all_parties]
+
+
+# ===== USER STATS =====
+
+@app.get("/users/me/stats")
+def get_my_stats(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user_from_token(token, db)
+
+    parties_created = db.query(EventParty).filter(
+        EventParty.creator_id == user.id
+    ).count()
+
+    events_attended = db.query(EventAttendee).filter(
+        EventAttendee.user_id == user.id
+    ).count()
+
+    # matches_found = parties where user is an ACCEPTED member (not creator)
+    matches_found = (
+        db.query(PartyMember)
+        .filter(
+            PartyMember.user_id == user.id,
+            PartyMember.status == "accepted",
+        )
+        .join(EventParty, PartyMember.party_id == EventParty.id)
+        .filter(EventParty.creator_id != user.id)
+        .count()
+    )
+
+    return {
+        "parties_created": parties_created,
+        "events_attended": events_attended,
+        "matches_found": matches_found,
+    }
+
+
+# ===== USER EVENTS =====
+
+@app.get("/users/me/events")
+def get_my_events(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    from sqlalchemy import cast, String as SAString
+    user = get_current_user_from_token(token, db)
+    now = datetime.utcnow()
+
+    rows = (
+        db.query(EventAttendee, Event)
+        .join(Event, EventAttendee.event_id == cast(Event.id, SAString))
+        .filter(EventAttendee.user_id == user.id, Event.is_active == True)
+        .order_by(Event.date_time.asc())
+        .all()
+    )
+
+    upcoming = []
+    past = []
+    for attendee, event in rows:
+        item = {
+            "event_id":   event.id,
+            "title":      event.title,
+            "date_time":  event.date_time.isoformat(),
+            "city":       event.city,
+            "category":   event.category,
+            "image_url":  event.image_url,
+            "location":   event.location,
+            "is_looking": attendee.is_looking,
+            "comment":    attendee.comment,
+        }
+        if event.date_time >= now:
+            upcoming.append(item)
+        else:
+            past.append(item)
+
+    return {"upcoming": upcoming, "past": past}
 
 
 # ===== NOTIFICATIONS — pending requests for party creators =====
@@ -1407,9 +1509,18 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     return new_user
 
 
-@app.get("/users/{user_id}", response_model=UserResponse)
+@app.get("/users/{user_id}")
 def get_user(user_id: int, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-    return user
+    return {
+        "id":         user.id,
+        "username":   user.username,
+        "email":      user.email      if user.show_email     else None,
+        "city":       user.city       if user.show_city      else None,
+        "interests":  user.interests  if user.show_interests else None,
+        "bio":        user.bio,
+        "avatar_url": user.avatar_url,
+        "is_active":  user.is_active,
+    }
