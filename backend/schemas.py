@@ -48,6 +48,39 @@ class UserUpdate(BaseModel):
     avatar_url: Optional[str] = None
 
 
+class ReviewCreate(BaseModel):
+    reviewed_id: int
+    party_id: int
+    rating: int  # 1-5
+    text: Optional[str] = None
+
+
+class ReviewOut(BaseModel):
+    id: int
+    reviewer_id: int
+    reviewer_username: str
+    reviewer_avatar_url: Optional[str] = None
+    rating: int
+    text: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ReviewSummary(BaseModel):
+    avg_rating: Optional[float]
+    total_reviews: int
+    reviews: list[ReviewOut]
+
+
+class ReviewableUser(BaseModel):
+    user_id: int
+    username: str
+    avatar_url: Optional[str] = None
+    party_id: int
+
+
 class EventBase(BaseModel):
     title: str
     description: Optional[str] = None

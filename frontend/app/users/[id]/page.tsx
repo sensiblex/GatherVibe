@@ -16,6 +16,23 @@ interface PublicUser {
   city: string | null;
   bio: string | null;
   interests: string | null;
+  avatar_url: string | null;
+}
+
+interface ReviewOut {
+  id: number;
+  reviewer_id: number;
+  reviewer_username: string;
+  reviewer_avatar_url: string | null;
+  rating: number;
+  text: string | null;
+  created_at: string;
+}
+
+interface ReviewSummary {
+  avg_rating: number | null;
+  total_reviews: number;
+  reviews: ReviewOut[];
 }
 
 function parseInterests(raw: string | null): string[] {
@@ -75,18 +92,23 @@ export default function UserProfilePage() {
 
   const [profile, setProfile] = useState<PublicUser | null>(null);
   const [status, setStatus] = useState<'loading' | 'ok' | 'notfound' | 'error'>('loading');
+  const [reviewSummary, setReviewSummary] = useState<ReviewSummary | null>(null);
 
   useEffect(() => {
     if (!userId) return;
     setStatus('loading');
-    apiFetch(`${API_BASE}/users/${userId}`)
-      .then(async (res) => {
-        if (res.status === 404) { setStatus('notfound'); return; }
-        if (!res.ok) { setStatus('error'); return; }
-        const data = await res.json();
-        // Деструктурируем только публичные поля, намеренно отбрасывая приватные
-        const { id, username, city, bio, interests } = data;
-        setProfile({ id, username, city: city ?? null, bio: bio ?? null, interests: interests ?? null });
+    Promise.all([
+      apiFetch(`${API_BASE}/users/${userId}`),
+      apiFetch(`${API_BASE}/users/${userId}/reviews`),
+    ]).then(async ([userRes, reviewRes]) => {
+        if (userRes.status === 404) { setStatus('notfound'); return; }
+        if (!userRes.ok) { setStatus('error'); return; }
+        const data = await userRes.json();
+        const { id, username, city, bio, interests, avatar_url } = data;
+        setProfile({ id, username, city: city ?? null, bio: bio ?? null, interests: interests ?? null, avatar_url: avatar_url ?? null });
+        if (reviewRes.ok) {
+          setReviewSummary(await reviewRes.json());
+        }
         setStatus('ok');
       })
       .catch(() => setStatus('error'));
@@ -166,15 +188,23 @@ export default function UserProfilePage() {
               <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
 
                 {/* Avatar */}
-                <div
-                  className="w-24 h-24 rounded-full flex items-center justify-center text-3xl font-black shadow-lg shrink-0"
-                  style={{
-                    background: 'linear-gradient(135deg, var(--primary) 0%, #a855f7 100%)',
-                    color: '#fff',
-                  }}
-                >
-                  {initials}
-                </div>
+                {profile.avatar_url ? (
+                  <img
+                    src={profile.avatar_url}
+                    alt={profile.username}
+                    className="w-24 h-24 rounded-full object-cover shadow-lg shrink-0"
+                  />
+                ) : (
+                  <div
+                    className="w-24 h-24 rounded-full flex items-center justify-center text-3xl font-black shadow-lg shrink-0"
+                    style={{
+                      background: 'linear-gradient(135deg, var(--primary) 0%, #a855f7 100%)',
+                      color: '#fff',
+                    }}
+                  >
+                    {initials}
+                  </div>
+                )}
 
                 {/* Info */}
                 <div className="flex-1 text-center sm:text-left">
@@ -235,6 +265,72 @@ export default function UserProfilePage() {
                 </div>
               </div>
             </div>
+
+            {/* ── Reviews block ── */}
+            {reviewSummary && reviewSummary.total_reviews > 0 && (
+              <div
+                className="rounded-3xl p-6"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-black" style={{ color: 'var(--text)' }}>
+                    ⭐ Отзывы
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl font-black" style={{ color: 'var(--primary)' }}>
+                      {reviewSummary.avg_rating?.toFixed(1)}
+                    </span>
+                    <div className="flex gap-0.5">
+                      {[1, 2, 3, 4, 5].map(star => (
+                        <span key={star} className="text-base">
+                          {star <= Math.round(reviewSummary.avg_rating ?? 0) ? '⭐' : '☆'}
+                        </span>
+                      ))}
+                    </div>
+                    <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      ({reviewSummary.total_reviews})
+                    </span>
+                  </div>
+                </div>
+
+                {/* Review list */}
+                <div className="space-y-3">
+                  {reviewSummary.reviews.map(review => (
+                    <div
+                      key={review.id}
+                      className="rounded-2xl p-4"
+                      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <Link
+                          href={`/users/${review.reviewer_id}`}
+                          className="text-sm font-bold transition hover:opacity-70"
+                          style={{ color: 'var(--primary)' }}
+                        >
+                          {review.reviewer_username}
+                        </Link>
+                        <div className="flex gap-0.5 ml-auto">
+                          {[1, 2, 3, 4, 5].map(star => (
+                            <span key={star} className="text-sm">
+                              {star <= review.rating ? '⭐' : '☆'}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      {review.text && (
+                        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+                          {review.text}
+                        </p>
+                      )}
+                      <p className="text-xs mt-2" style={{ color: 'var(--text-faint)' }}>
+                        {new Date(review.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* ── Footer link to events ── */}
             <p className="text-center text-sm" style={{ color: 'var(--text-muted)' }}>
