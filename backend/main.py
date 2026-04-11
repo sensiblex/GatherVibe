@@ -540,8 +540,6 @@ def join_event(
         db.commit()
         db.refresh(row)
 
-    # Гарантируем, что created_at никогда не будет None
-    # (server_default возвращается после refresh, но добавляем fallback на всякий случай)
     created_at = row.created_at or datetime.utcnow()
 
     return AttendeeOut(
@@ -716,10 +714,7 @@ def _build_party_out(party: EventParty, db: Session) -> PartyOut:
 
 
 def _check_and_close_party(party: EventParty, db: Session) -> None:
-    """Проверяет, не превышена ли вместимость партии после добавления нового участника.
-    Если после добавления участника будет достигнут лимит, закрывает партию.
-    Вызывает HTTPException(400) если партия уже заполнена.
-    """
+    """Проверяет, не превышена ли вместимость партии после добавления нового участника."""
     creator_is_member = db.query(PartyMember).filter(
         PartyMember.party_id == party.id,
         PartyMember.user_id == party.creator_id,
@@ -730,9 +725,9 @@ def _check_and_close_party(party: EventParty, db: Session) -> None:
         PartyMember.party_id == party.id, PartyMember.status == "accepted"
     ).count()
 
-    total_after_accept = accepted_count + 1  # новый участник
+    total_after_accept = accepted_count + 1
     if not creator_is_member:
-        total_after_accept += 1  # добавляем создателя
+        total_after_accept += 1
 
     if total_after_accept > party.max_members:
         raise HTTPException(status_code=400, detail="Компания уже заполнена")
@@ -796,6 +791,7 @@ def get_party_detail(party_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Компания не найдена")
     return _build_party_out(party, db)
 
+
 @app.get("/parties/detail/{party_id}", response_model=PartyOut)
 def get_party_detail_public(party_id: int, db: Session = Depends(get_db)):
     """Публичный эндпоинт для получения информации о компании без авторизации."""
@@ -829,10 +825,7 @@ def approve_request(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может принимать участников")
-    
-    # Проверка вместимости и автоматическое закрытие партии при заполнении
     _check_and_close_party(party, db)
-    
     member.status = "accepted"
     db.commit()
     return _build_party_out(party, db)
@@ -854,13 +847,12 @@ def reject_request(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может отклонять заявки")
-    # Вместо удаления меняем статус на 'rejected'
     member.status = 'rejected'
     db.commit()
     return _build_party_out(party, db)
 
 
-@app.post("/parties/{event_id}", response_model=PartyOut)
+@app.post("/parties/{party_id}", response_model=PartyOut)
 def create_party(
     event_id: str,
     body: PartyCreateBody,
@@ -954,7 +946,6 @@ async def join_party(
     accepted_count = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.status == "accepted"
     ).count()
-    # accepted_count не учитывает создателя, поэтому +1 (создатель) +1 (новый участник) = +2
     if accepted_count + 2 >= party.max_members:
         raise HTTPException(status_code=400, detail="Компания заполнена")
     existing = db.query(PartyMember).filter(
@@ -962,34 +953,24 @@ async def join_party(
     ).first()
     if existing:
         if existing.status == 'rejected':
-            # Удаляем старую отклонённую запись, чтобы создать новую
-            existing.status = 'pending'  # Reuse instead of deleting
-            existing.message = body.message
-            db.commit()
-            await sio.emit(
-                "new_party_request",
-                {
-                    "party_id": party.id,
-                    "party_title": party.title,
-                    "user_id": user.id,
-                    "username": user.username,
-                },
-                room=f"creator_{party.creator_id}",
-            )
-            return _build_party_out(party, db)
-        elif existing.status == 'left':
-            # Пользователь вышел ранее, разрешаем повторную заявку
             existing.status = 'pending'
             existing.message = body.message
             db.commit()
             await sio.emit(
                 "new_party_request",
-                {
-                    "party_id": party.id,
-                    "party_title": party.title,
-                    "user_id": user.id,
-                    "username": user.username,
-                },
+                {"party_id": party.id, "party_title": party.title,
+                 "user_id": user.id, "username": user.username},
+                room=f"creator_{party.creator_id}",
+            )
+            return _build_party_out(party, db)
+        elif existing.status == 'left':
+            existing.status = 'pending'
+            existing.message = body.message
+            db.commit()
+            await sio.emit(
+                "new_party_request",
+                {"party_id": party.id, "party_title": party.title,
+                 "user_id": user.id, "username": user.username},
                 room=f"creator_{party.creator_id}",
             )
             return _build_party_out(party, db)
@@ -998,18 +979,12 @@ async def join_party(
     m = PartyMember(party_id=party_id, user_id=user.id, status="pending", message=body.message)
     db.add(m)
     db.commit()
-
     await sio.emit(
         "new_party_request",
-        {
-            "party_id": party.id,
-            "party_title": party.title,
-            "user_id": user.id,
-            "username": user.username,
-        },
+        {"party_id": party.id, "party_title": party.title,
+         "user_id": user.id, "username": user.username},
         room=f"creator_{party.creator_id}",
     )
-
     return _build_party_out(party, db)
 
 
@@ -1032,10 +1007,49 @@ def leave_party(
         raise HTTPException(status_code=404, detail="Вы не состоите в этой компании")
     if member.status == 'rejected':
         raise HTTPException(status_code=400, detail="Вы не являетесь участником компании")
-    # Вместо удаления меняем статус на 'left'
     member.status = 'left'
     db.commit()
     return {"ok": True}
+
+
+@app.post("/parties/{party_id}/members/{user_id}/kick", response_model=PartyOut)
+def kick_member(
+    party_id: int,
+    user_id: int,
+    body: PartyKickBody,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Исключить принятого участника из компании (только создатель)."""
+    current_user = get_current_user_from_token(token, db)
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if party.creator_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Только создатель может исключать участников")
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Нельзя исключить самого себя")
+    member = db.query(PartyMember).filter(
+        PartyMember.party_id == party_id,
+        PartyMember.user_id == user_id,
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Участник не найден в компании")
+    if member.status != 'accepted':
+        raise HTTPException(status_code=400, detail="Можно исключить только принятого участника")
+    member.status = 'rejected'
+    # Если компания была закрыта из-за заполненности — снова открываем
+    if not party.is_open:
+        accepted_after = db.query(PartyMember).filter(
+            PartyMember.party_id == party_id,
+            PartyMember.status == 'accepted',
+            PartyMember.user_id != user_id,
+        ).count()
+        # +1 за создателя
+        if accepted_after + 1 < party.max_members:
+            party.is_open = True
+    db.commit()
+    return _build_party_out(party, db)
 
 
 @app.post("/parties/{party_id}/members/{user_id}/accept", response_model=PartyOut)
@@ -1051,7 +1065,6 @@ def accept_member(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может принимать участников")
-    # Проверка вместимости и автоматическое закрытие партии при заполнении
     _check_and_close_party(party, db)
     m = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.user_id == user_id
@@ -1081,7 +1094,6 @@ def reject_member(
     ).first()
     if not m:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    # Вместо удаления меняем статус на 'rejected'
     m.status = 'rejected'
     db.commit()
     return _build_party_out(party, db)
@@ -1125,7 +1137,7 @@ def get_users(
     city: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ):
-    get_current_user_from_token(token, db)   # auth check only
+    get_current_user_from_token(token, db)
     query = db.query(User)
     if search:
         query = query.filter(
