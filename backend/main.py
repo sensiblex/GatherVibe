@@ -356,35 +356,6 @@ def update_profile(
     return user
 
 
-# ===== USER PARTIES =====
-
-@app.get("/users/me/parties", response_model=List[PartyOut])
-def get_my_parties(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    """Возвращает все компании пользователя: созданные им + те, где он принятый участник."""
-    user = get_current_user_from_token(token, db)
-
-    # Компании, созданные пользователем
-    created = db.query(EventParty).filter(EventParty.creator_id == user.id).all()
-
-    # Компании, где пользователь — принятый участник (но не создатель)
-    member_party_ids = db.query(PartyMember.party_id).filter(
-        PartyMember.user_id == user.id,
-        PartyMember.status == MemberStatus.accepted,
-    ).all()
-    member_parties = db.query(EventParty).filter(
-        EventParty.id.in_([r[0] for r in member_party_ids]),
-        EventParty.creator_id != user.id,
-    ).all()
-
-    # Объединяем без дублей, сортируем по дате создания (новые первые)
-    all_parties = list({p.id: p for p in created + member_parties}.values())
-    all_parties.sort(key=lambda p: p.created_at or datetime.min, reverse=True)
-    return [_build_party_out(p, db) for p in all_parties]
-
-
 # ===== MESSAGES (chat history) =====
 
 @app.get("/messages/{room}")
@@ -919,6 +890,32 @@ def _check_and_close_party(party: EventParty, db: Session) -> None:
 
     if accepted_total >= party.max_members:
         party.is_open = False
+
+
+# ===== USER PARTIES =====
+
+@app.get("/users/me/parties", response_model=List[PartyOut])
+def get_my_parties(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Возвращает все компании пользователя: созданные им + те, где он принятый участник."""
+    user = get_current_user_from_token(token, db)
+
+    created = db.query(EventParty).filter(EventParty.creator_id == user.id).all()
+
+    member_party_ids = db.query(PartyMember.party_id).filter(
+        PartyMember.user_id == user.id,
+        PartyMember.status == MemberStatus.accepted,
+    ).all()
+    member_parties = db.query(EventParty).filter(
+        EventParty.id.in_([r[0] for r in member_party_ids]),
+        EventParty.creator_id != user.id,
+    ).all()
+
+    all_parties = list({p.id: p for p in created + member_parties}.values())
+    all_parties.sort(key=lambda p: p.created_at or datetime.min, reverse=True)
+    return [_build_party_out(p, db) for p in all_parties]
 
 
 # ===== NOTIFICATIONS — pending requests for party creators =====
