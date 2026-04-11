@@ -356,6 +356,12 @@ def update_profile(
     return user
 
 
+class PrivacyUpdate(BaseModel):
+    show_email:     Optional[bool] = None
+    show_city:      Optional[bool] = None
+    show_interests: Optional[bool] = None
+
+
 @app.patch("/users/me/privacy")
 def update_privacy(
     data: PrivacyUpdate,
@@ -636,12 +642,6 @@ def kudago_locations():
 
 
 # ===== MATCHING / ATTENDEES =====
-
-class PrivacyUpdate(BaseModel):
-    show_email:     Optional[bool] = None
-    show_city:      Optional[bool] = None
-    show_interests: Optional[bool] = None
-
 
 class AttendeeCreateBody(BaseModel):
     comment: Optional[str] = None
