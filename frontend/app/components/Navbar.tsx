@@ -136,6 +136,18 @@ export default function Navbar() {
           >
             События
           </Link>
+          {user && (
+            <Link
+              href="/my-events"
+              className="px-4 py-2 rounded-xl text-sm font-medium transition"
+              style={{
+                background: isActive('/my-events') ? 'var(--primary-hl)' : 'transparent',
+                color: isActive('/my-events') ? 'var(--primary)' : 'var(--text-muted)',
+              }}
+            >
+              Мои события
+            </Link>
+          )}
         </div>
 
         {/* Right */}
