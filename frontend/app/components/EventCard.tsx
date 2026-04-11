@@ -106,8 +106,13 @@ function formatDate(dateStr: string | null, timeStr: string | null): string {
 export default function EventCard({ event }: { event: KudaGoEvent }) {
   const ageLabel = event.age_restriction ? (typeof event.age_restriction === 'string' && event.age_restriction.endsWith('+') ? event.age_restriction : `${event.age_restriction}+`) : null;
 
-  // ── Задача 5: счётчик участников ──
-  const [attendeeCount, setAttendeeCount] = useState<number | null>(null);
+  interface AttendeeBasic {
+    user_id: number;
+    username: string;
+    avatar_url?: string | null;
+  }
+
+  const [attendees, setAttendees] = useState<AttendeeBasic[]>([]);
 
   useEffect(() => {
     if (!event.kudago_id) return;
@@ -115,9 +120,9 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
       try {
         const res = await fetch(`${API_BASE}/attendees/${event.kudago_id}`);
         if (!res.ok) return;
-        const data: { id: number }[] = await res.json();
+        const data: AttendeeBasic[] = await res.json();
         if (Array.isArray(data) && data.length > 0) {
-          setAttendeeCount(data.length);
+          setAttendees(data);
         }
       } catch {
         // не блокируем рендер карточки
@@ -244,12 +249,48 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
             )}
           </div>
 
-          {/* ── Счётчик + ссылка ── */}
+          {/* ── Мини-аватары + счётчик + ссылка ── */}
           <div className="flex items-center gap-3">
-            {attendeeCount !== null && attendeeCount > 0 && (
-              <span className="text-xs text-indigo-500 font-semibold flex items-center gap-1">
-                👥 {attendeeCount} идут
-              </span>
+            {attendees.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                {/* Мини-аватары первых 3 участников */}
+                <div className="flex -space-x-2">
+                  {attendees.slice(0, 3).map((a, i) => (
+                    <div
+                      key={a.user_id}
+                      className="w-6 h-6 rounded-full overflow-hidden border-2 shrink-0"
+                      style={{
+                        borderColor: 'var(--surface)',
+                        zIndex: 3 - i,
+                        position: 'relative',
+                      }}
+                      title={a.username}
+                    >
+                      {a.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={a.avatar_url}
+                          alt={a.username}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div
+                          className="w-full h-full flex items-center justify-center text-white font-bold"
+                          style={{
+                            fontSize: '9px',
+                            background: 'linear-gradient(135deg, var(--primary), #a855f7)',
+                          }}
+                        >
+                          {a.username.slice(0, 1).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <span className="text-xs font-semibold" style={{ color: 'var(--primary)' }}>
+                  {attendees.length} идут
+                </span>
+              </div>
             )}
             <span
               className="text-xs font-medium"

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import axios from 'axios';
@@ -8,6 +8,7 @@ import Navbar from '../components/Navbar';
 import { INTERESTS_LIST, getInterestLabel } from '../lib/interests';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const IMGBB_KEY = process.env.NEXT_PUBLIC_IMGBB_KEY || '';
 
 interface User {
   id: number;
@@ -16,6 +17,7 @@ interface User {
   city?: string;
   bio?: string;
   interests?: string;
+  avatar_url?: string;
   is_active: boolean;
 }
 
@@ -38,7 +40,6 @@ function EditProfileModal({
   const [username, setUsername] = useState(user.username);
   const [city, setCity] = useState(user.city || '');
   const [bio, setBio] = useState(user.bio || '');
-  // Парсим id-строку из БД: "concert,cinema" → ['concert', 'cinema']
   const [selectedInterests, setSelectedInterests] = useState<string[]>(
     user.interests ? user.interests.split(',').map(s => s.trim()).filter(Boolean) : []
   );
@@ -65,7 +66,6 @@ function EditProfileModal({
           username: username.trim(),
           city: city.trim() || null,
           bio: bio.trim() || null,
-          // Хранить без пробелов: "concert,cinema" — единый формат с register
           interests: selectedInterests.length > 0 ? selectedInterests.join(',') : null,
         },
         { headers: { Authorization: `Bearer ${token}` } }
@@ -90,7 +90,6 @@ function EditProfileModal({
         className="w-full max-w-md rounded-3xl shadow-2xl overflow-y-auto max-h-[90vh]"
         style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
       >
-        {/* Header */}
         <div className="px-6 pt-6 pb-2 flex items-center justify-between">
           <h2 className="text-lg font-black" style={{ color: 'var(--text)' }}>✏️ Редактировать профиль</h2>
           <button
@@ -114,7 +113,6 @@ function EditProfileModal({
             </p>
           )}
 
-          {/* Username */}
           <div>
             <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Имя</label>
             <input
@@ -125,7 +123,6 @@ function EditProfileModal({
             />
           </div>
 
-          {/* City */}
           <div>
             <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Город</label>
             <input
@@ -137,7 +134,6 @@ function EditProfileModal({
             />
           </div>
 
-          {/* Bio */}
           <div>
             <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>О себе</label>
             <textarea
@@ -153,7 +149,6 @@ function EditProfileModal({
             </p>
           </div>
 
-          {/* Interests — единый каталог из lib/interests */}
           <div>
             <label className="block text-sm font-semibold mb-2" style={{ color: 'var(--text)' }}>
               Интересы
@@ -180,7 +175,6 @@ function EditProfileModal({
             </div>
           </div>
 
-          {/* Actions */}
           <div className="flex gap-2 pt-2">
             <button
               onClick={handleSave}
@@ -205,12 +199,179 @@ function EditProfileModal({
 }
 
 // ──────────────────────────────────────────────────────────────────
+function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+  const [oldPassword, setOldPassword]     = useState('');
+  const [newPassword, setNewPassword]     = useState('');
+  const [confirmPass, setConfirmPass]     = useState('');
+  const [loading, setLoading]             = useState(false);
+  const [error, setError]                 = useState('');
+  const [success, setSuccess]             = useState(false);
+
+  const handleSave = async () => {
+    if (!oldPassword || !newPassword || !confirmPass) {
+      setError('Заполните все поля'); return;
+    }
+    if (newPassword !== confirmPass) {
+      setError('Пароли не совпадают'); return;
+    }
+    if (newPassword.length < 6) {
+      setError('Новый пароль должен быть не менее 6 символов'); return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const token = localStorage.getItem('token');
+      await axios.patch(
+        `${API_BASE}/users/me`,
+        { old_password: oldPassword, new_password: newPassword },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setSuccess(true);
+      setTimeout(onClose, 1200);
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.detail || 'Не удалось сменить пароль');
+      } else {
+        setError('Не удалось сменить пароль');
+      }
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'oklch(0 0 0 / 0.55)' }}
+    >
+      <div
+        className="w-full max-w-sm rounded-3xl shadow-2xl"
+        style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+      >
+        <div className="px-6 pt-6 pb-2 flex items-center justify-between">
+          <h2 className="text-lg font-black" style={{ color: 'var(--text)' }}>🔒 Сменить пароль</h2>
+          <button
+            onClick={onClose}
+            className="text-xl hover:opacity-70 transition"
+            style={{ color: 'var(--text-muted)' }}
+          >✕</button>
+        </div>
+
+        <div className="px-6 pb-6 space-y-4 mt-4">
+          {error && (
+            <p
+              className="text-sm px-4 py-2 rounded-xl"
+              style={{
+                background: 'color-mix(in oklch, #ef4444 10%, transparent)',
+                color: '#ef4444',
+                border: '1px solid color-mix(in oklch, #ef4444 30%, transparent)',
+              }}
+            >
+              {error}
+            </p>
+          )}
+          {success && (
+            <p
+              className="text-sm px-4 py-2 rounded-xl"
+              style={{
+                background: 'color-mix(in oklch, #22c55e 10%, transparent)',
+                color: '#22c55e',
+                border: '1px solid color-mix(in oklch, #22c55e 30%, transparent)',
+              }}
+            >
+              Пароль успешно изменён!
+            </p>
+          )}
+
+          <div>
+            <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>
+              Текущий пароль
+            </label>
+            <input
+              type="password"
+              value={oldPassword}
+              onChange={e => setOldPassword(e.target.value)}
+              placeholder="••••••••"
+              className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>
+              Новый пароль
+            </label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+              placeholder="Минимум 6 символов"
+              className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>
+              Подтвердите пароль
+            </label>
+            <input
+              type="password"
+              value={confirmPass}
+              onChange={e => setConfirmPass(e.target.value)}
+              placeholder="Повторите новый пароль"
+              className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }}
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={handleSave}
+              disabled={loading || success}
+              className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white hover:opacity-90 transition disabled:opacity-60"
+              style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
+            >
+              {loading ? 'Сохранение...' : 'Сменить пароль'}
+            </button>
+            <button
+              onClick={onClose}
+              className="px-4 py-2.5 rounded-xl text-sm transition hover:opacity-80"
+              style={{ border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────
+async function uploadToImgbb(file: File): Promise<string> {
+  if (!IMGBB_KEY) throw new Error('NEXT_PUBLIC_IMGBB_KEY не задан в .env.local');
+  const form = new FormData();
+  form.append('image', file);
+  const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`, {
+    method: 'POST',
+    body: form,
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error?.message || 'Ошибка загрузки изображения');
+  return data.data.url as string;
+}
+
+// ──────────────────────────────────────────────────────────────────
 export default function ProfilePage() {
   const router = useRouter();
-  const [user, setUser]         = useState<User | null>(null);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState('');
-  const [editOpen, setEditOpen] = useState(false);
+  const [user, setUser]               = useState<User | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState('');
+  const [editOpen, setEditOpen]       = useState(false);
+  const [passOpen, setPassOpen]       = useState(false);
+  const [avatarLoading, setAvatarLoading] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -232,6 +393,41 @@ export default function ProfilePage() {
   const handleLogout = () => {
     ['token', 'user_id', 'username', 'email'].forEach(k => localStorage.removeItem(k));
     router.push('/');
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setAvatarError('Выберите изображение'); return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setAvatarError('Файл слишком большой (макс. 5 МБ)'); return;
+    }
+    setAvatarLoading(true);
+    setAvatarError('');
+    try {
+      const url = await uploadToImgbb(file);
+      const token = localStorage.getItem('token');
+      const res = await axios.patch(
+        `${API_BASE}/users/me`,
+        { avatar_url: url },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      setUser(res.data);
+      // Синхронизируем с localStorage для Navbar
+      localStorage.setItem('avatar_url', url);
+      window.dispatchEvent(new Event('avatar:updated'));
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setAvatarError(err.message);
+      } else {
+        setAvatarError('Не удалось загрузить фото');
+      }
+    }
+    setAvatarLoading(false);
+    // Сбрасываем input, чтобы можно было выбрать тот же файл повторно
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   // ── skeleton ──
@@ -268,7 +464,6 @@ export default function ProfilePage() {
   );
 
   const initials = user?.username?.slice(0, 2).toUpperCase() || 'U';
-  // Парсим id из БД: "concert,cinema" → ['concert', 'cinema']
   const interestIds = user?.interests
     ? user.interests.split(',').map(s => s.trim()).filter(Boolean)
     : [];
@@ -277,13 +472,16 @@ export default function ProfilePage() {
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
 
-      {/* Modal */}
+      {/* Modals */}
       {editOpen && user && (
         <EditProfileModal
           user={user}
           onSave={updated => { setUser(updated); setEditOpen(false); }}
           onClose={() => setEditOpen(false)}
         />
+      )}
+      {passOpen && (
+        <ChangePasswordModal onClose={() => setPassOpen(false)} />
       )}
 
       <main className="container mx-auto px-4 py-10 max-w-4xl">
@@ -296,18 +494,53 @@ export default function ProfilePage() {
           <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
             {/* Avatar */}
             <div className="relative shrink-0">
-              <div
-                className="w-24 h-24 rounded-full flex items-center justify-center text-3xl font-black shadow-lg"
-                style={{ background: 'linear-gradient(135deg, var(--primary) 0%, #a855f7 100%)', color: '#fff' }}
-              >
-                {initials}
-              </div>
+              {user?.avatar_url ? (
+                <img
+                  src={user.avatar_url}
+                  alt={user.username}
+                  className="w-24 h-24 rounded-full object-cover shadow-lg"
+                />
+              ) : (
+                <div
+                  className="w-24 h-24 rounded-full flex items-center justify-center text-3xl font-black shadow-lg"
+                  style={{ background: 'linear-gradient(135deg, var(--primary) 0%, #a855f7 100%)', color: '#fff' }}
+                >
+                  {initials}
+                </div>
+              )}
               {user?.is_active && (
                 <span
                   className="absolute bottom-1 right-1 w-4 h-4 rounded-full border-2"
                   style={{ background: 'var(--success)', borderColor: 'var(--surface)' }}
                 />
               )}
+              {/* Кнопка загрузки аватара */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={avatarLoading}
+                className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition hover:opacity-90 disabled:opacity-60"
+                style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', color: '#fff' }}
+                title="Загрузить фото"
+              >
+                {avatarLoading ? (
+                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                    <circle cx="12" cy="13" r="4"/>
+                  </svg>
+                )}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleAvatarUpload}
+              />
             </div>
 
             {/* Info */}
@@ -324,6 +557,10 @@ export default function ProfilePage() {
               </div>
 
               <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>{user?.email}</p>
+
+              {avatarError && (
+                <p className="text-xs mt-1" style={{ color: 'var(--error)' }}>{avatarError}</p>
+              )}
 
               <div className="flex flex-wrap justify-center sm:justify-start gap-2 mt-4">
                 {user?.city && (
@@ -358,7 +595,6 @@ export default function ProfilePage() {
                 </p>
               )}
 
-              {/* Теги интересов: отображаем label по id через getInterestLabel */}
               {interestIds.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-3">
                   {interestIds.map(id => (
@@ -415,6 +651,7 @@ export default function ProfilePage() {
               ✏️ Редактировать профиль
             </button>
             <button
+              onClick={() => setPassOpen(true)}
               className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition hover:opacity-80"
               style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
             >

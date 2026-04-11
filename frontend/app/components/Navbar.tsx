@@ -52,6 +52,7 @@ export default function Navbar() {
   const pathname = usePathname();
   const isActive = (href: string) => pathname === href;
   const [pendingCount, setPendingCount] = useState(0);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   const fetchPending = useCallback(async () => {
     if (!token) return;
@@ -66,6 +67,34 @@ export default function Navbar() {
       }
     } catch {}
   }, [token]);
+
+  // Загружаем аватар пользователя один раз при авторизации
+  useEffect(() => {
+    if (!token) { setAvatarUrl(null); return; }
+    // Сначала читаем из localStorage (быстро, без запроса)
+    const cached = localStorage.getItem('avatar_url');
+    if (cached) setAvatarUrl(cached);
+    // Затем синхронизируем с сервером
+    fetch(`${API_BASE}/users/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        const url: string | null = data?.avatar_url ?? null;
+        setAvatarUrl(url);
+        if (url) localStorage.setItem('avatar_url', url);
+        else localStorage.removeItem('avatar_url');
+      })
+      .catch(() => {});
+  }, [token]);
+
+  // Обновляем аватар когда пользователь меняет его на странице профиля
+  useEffect(() => {
+    const onAvatarUpdated = () => {
+      const url = localStorage.getItem('avatar_url');
+      setAvatarUrl(url);
+    };
+    window.addEventListener('avatar:updated', onAvatarUpdated);
+    return () => window.removeEventListener('avatar:updated', onAvatarUpdated);
+  }, []);
 
   useEffect(() => {
     fetchPending();
@@ -139,14 +168,34 @@ export default function Navbar() {
                 <span className="font-semibold" style={{ color: 'var(--text)' }}>{user.username}</span>!
               </span>
 
+              {/* ── Профиль с аватаром ── */}
               <Link
                 href="/profile"
-                className="text-sm font-medium px-3 py-1.5 rounded-xl transition"
+                className="flex items-center gap-1.5 text-sm font-medium px-2 py-1.5 rounded-xl transition"
                 style={{
                   color: isActive('/profile') ? 'var(--text-inverse)' : 'var(--primary)',
                   background: isActive('/profile') ? 'var(--primary)' : 'var(--primary-hl)',
                 }}
               >
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt={user.username}
+                    className="w-6 h-6 rounded-full object-cover shrink-0"
+                  />
+                ) : (
+                  <span
+                    className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0"
+                    style={{
+                      background: isActive('/profile')
+                        ? 'rgba(255,255,255,0.25)'
+                        : 'linear-gradient(135deg, var(--primary), #a855f7)',
+                      color: '#fff',
+                    }}
+                  >
+                    {user.username.slice(0, 1).toUpperCase()}
+                  </span>
+                )}
                 Профиль
               </Link>
 

@@ -8,7 +8,7 @@ from database import engine, SessionLocal
 from models.user import User
 from schemas import UserCreate, UserResponse, UserUpdate
 from schemas import UserLogin, Token
-from auth import hash_password
+from auth import hash_password, verify_password
 from auth import authenticate_user, create_user_token
 import models.user
 import models.event
@@ -296,6 +296,17 @@ def update_profile(
     db: Session = Depends(get_db),
 ):
     user = get_current_user_from_token(token, db)
+
+    # ── Смена пароля ──
+    if data.new_password is not None:
+        if not data.old_password:
+            raise HTTPException(status_code=400, detail="Укажите текущий пароль")
+        if not verify_password(data.old_password, user.hashed_password):
+            raise HTTPException(status_code=400, detail="Неверный текущий пароль")
+        if len(data.new_password) < 6:
+            raise HTTPException(status_code=400, detail="Новый пароль должен быть не менее 6 символов")
+        user.hashed_password = hash_password(data.new_password)
+
     if data.username is not None:
         data.username = data.username.strip()
         if not data.username:
@@ -307,6 +318,13 @@ def update_profile(
         user.bio = data.bio.strip()[:200] or None
     if data.interests is not None:
         user.interests = data.interests.strip() or None
+
+    # ── Аватар ──
+    if data.avatar_url is not None:
+        if data.avatar_url and not data.avatar_url.startswith("https://"):
+            raise HTTPException(status_code=400, detail="avatar_url должен начинаться с https://")
+        user.avatar_url = data.avatar_url or None
+
     db.commit()
     db.refresh(user)
     return user
@@ -489,6 +507,7 @@ class AttendeeOut(BaseModel):
     comment: Optional[str]
     is_looking: bool
     created_at: datetime
+    avatar_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -537,6 +556,7 @@ def join_event(
         comment=row.comment,
         is_looking=row.is_looking,
         created_at=created_at,
+        avatar_url=user.avatar_url,
     )
 
 
@@ -597,6 +617,7 @@ def get_matches(
             is_looking=a.is_looking,
             created_at=a.created_at or datetime.utcnow(),
             common_count=common,
+            avatar_url=u.avatar_url,
         ))
 
     result.sort(key=lambda x: x.common_count, reverse=True)
@@ -621,6 +642,7 @@ def get_attendees(
             interests=u.interests, comment=a.comment,
             is_looking=a.is_looking,
             created_at=a.created_at or datetime.utcnow(),
+            avatar_url=u.avatar_url,
         )
         for a, u in rows
     ]

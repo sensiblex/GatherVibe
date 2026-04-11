@@ -31,6 +31,7 @@ class UserResponse(BaseModel):
     city: Optional[str]
     interests: Optional[str]
     bio: Optional[str] = None
+    avatar_url: Optional[str] = None
     is_active: bool
 
     class Config:
@@ -42,6 +43,9 @@ class UserUpdate(BaseModel):
     city: Optional[str] = None
     bio: Optional[str] = None
     interests: Optional[str] = None
+    old_password: Optional[str] = None
+    new_password: Optional[str] = None
+    avatar_url: Optional[str] = None
 
 
 class EventBase(BaseModel):

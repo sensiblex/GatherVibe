@@ -12,3 +12,4 @@ class User(Base):
     interests = Column(String, nullable=True)
     bio = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
+    avatar_url = Column(String, nullable=True)
