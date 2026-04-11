@@ -24,8 +24,8 @@ class PartyMember(Base):
     id = Column(Integer, primary_key=True, index=True)
     party_id = Column(Integer, ForeignKey("event_parties.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    # pending → creator accepts/rejects
-    status = Column(String(10), default="pending")  # 'pending' | 'accepted' | 'rejected'
+    # pending → creator accepts/rejects; left → member left voluntarily
+    status = Column(String(10), default="pending")  # 'pending' | 'accepted' | 'rejected' | 'left'
     joined_at = Column(DateTime(timezone=True), server_default=func.now())
     message = Column(String(100), nullable=True)  # optional short message when joining
 

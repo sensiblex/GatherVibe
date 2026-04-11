@@ -24,7 +24,16 @@ from models.event import Event
 from schemas import EventCreate, EventResponse, EventUpdate
 import kudago_api
 from pydantic import BaseModel, Field
+from enum import Enum
 import time
+
+
+class MemberStatus(str, Enum):
+    """Допустимые статусы участника компании (party_members.status)."""
+    pending  = "pending"
+    accepted = "accepted"
+    rejected = "rejected"
+    left     = "left"
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
@@ -345,6 +354,35 @@ def update_profile(
     db.commit()
     db.refresh(user)
     return user
+
+
+# ===== USER PARTIES =====
+
+@app.get("/users/me/parties", response_model=List[PartyOut])
+def get_my_parties(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Возвращает все компании пользователя: созданные им + те, где он принятый участник."""
+    user = get_current_user_from_token(token, db)
+
+    # Компании, созданные пользователем
+    created = db.query(EventParty).filter(EventParty.creator_id == user.id).all()
+
+    # Компании, где пользователь — принятый участник (но не создатель)
+    member_party_ids = db.query(PartyMember.party_id).filter(
+        PartyMember.user_id == user.id,
+        PartyMember.status == MemberStatus.accepted,
+    ).all()
+    member_parties = db.query(EventParty).filter(
+        EventParty.id.in_([r[0] for r in member_party_ids]),
+        EventParty.creator_id != user.id,
+    ).all()
+
+    # Объединяем без дублей, сортируем по дате создания (новые первые)
+    all_parties = list({p.id: p for p in created + member_parties}.values())
+    all_parties.sort(key=lambda p: p.created_at or datetime.min, reverse=True)
+    return [_build_party_out(p, db) for p in all_parties]
 
 
 # ===== MESSAGES (chat history) =====
@@ -817,7 +855,7 @@ class PartyMemberOut(BaseModel):
     username: str
     city: Optional[str]
     interests: Optional[str]
-    status: str
+    status: MemberStatus
     joined_at: datetime
     message: Optional[str] = None
 
@@ -846,7 +884,7 @@ def _build_party_out(party: EventParty, db: Session) -> PartyOut:
     members_rows = db.query(PartyMember, User).join(User, PartyMember.user_id == User.id).filter(
         PartyMember.party_id == party.id,
         PartyMember.user_id != party.creator_id,
-        PartyMember.status.in_(['pending', 'accepted'])
+        PartyMember.status.in_([MemberStatus.pending, MemberStatus.accepted])
     ).all()
     members = [
         PartyMemberOut(user_id=u.id, username=u.username, city=u.city,
@@ -865,13 +903,13 @@ def _build_party_out(party: EventParty, db: Session) -> PartyOut:
 
 def _check_and_close_party(party: EventParty, db: Session) -> None:
     """Проверяет вместимость партии. Вызывается ПОСЛЕ db.flush() с уже записанным
-    member.status = "accepted", поэтому считаем всех принятых напрямую.
+    member.status = MemberStatus.accepted, поэтому считаем всех принятых напрямую.
     """
     # Считаем все accepted-строки в party_members (новый участник уже виден через flush)
     accepted_total = (
         db.query(PartyMember).filter(
             PartyMember.party_id == party.id,
-            PartyMember.status == "accepted",
+            PartyMember.status == MemberStatus.accepted,
         ).count()
         + 1  # +1 за создателя — у него нет строки в party_members
     )
@@ -911,7 +949,7 @@ def get_my_pending_requests(
         .join(EventParty, PartyMember.party_id == EventParty.id)
         .filter(
             EventParty.creator_id == current_user.id,
-            PartyMember.status == "pending",
+            PartyMember.status == MemberStatus.pending,
             PartyMember.user_id != current_user.id,
         )
         .order_by(PartyMember.joined_at.desc())
@@ -950,6 +988,15 @@ def get_party_detail_public(party_id: int, db: Session = Depends(get_db)):
 
 @app.get("/parties/{event_id}", response_model=List[PartyOut])
 def get_parties(event_id: str, db: Session = Depends(get_db)):
+    # Для локальных событий (числовой event_id) — не показываем компании
+    # если событие уже прошло
+    try:
+        local_event = db.query(Event).filter(Event.id == int(event_id)).first()
+        if local_event and local_event.date_time < datetime.utcnow():
+            return []
+    except (ValueError, TypeError):
+        pass  # event_id — строка KudaGo, пропускаем проверку
+
     parties = db.query(EventParty).filter(EventParty.event_id == event_id).order_by(
         EventParty.created_at.desc()
     ).all()
@@ -972,7 +1019,7 @@ async def approve_request(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может принимать участников")
-    member.status = "accepted"
+    member.status = MemberStatus.accepted
     db.flush()                        # делаем статус видимым для _check_and_close_party
     _check_and_close_party(party, db)
     db.commit()
@@ -1001,7 +1048,7 @@ async def reject_request(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может отклонять заявки")
-    member.status = 'rejected'
+    member.status = MemberStatus.rejected
     db.commit()
     # Уведомляем заявителя об отклонении
     await sio.emit(
@@ -1022,6 +1069,17 @@ def create_party(
     user = get_current_user_from_token(token, db)
     if body.max_members < 2 or body.max_members > 20:
         raise HTTPException(status_code=400, detail="max_members must be between 2 and 20")
+    # Защита от дублей: не более 2 открытых компаний на одного создателя на одно событие
+    existing_count = db.query(EventParty).filter(
+        EventParty.event_id == event_id,
+        EventParty.creator_id == user.id,
+        EventParty.is_open == True,
+    ).count()
+    if existing_count >= 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя создать более 2 активных компаний для одного события",
+        )
     party = EventParty(
         event_id=event_id,
         title=body.title.strip(),
@@ -1059,7 +1117,7 @@ def update_party(
         if body.max_members < 2 or body.max_members > 20:
             raise HTTPException(status_code=400, detail="max_members должно быть от 2 до 20")
         accepted_count = db.query(PartyMember).filter(
-            PartyMember.party_id == party_id, PartyMember.status == "accepted",
+            PartyMember.party_id == party_id, PartyMember.status == MemberStatus.accepted,
             PartyMember.user_id != party.creator_id
         ).count()
         if body.max_members < accepted_count + 1:
@@ -1073,7 +1131,7 @@ def update_party(
 
 
 @app.delete("/parties/{party_id}", status_code=200)
-def delete_party(
+async def delete_party(
     party_id: int,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -1084,6 +1142,12 @@ def delete_party(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может удалить компанию")
+    # Уведомляем всех участников о роспуске компании до удаления
+    await sio.emit(
+        "party_deleted",
+        {"party_id": party.id, "party_title": party.title},
+        room=f"party_{party.id}",
+    )
     db.query(PartyMember).filter(PartyMember.party_id == party_id).delete()
     db.delete(party)
     db.commit()
@@ -1103,18 +1167,25 @@ async def join_party(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if not party.is_open:
         raise HTTPException(status_code=400, detail="Набор закрыт")
+    # Проверяем, что событие ещё не прошло (только для локальных событий)
+    try:
+        local_event = db.query(Event).filter(Event.id == int(party.event_id)).first()
+        if local_event and local_event.date_time < datetime.utcnow():
+            raise HTTPException(status_code=400, detail="Событие уже прошло")
+    except (ValueError, TypeError):
+        pass  # event_id — строка KudaGo, пропускаем проверку
     accepted_count = db.query(PartyMember).filter(
-        PartyMember.party_id == party_id, PartyMember.status == "accepted"
+        PartyMember.party_id == party_id, PartyMember.status == MemberStatus.accepted
     ).count()
-        # +1 за создателя (он всегда занимает слот); pending не считается в лимит
+    # +1 за создателя (он всегда занимает слот); pending не считается в лимит
     if accepted_count + 1 >= party.max_members:
         raise HTTPException(status_code=400, detail="Компания заполнена")
     existing = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.user_id == user.id
     ).first()
     if existing:
-        if existing.status == 'rejected':
-            existing.status = 'pending'
+        if existing.status == MemberStatus.rejected:
+            existing.status = MemberStatus.pending
             existing.message = body.message
             db.commit()
             await sio.emit(
@@ -1124,8 +1195,8 @@ async def join_party(
                 room=f"creator_{party.creator_id}",
             )
             return _build_party_out(party, db)
-        elif existing.status == 'left':
-            existing.status = 'pending'
+        elif existing.status == MemberStatus.left:
+            existing.status = MemberStatus.pending
             existing.message = body.message
             db.commit()
             await sio.emit(
@@ -1135,7 +1206,7 @@ async def join_party(
                 room=f"creator_{party.creator_id}",
             )
             return _build_party_out(party, db)
-        elif existing.status in ['pending', 'accepted']:
+        elif existing.status in [MemberStatus.pending, MemberStatus.accepted]:
             raise HTTPException(status_code=400, detail="Вы уже в этой компании или подали заявку")
     m = PartyMember(party_id=party_id, user_id=user.id, status="pending", message=body.message)
     db.add(m)
@@ -1166,9 +1237,9 @@ def leave_party(
     ).first()
     if not member:
         raise HTTPException(status_code=404, detail="Вы не состоите в этой компании")
-    if member.status == 'rejected':
+    if member.status == MemberStatus.rejected:
         raise HTTPException(status_code=400, detail="Вы не являетесь участником компании")
-    member.status = 'left'
+    member.status = MemberStatus.left
     db.commit()
     return {"ok": True}
 
@@ -1196,14 +1267,14 @@ def kick_member(
     ).first()
     if not member:
         raise HTTPException(status_code=404, detail="Участник не найден в компании")
-    if member.status != 'accepted':
+    if member.status != MemberStatus.accepted:
         raise HTTPException(status_code=400, detail="Можно исключить только принятого участника")
-    member.status = 'rejected'
+    member.status = MemberStatus.rejected
     # Если компания была закрыта из-за заполненности — снова открываем
     if not party.is_open:
         accepted_after = db.query(PartyMember).filter(
             PartyMember.party_id == party_id,
-            PartyMember.status == 'accepted',
+            PartyMember.status == MemberStatus.accepted,
             PartyMember.user_id != user_id,
             PartyMember.user_id != party.creator_id,
         ).count()
@@ -1232,7 +1303,7 @@ async def accept_member(
     ).first()
     if not m:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    m.status = "accepted"
+    m.status = MemberStatus.accepted
     db.flush()                        # делаем статус видимым для _check_and_close_party
     _check_and_close_party(party, db)
     db.commit()
@@ -1263,7 +1334,7 @@ async def reject_member(
     ).first()
     if not m:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    m.status = 'rejected'
+    m.status = MemberStatus.rejected
     db.commit()
     # Уведомляем заявителя об отклонении
     await sio.emit(
