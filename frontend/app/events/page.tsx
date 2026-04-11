@@ -43,14 +43,14 @@ const RU_MONTHS = [
 const RU_DAYS_SHORT = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
 
 function EventCalendar({
-  events, selectedDate, onSelectDate,
+  events, selectedDate, onSelectDate, todayStr,
 }: {
   events: KudaGoEvent[];
   selectedDate: string | null;
   onSelectDate: (d: string | null) => void;
+  todayStr: string;
 }) {
   const today = new Date();
-  const todayStr = localIsoDate(today);
   const [viewYear, setViewYear]   = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
 
@@ -139,6 +139,7 @@ function EventCalendar({
               key={idx}
               onClick={() => handleDay(day)}
               disabled={isPast && !hasEvent}
+              suppressHydrationWarning
               className="relative flex flex-col items-center justify-center h-9 w-full rounded-xl text-xs font-semibold transition"
               style={{ background: bg, color, outline: ring ? `${ring}` : undefined, cursor: isPast && !hasEvent ? 'not-allowed' : 'pointer' }}
             >
@@ -201,7 +202,7 @@ export default function EventsPage() {
   const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sentinelRef  = useRef<HTMLDivElement>(null);
   const loadingRef   = useRef(false);
-  const [todayStr, setTodayStr] = useState(localIsoDate(new Date()));
+  const [todayStr, setTodayStr] = useState('');
   const router = useRouter();
 
   useEffect(() => {
@@ -481,6 +482,7 @@ export default function EventsPage() {
             <div className="flex items-center gap-1.5">
               <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>С</label>
               <input type="date" value={dateFrom} min={todayStr}
+                suppressHydrationWarning
                 onChange={e => {
                   setDateFrom(e.target.value);
                   setCalSelectedDate(null);
@@ -497,6 +499,7 @@ export default function EventsPage() {
             <div className="flex items-center gap-1.5">
               <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>По</label>
               <input type="date" value={dateTo} min={dateFrom || todayStr}
+                suppressHydrationWarning
                 onChange={e => {
                   setDateTo(e.target.value);
                   setCalSelectedDate(null);
@@ -562,6 +565,7 @@ export default function EventsPage() {
                   events={allEvents}
                   selectedDate={calSelectedDate}
                   onSelectDate={handleCalendarDate}
+                  todayStr={todayStr}
                 />
               )}
 

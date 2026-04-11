@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Dict, List, Optional
 from datetime import datetime
 
 
@@ -48,11 +48,24 @@ class UserUpdate(BaseModel):
     avatar_url: Optional[str] = None
 
 
+ALLOWED_REVIEW_TAGS: List[str] = [
+    "Пунктуальный",
+    "Общительный",
+    "Весёлый",
+    "Надёжный",
+    "Культурный",
+    "Интересный собеседник",
+    "Помогает другим",
+    "Позитивный",
+]
+
+
 class ReviewCreate(BaseModel):
     reviewed_id: int
     party_id: int
     rating: int  # 1-5
     text: Optional[str] = None
+    tags: Optional[List[str]] = None  # max 3 from ALLOWED_REVIEW_TAGS
 
 
 class ReviewOut(BaseModel):
@@ -62,6 +75,7 @@ class ReviewOut(BaseModel):
     reviewer_avatar_url: Optional[str] = None
     rating: int
     text: Optional[str] = None
+    tags: Optional[List[str]] = None
     created_at: datetime
 
     class Config:
@@ -71,7 +85,9 @@ class ReviewOut(BaseModel):
 class ReviewSummary(BaseModel):
     avg_rating: Optional[float]
     total_reviews: int
-    reviews: list[ReviewOut]
+    reviews: List[ReviewOut]
+    stars_distribution: Dict[int, int]  # {1: count, 2: count, ...}
+    top_tags: List[str]                  # up to 5 most frequent tags
 
 
 class ReviewableUser(BaseModel):
@@ -79,6 +95,11 @@ class ReviewableUser(BaseModel):
     username: str
     avatar_url: Optional[str] = None
     party_id: int
+    event_id: str
+
+
+class ReviewReport(BaseModel):
+    reason: Optional[str] = None
 
 
 class EventBase(BaseModel):

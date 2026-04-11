@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Integer, JSON, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.sql import func
 from database import Base
 
@@ -10,9 +10,12 @@ class PartyReview(Base):
     id = Column(Integer, primary_key=True, index=True)
     reviewer_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     reviewed_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    party_id = Column(Integer, ForeignKey("event_parties.id", ondelete="CASCADE"), nullable=False)
+    party_id = Column(Integer, ForeignKey("event_parties.id", ondelete="CASCADE", use_alter=True, name="fk_party_reviews_party_id"), nullable=False)
     rating = Column(Integer, nullable=False)  # 1-5
     text = Column(Text, nullable=True)
+    tags = Column(JSON, nullable=True)           # list[str], max 3 from allowed set
+    is_hidden = Column(Boolean, server_default='false', nullable=False, default=False)
+    report_count = Column(Integer, server_default='0', nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (

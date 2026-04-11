@@ -26,6 +26,7 @@ interface ReviewOut {
   reviewer_avatar_url: string | null;
   rating: number;
   text: string | null;
+  tags: string[] | null;
   created_at: string;
 }
 
@@ -33,6 +34,8 @@ interface ReviewSummary {
   avg_rating: number | null;
   total_reviews: number;
   reviews: ReviewOut[];
+  stars_distribution: Record<number, number>;
+  top_tags: string[];
 }
 
 function parseInterests(raw: string | null): string[] {
@@ -93,6 +96,20 @@ export default function UserProfilePage() {
   const [profile, setProfile] = useState<PublicUser | null>(null);
   const [status, setStatus] = useState<'loading' | 'ok' | 'notfound' | 'error'>('loading');
   const [reviewSummary, setReviewSummary] = useState<ReviewSummary | null>(null);
+  const [reportedIds, setReportedIds] = useState<Set<number>>(new Set());
+
+  async function handleReport(reviewId: number) {
+    try {
+      await apiFetch(`${API_BASE}/reviews/${reviewId}/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      setReportedIds(prev => new Set(prev).add(reviewId));
+    } catch {
+      // silently ignore
+    }
+  }
 
   useEffect(() => {
     if (!userId) return;
@@ -267,70 +284,164 @@ export default function UserProfilePage() {
             </div>
 
             {/* ── Reviews block ── */}
-            {reviewSummary && reviewSummary.total_reviews > 0 && (
-              <div
-                className="rounded-3xl p-6"
-                style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}
-              >
-                {/* Header */}
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-black" style={{ color: 'var(--text)' }}>
-                    ⭐ Отзывы
-                  </h2>
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl font-black" style={{ color: 'var(--primary)' }}>
-                      {reviewSummary.avg_rating?.toFixed(1)}
-                    </span>
-                    <div className="flex gap-0.5">
-                      {[1, 2, 3, 4, 5].map(star => (
-                        <span key={star} className="text-base">
-                          {star <= Math.round(reviewSummary.avg_rating ?? 0) ? '⭐' : '☆'}
+            <div
+              className="rounded-3xl p-6"
+              style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}
+            >
+              <h2 className="text-lg font-black mb-4" style={{ color: 'var(--text)' }}>
+                Отзывы
+              </h2>
+
+              {!reviewSummary || reviewSummary.total_reviews === 0 ? (
+                /* Empty state */
+                <div className="text-center py-8">
+                  <p className="text-4xl mb-3">💬</p>
+                  <p className="font-semibold text-sm" style={{ color: 'var(--text-muted)' }}>
+                    Отзывов пока нет
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-faint, #aaa)' }}>
+                    Отзывы появляются после совместных посещений событий
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Rating summary */}
+                  <div className="flex items-start gap-6 mb-5">
+                    <div className="text-center shrink-0">
+                      <p className="text-4xl font-black" style={{ color: 'var(--primary)' }}>
+                        {reviewSummary.avg_rating?.toFixed(1)}
+                      </p>
+                      <div className="flex gap-0.5 justify-center mt-1">
+                        {[1, 2, 3, 4, 5].map(star => (
+                          <svg key={star} width="14" height="14" viewBox="0 0 24 24"
+                            fill={star <= Math.round(reviewSummary.avg_rating ?? 0) ? '#f59e0b' : 'none'}
+                            stroke={star <= Math.round(reviewSummary.avg_rating ?? 0) ? '#f59e0b' : '#9ca3af'}
+                            strokeWidth="2">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                          </svg>
+                        ))}
+                      </div>
+                      <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                        {reviewSummary.total_reviews} отзыв{reviewSummary.total_reviews === 1 ? '' : reviewSummary.total_reviews < 5 ? 'а' : 'ов'}
+                      </p>
+                    </div>
+
+                    {/* Stars distribution bars */}
+                    <div className="flex-1 space-y-1">
+                      {[5, 4, 3, 2, 1].map(star => {
+                        const count = reviewSummary.stars_distribution[star] ?? 0;
+                        const pct = reviewSummary.total_reviews > 0
+                          ? (count / reviewSummary.total_reviews) * 100
+                          : 0;
+                        return (
+                          <div key={star} className="flex items-center gap-2">
+                            <span className="text-xs w-3 shrink-0 text-right" style={{ color: 'var(--text-muted)' }}>
+                              {star}
+                            </span>
+                            <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
+                              <div
+                                className="h-full rounded-full"
+                                style={{ width: `${pct}%`, background: '#f59e0b' }}
+                              />
+                            </div>
+                            <span className="text-xs w-5 shrink-0" style={{ color: 'var(--text-faint, #aaa)' }}>
+                              {count}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Top tags */}
+                  {reviewSummary.top_tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-5">
+                      {reviewSummary.top_tags.map(tag => (
+                        <span
+                          key={tag}
+                          className="text-xs px-2.5 py-1 rounded-full font-medium"
+                          style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
+                        >
+                          {tag}
                         </span>
                       ))}
                     </div>
-                    <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                      ({reviewSummary.total_reviews})
-                    </span>
-                  </div>
-                </div>
+                  )}
 
-                {/* Review list */}
-                <div className="space-y-3">
-                  {reviewSummary.reviews.map(review => (
-                    <div
-                      key={review.id}
-                      className="rounded-2xl p-4"
-                      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <Link
-                          href={`/users/${review.reviewer_id}`}
-                          className="text-sm font-bold transition hover:opacity-70"
-                          style={{ color: 'var(--primary)' }}
-                        >
-                          {review.reviewer_username}
-                        </Link>
-                        <div className="flex gap-0.5 ml-auto">
-                          {[1, 2, 3, 4, 5].map(star => (
-                            <span key={star} className="text-sm">
-                              {star <= review.rating ? '⭐' : '☆'}
+                  {/* Review list */}
+                  <div className="space-y-3">
+                    {reviewSummary.reviews.map(review => (
+                      <div
+                        key={review.id}
+                        className="rounded-2xl p-4"
+                        style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <Link
+                            href={`/users/${review.reviewer_id}`}
+                            className="text-sm font-bold transition hover:opacity-70"
+                            style={{ color: 'var(--primary)' }}
+                          >
+                            {review.reviewer_username}
+                          </Link>
+                          <div className="flex gap-0.5 ml-auto">
+                            {[1, 2, 3, 4, 5].map(star => (
+                              <svg key={star} width="13" height="13" viewBox="0 0 24 24"
+                                fill={star <= review.rating ? '#f59e0b' : 'none'}
+                                stroke={star <= review.rating ? '#f59e0b' : '#9ca3af'}
+                                strokeWidth="2">
+                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                              </svg>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Tags on review */}
+                        {review.tags && review.tags.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {review.tags.map(tag => (
+                              <span
+                                key={tag}
+                                className="text-[11px] px-2 py-0.5 rounded-full"
+                                style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {review.text && (
+                          <p className="text-sm mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                            {review.text}
+                          </p>
+                        )}
+
+                        <div className="flex items-center justify-between mt-2">
+                          <p className="text-xs" style={{ color: 'var(--text-faint, #aaa)' }}>
+                            {new Date(review.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
+                          </p>
+                          {me && me.id !== review.reviewer_id && !reportedIds.has(review.id) && (
+                            <button
+                              onClick={() => handleReport(review.id)}
+                              className="text-xs transition hover:opacity-70"
+                              style={{ color: 'var(--text-faint, #aaa)' }}
+                            >
+                              Пожаловаться
+                            </button>
+                          )}
+                          {reportedIds.has(review.id) && (
+                            <span className="text-xs" style={{ color: 'var(--text-faint, #aaa)' }}>
+                              Жалоба отправлена
                             </span>
-                          ))}
+                          )}
                         </div>
                       </div>
-                      {review.text && (
-                        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-                          {review.text}
-                        </p>
-                      )}
-                      <p className="text-xs mt-2" style={{ color: 'var(--text-faint)' }}>
-                        {new Date(review.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* ── Footer link to events ── */}
             <p className="text-center text-sm" style={{ color: 'var(--text-muted)' }}>

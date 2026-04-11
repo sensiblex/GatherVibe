@@ -25,6 +25,31 @@ def _table_exists(table_name: str) -> bool:
 
 
 def upgrade() -> None:
+    if not _table_exists('event_parties'):
+        op.create_table(
+            'event_parties',
+            sa.Column('id', sa.Integer(), primary_key=True, index=True),
+            sa.Column('event_id', sa.String(), nullable=False, index=True),
+            sa.Column('title', sa.String(60), nullable=False),
+            sa.Column('description', sa.Text(), nullable=True),
+            sa.Column('max_members', sa.Integer(), server_default='4'),
+            sa.Column('creator_id', sa.Integer(), sa.ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
+            sa.Column('is_open', sa.Boolean(), server_default='true'),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        )
+
+    if not _table_exists('party_members'):
+        op.create_table(
+            'party_members',
+            sa.Column('id', sa.Integer(), primary_key=True, index=True),
+            sa.Column('party_id', sa.Integer(), sa.ForeignKey('event_parties.id', ondelete='CASCADE'), nullable=False),
+            sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id', ondelete='CASCADE'), nullable=False),
+            sa.Column('status', sa.String(10), server_default='pending'),
+            sa.Column('joined_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+            sa.Column('message', sa.String(100), nullable=True),
+            sa.UniqueConstraint('party_id', 'user_id', name='uq_party_user'),
+        )
+
     if _table_exists('party_reviews'):
         return
     op.create_table(

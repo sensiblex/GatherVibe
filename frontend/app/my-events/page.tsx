@@ -51,13 +51,10 @@ export default function MyEventsPage() {
       // Group reviewable users by party_id, then map to event_id via past events
       // We don't have event_id in ReviewableUser, so we group by party_id and store under
       // a synthetic key. We'll match past events by checking if any reviewable exists.
-      // Since backend returns party_id, we create a flat list and group by party_id.
-      // For the UI we need to know: for a given event_id, which users are reviewable?
-      // We'll use the past events list as context. We create a "any reviewable" flag per event,
-      // and open ReviewModal with ALL reviewable users for simplicity (no cross-party confusion).
+      // Group reviewable users by event_id
       const grouped: Record<string, ReviewableUser[]> = {};
       for (const u of reviewable) {
-        const key = String(u.party_id);
+        const key = u.event_id;
         if (!grouped[key]) grouped[key] = [];
         grouped[key].push(u);
       }
@@ -68,16 +65,13 @@ export default function MyEventsPage() {
   // All reviewable users (flat), used to associate with past event cards.
   // Since ReviewableUser has party_id but we display per event card,
   // we show the button on any past card if there are unreviewed users at all.
-  // After review we refresh the reviewable list.
-  const allReviewable: ReviewableUser[] = Object.values(reviewableByEvent).flat();
-
   function refreshReviewable() {
     apiFetch(`${API_BASE}/users/me/reviewable`)
       .then(r => r.json())
       .then((reviewable: ReviewableUser[]) => {
         const grouped: Record<string, ReviewableUser[]> = {};
         for (const u of reviewable) {
-          const key = String(u.party_id);
+          const key = u.event_id;
           if (!grouped[key]) grouped[key] = [];
           grouped[key].push(u);
         }
@@ -88,15 +82,8 @@ export default function MyEventsPage() {
 
   const list = activeTab === 'upcoming' ? (data?.upcoming ?? []) : (data?.past ?? []);
 
-  // For a past event card, get its reviewable users via party membership.
-  // Since we don't have a direct event_id→party_id mapping here,
-  // we show the button on the first past card that has unreviewed people.
-  // A better UX: show button on ALL past event cards if any reviewable exists,
-  // opening the full reviewable list. This is acceptable per spec.
-  function getReviewableForEvent(_eventId: string): ReviewableUser[] {
-    // We can't map event_id to party_id here without extra data.
-    // Return all reviewable users — the modal sequences through them.
-    return allReviewable;
+  function getReviewableForEvent(eventId: string): ReviewableUser[] {
+    return reviewableByEvent[eventId] ?? [];
   }
 
   return (
@@ -244,9 +231,9 @@ export default function MyEventsPage() {
         )}
       </main>
 
-      {reviewingEventId && allReviewable.length > 0 && (
+      {reviewingEventId && getReviewableForEvent(reviewingEventId).length > 0 && (
         <ReviewModal
-          users={allReviewable}
+          users={getReviewableForEvent(reviewingEventId)}
           onClose={() => setReviewingEventId(null)}
           onAllReviewed={() => {
             setReviewingEventId(null);

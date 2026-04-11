@@ -580,6 +580,17 @@ export default function ProfilePage() {
   const [avatarLoading, setAvatarLoading] = useState(false);
   const [avatarError, setAvatarError] = useState('');
   const [activeTab, setActiveTab]     = useState<'info' | 'parties' | 'events'>('info');
+  const [reviewSummary, setReviewSummary] = useState<{
+    avg_rating: number | null;
+    total_reviews: number;
+    reviews: Array<{
+      id: number; reviewer_id: number; reviewer_username: string;
+      reviewer_avatar_url: string | null; rating: number;
+      text: string | null; tags: string[] | null; created_at: string;
+    }>;
+    stars_distribution: Record<number, number>;
+    top_tags: string[];
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -604,6 +615,15 @@ export default function ProfilePage() {
       .then((data: UserStats) => setStats(data))
       .catch(() => {});
   }, [router]);
+
+  // Fetch reviews once user.id is known
+  useEffect(() => {
+    if (!user?.id) return;
+    apiFetch(`${API_BASE}/users/${user.id}/reviews`)
+      .then(r => r.json())
+      .then(data => setReviewSummary(data))
+      .catch(() => {});
+  }, [user?.id]);
 
   const STATS = [
     { label: 'Создано групп',        value: String(stats?.parties_created ?? 0), emoji: '👥' },
@@ -827,6 +847,109 @@ export default function ProfilePage() {
             style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
             {activeTab === 'parties' && user && <MyPartiesTab userId={user.id} />}
             {activeTab === 'events' && <MyEventsTab />}
+          </div>
+        )}
+
+        {/* ── Reviews (info tab only) ── */}
+        {activeTab === 'info' && (
+          <div className="rounded-3xl p-6 mb-6"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-bold" style={{ color: 'var(--text)' }}>Отзывы обо мне</h2>
+              {user && (
+                <Link href={`/users/${user.id}`} className="text-xs font-medium transition hover:opacity-70"
+                  style={{ color: 'var(--primary)' }}>
+                  Публичный профиль →
+                </Link>
+              )}
+            </div>
+            {!reviewSummary || reviewSummary.total_reviews === 0 ? (
+              <div className="text-center py-6">
+                <p className="text-3xl mb-2">💬</p>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Отзывов пока нет</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-faint, #aaa)' }}>
+                  Они появятся после совместных событий
+                </p>
+              </div>
+            ) : (
+              <>
+                {/* Summary row */}
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-3xl font-black" style={{ color: 'var(--primary)' }}>
+                    {reviewSummary.avg_rating?.toFixed(1)}
+                  </span>
+                  <div className="flex gap-0.5">
+                    {[1, 2, 3, 4, 5].map(star => (
+                      <svg key={star} width="16" height="16" viewBox="0 0 24 24"
+                        fill={star <= Math.round(reviewSummary.avg_rating ?? 0) ? '#f59e0b' : 'none'}
+                        stroke={star <= Math.round(reviewSummary.avg_rating ?? 0) ? '#f59e0b' : '#9ca3af'}
+                        strokeWidth="2">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                      </svg>
+                    ))}
+                  </div>
+                  <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                    {reviewSummary.total_reviews} отзыв{reviewSummary.total_reviews === 1 ? '' : reviewSummary.total_reviews < 5 ? 'а' : 'ов'}
+                  </span>
+                </div>
+                {/* Top tags */}
+                {reviewSummary.top_tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-4">
+                    {reviewSummary.top_tags.map(tag => (
+                      <span key={tag} className="text-xs px-2.5 py-1 rounded-full font-medium"
+                        style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {/* Recent reviews */}
+                <div className="space-y-2">
+                  {reviewSummary.reviews.slice(0, 3).map(review => (
+                    <div key={review.id} className="rounded-2xl p-3"
+                      style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                      <div className="flex items-center gap-2">
+                        <Link href={`/users/${review.reviewer_id}`}
+                          className="text-sm font-bold hover:opacity-70 transition"
+                          style={{ color: 'var(--primary)' }}>
+                          {review.reviewer_username}
+                        </Link>
+                        <div className="flex gap-0.5 ml-auto">
+                          {[1, 2, 3, 4, 5].map(star => (
+                            <svg key={star} width="12" height="12" viewBox="0 0 24 24"
+                              fill={star <= review.rating ? '#f59e0b' : 'none'}
+                              stroke={star <= review.rating ? '#f59e0b' : '#9ca3af'}
+                              strokeWidth="2">
+                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                            </svg>
+                          ))}
+                        </div>
+                      </div>
+                      {review.tags && review.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {review.tags.map(tag => (
+                            <span key={tag} className="text-[11px] px-1.5 py-0.5 rounded-full"
+                              style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {review.text && (
+                        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>{review.text}</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {reviewSummary.total_reviews > 3 && user && (
+                  <Link href={`/users/${user.id}`}
+                    className="block text-center text-xs mt-3 font-medium transition hover:opacity-70"
+                    style={{ color: 'var(--primary)' }}>
+                    Смотреть все {reviewSummary.total_reviews} →
+                  </Link>
+                )}
+              </>
+            )}
           </div>
         )}
 

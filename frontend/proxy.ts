@@ -7,7 +7,7 @@ const PROTECTED_PREFIXES = ['/profile', '/notifications', '/my-events'];
 /** Routes that an already-authenticated user should be redirected away from */
 const AUTH_ONLY_ROUTES = ['/login', '/register'];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Read JWT from the `token` cookie (set by AuthContext on login)
