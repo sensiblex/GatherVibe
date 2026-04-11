@@ -852,7 +852,7 @@ def reject_request(
     return _build_party_out(party, db)
 
 
-@app.post("/parties/{party_id}", response_model=PartyOut)
+@app.post("/parties/event/{event_id}", response_model=PartyOut)
 def create_party(
     event_id: str,
     body: PartyCreateBody,

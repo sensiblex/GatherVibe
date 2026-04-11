@@ -8,6 +8,25 @@ import { useAuth } from '../../../context/AuthContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+function parseErrorDetail(detail: unknown): string {
+  if (!detail) return 'Ошибка создания';
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((e) => {
+        if (typeof e === 'object' && e !== null) {
+          const loc = (e as Record<string, unknown>).loc;
+          const msg = (e as Record<string, unknown>).msg;
+          const locStr = Array.isArray(loc) ? loc.join(' → ') : '';
+          return locStr ? `${locStr}: ${msg}` : String(msg ?? JSON.stringify(e));
+        }
+        return String(e);
+      })
+      .join('; ');
+  }
+  return JSON.stringify(detail);
+}
+
 export default function CreatePartyPage() {
   const params  = useParams();
   const router  = useRouter();
@@ -29,7 +48,7 @@ export default function CreatePartyPage() {
     if (!form.title.trim()) { setError('Название обязательно'); return; }
     setCreating(true); setError(null);
     try {
-      const res = await fetch(`${API_BASE}/parties/${eventId}`, {
+      const res = await fetch(`${API_BASE}/parties/event/${eventId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
@@ -40,7 +59,7 @@ export default function CreatePartyPage() {
       });
       if (!res.ok) {
         const data = await res.json();
-        setError(data.detail ?? 'Ошибка создания');
+        setError(parseErrorDetail(data.detail));
         setCreating(false);
         return;
       }
