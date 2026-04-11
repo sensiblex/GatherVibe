@@ -13,3 +13,6 @@ class User(Base):
     bio = Column(Text, nullable=True)
     is_active = Column(Boolean, default=True)
     avatar_url = Column(String, nullable=True)
+    show_email     = Column(Boolean, default=False)
+    show_city      = Column(Boolean, default=True)
+    show_interests = Column(Boolean, default=True)
