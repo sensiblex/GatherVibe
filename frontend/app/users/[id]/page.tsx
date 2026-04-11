@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Navbar from '../../components/Navbar';
 import { apiFetch } from '../../lib/apiFetch';
 import { useAuth } from '../../context/AuthContext';
+import { toast, ToastContainer } from '../../components/Toast';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -100,14 +101,22 @@ export default function UserProfilePage() {
 
   async function handleReport(reviewId: number) {
     try {
-      await apiFetch(`${API_BASE}/reviews/${reviewId}/report`, {
+      const res = await apiFetch(`${API_BASE}/reviews/${reviewId}/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
+      if (res.status === 409) {
+        toast('Вы уже жаловались на этот отзыв', 'error');
+        return;
+      }
+      if (!res.ok) {
+        toast('Не удалось отправить жалобу', 'error');
+        return;
+      }
       setReportedIds(prev => new Set(prev).add(reviewId));
     } catch {
-      // silently ignore
+      toast('Ошибка сети', 'error');
     }
   }
 
@@ -138,6 +147,7 @@ export default function UserProfilePage() {
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
+      <ToastContainer />
 
       <main className="container mx-auto px-4 py-10 max-w-3xl">
 

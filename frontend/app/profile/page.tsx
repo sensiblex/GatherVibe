@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import axios from 'axios';
 import { apiFetch } from '../lib/apiFetch';
 import Navbar from '../components/Navbar';
 import { INTERESTS_LIST, getInterestLabel } from '../lib/interests';
@@ -64,24 +63,24 @@ function EditProfileModal({
     setLoading(true);
     setError('');
     try {
-      const token = localStorage.getItem('token');
-      const res = await axios.patch(
-        `${API_BASE}/users/me`,
-        {
+      const res = await apiFetch(`${API_BASE}/users/me`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           username: username.trim(),
           city: city.trim() || null,
           bio: bio.trim() || null,
           interests: selectedInterests.length > 0 ? selectedInterests.join(',') : null,
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      onSave(res.data);
-    } catch (err: unknown) {
-      if (axios.isAxiosError(err)) {
-        setError(err.response?.data?.detail || 'Не удалось сохранить');
-      } else {
-        setError('Не удалось сохранить');
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setError(err.detail || 'Не удалось сохранить');
+        return;
       }
+      onSave(await res.json());
+    } catch {
+      setError('Не удалось сохранить');
     }
     setLoading(false);
   };
@@ -172,15 +171,20 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
     if (newPassword.length < 6) { setError('Новый пароль должен быть не менее 6 символов'); return; }
     setLoading(true); setError('');
     try {
-      const token = localStorage.getItem('token');
-      await axios.patch(`${API_BASE}/users/me`,
-        { old_password: oldPassword, new_password: newPassword },
-        { headers: { Authorization: `Bearer ${token}` } });
-      setSuccess(true);
-      setTimeout(onClose, 1200);
-    } catch (err: unknown) {
-      if (axios.isAxiosError(err)) setError(err.response?.data?.detail || 'Не удалось сменить пароль');
-      else setError('Не удалось сменить пароль');
+      const res = await apiFetch(`${API_BASE}/users/me`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setError(err.detail || 'Не удалось сменить пароль');
+      } else {
+        setSuccess(true);
+        setTimeout(onClose, 1200);
+      }
+    } catch {
+      setError('Не удалось сменить пароль');
     }
     setLoading(false);
   };
@@ -597,17 +601,17 @@ export default function ProfilePage() {
     const token = localStorage.getItem('token');
     if (!token) { router.push('/login'); return; }
 
-    axios
-      .get(`${API_BASE}/users/me`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(res => setUser(res.data as User))
-      .catch(err => {
-        if ((err as { response?: { status?: number } }).response?.status === 401) {
+    apiFetch(`${API_BASE}/users/me`)
+      .then(async res => {
+        if (res.status === 401) {
           localStorage.removeItem('token');
           router.push('/login');
-        } else {
-          setError('Не удалось загрузить профиль');
+          return;
         }
+        if (!res.ok) { setError('Не удалось загрузить профиль'); return; }
+        setUser(await res.json() as User);
       })
+      .catch(() => setError('Не удалось загрузить профиль'))
       .finally(() => setLoading(false));
 
     apiFetch(`${API_BASE}/users/me/stats`)
@@ -644,10 +648,13 @@ export default function ProfilePage() {
     setAvatarLoading(true); setAvatarError('');
     try {
       const url = await uploadToImgbb(file);
-      const token = localStorage.getItem('token');
-      const res = await axios.patch(`${API_BASE}/users/me`, { avatar_url: url },
-        { headers: { Authorization: `Bearer ${token}` } });
-      setUser(res.data as User);
+      const res = await apiFetch(`${API_BASE}/users/me`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatar_url: url }),
+      });
+      if (!res.ok) throw new Error('Не удалось обновить аватар');
+      setUser(await res.json() as User);
       localStorage.setItem('avatar_url', url);
       window.dispatchEvent(new Event('avatar:updated'));
     } catch (err: unknown) {

@@ -21,3 +21,17 @@ class PartyReview(Base):
     __table_args__ = (
         UniqueConstraint("reviewer_id", "reviewed_id", "party_id", name="uq_review_per_party"),
     )
+
+
+class ReviewReport(Base):
+    """Tracks which users have reported which reviews to prevent spam."""
+    __tablename__ = "review_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    review_id = Column(Integer, ForeignKey("party_reviews.id", ondelete="CASCADE"), nullable=False)
+    reporter_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("review_id", "reporter_id", name="uq_review_report_per_user"),
+    )

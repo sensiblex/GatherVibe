@@ -18,7 +18,7 @@ import models.chat_message
 import models.review
 from models.attendee import EventAttendee
 from models.party import EventParty, PartyMember
-from models.review import PartyReview
+from models.review import PartyReview, ReviewReport as ReviewReportModel
 from models.chat_message import ChatMessage
 from typing import Optional, List
 from datetime import datetime
@@ -121,9 +121,18 @@ async def send_message(sid, data: dict):
         await sio.emit('error', {'message': str(e)}, room=sid)
         db.close()
         return
-    event_id = data['eventId']
+    event_id = data.get('eventId')
+    message_text = data.get('message', '').strip()
+    if not event_id or not message_text:
+        db.close()
+        await sio.emit('error', {'message': 'eventId и message обязательны'}, room=sid)
+        return
+    if len(message_text) > 2000:
+        db.close()
+        await sio.emit('error', {'message': 'Сообщение слишком длинное (макс. 2000 символов)'}, room=sid)
+        return
     msg = {
-        'message':   data['message'],
+        'message':   message_text,
         'userId':    str(user.id),
         'username':  user.username,
         'timestamp': datetime.utcnow().isoformat()
@@ -134,7 +143,7 @@ async def send_message(sid, data: dict):
             room=f'event_{event_id}',
             user_id=str(user.id),
             username=user.username,
-            message=msg['message'],
+            message=message_text,
             timestamp=datetime.utcnow(),
         ))
         db.commit()
@@ -163,14 +172,34 @@ async def join_party_chat(sid, data: dict):
         await sio.emit('error', {'message': str(e)}, room=sid)
         db.close()
         return
-    party_id = data['partyId']
+    party_id = data.get('partyId')
+    if not party_id:
+        await sio.emit('error', {'message': 'partyId отсутствует'}, room=sid)
+        db.close()
+        return
+    # Verify the user is the creator or an accepted member of this party
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if party is None:
+        await sio.emit('error', {'message': 'Пати не найдена'}, room=sid)
+        db.close()
+        return
+    is_creator = party.creator_id == user.id
+    is_member = db.query(PartyMember).filter(
+        PartyMember.party_id == party_id,
+        PartyMember.user_id == user.id,
+        PartyMember.status == MemberStatus.accepted,
+    ).first() is not None
+    if not (is_creator or is_member):
+        await sio.emit('error', {'message': 'Нет доступа к этому чату'}, room=sid)
+        db.close()
+        return
+    db.close()
     await sio.enter_room(sid, f'party_{party_id}')
     await sio.emit(
         'party_user_joined',
         {'sid': sid, 'userId': user.id, 'username': user.username},
         room=f'party_{party_id}'
     )
-    db.close()
 
 
 @sio.on('send_party_message')
@@ -186,9 +215,18 @@ async def send_party_message(sid, data: dict):
         await sio.emit('error', {'message': str(e)}, room=sid)
         db.close()
         return
-    party_id = data['partyId']
+    party_id = data.get('partyId')
+    message_text = data.get('message', '').strip()
+    if not party_id or not message_text:
+        db.close()
+        await sio.emit('error', {'message': 'partyId и message обязательны'}, room=sid)
+        return
+    if len(message_text) > 2000:
+        db.close()
+        await sio.emit('error', {'message': 'Сообщение слишком длинное (макс. 2000 символов)'}, room=sid)
+        return
     msg = {
-        'message':   data['message'],
+        'message':   message_text,
         'userId':    str(user.id),
         'username':  user.username,
         'timestamp': datetime.utcnow().isoformat(),
@@ -200,7 +238,7 @@ async def send_party_message(sid, data: dict):
             room=f'party_{party_id}',
             user_id=str(user.id),
             username=user.username,
-            message=msg['message'],
+            message=message_text,
             timestamp=datetime.utcnow(),
         ))
         db.commit()
@@ -1557,7 +1595,7 @@ def health_check():
     return {"status": "ok", "service": "gathervibe-backend"}
 
 
-@app.get("/users", response_model=List[UserResponse])
+@app.get("/users")
 def get_users(
     token: str = Depends(oauth2_scheme),
     skip: int = Query(default=0, ge=0),
@@ -1575,7 +1613,21 @@ def get_users(
         )
     if city:
         query = query.filter(User.city.ilike(f"%{city}%"))
-    return query.offset(skip).limit(limit).all()
+    users = query.offset(skip).limit(limit).all()
+    # Apply privacy settings — never expose email in list view
+    return [
+        {
+            "id":        u.id,
+            "username":  u.username,
+            "email":     u.email if u.show_email else None,
+            "city":      u.city if u.show_city else None,
+            "interests": u.interests if u.show_interests else None,
+            "bio":       u.bio,
+            "avatar_url": u.avatar_url,
+            "is_active": u.is_active,
+        }
+        for u in users
+    ]
 
 
 @app.post("/register", response_model=UserResponse)
@@ -1708,10 +1760,18 @@ def report_review(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    get_current_user_from_token(token, db)  # auth check
+    current_user = get_current_user_from_token(token, db)
     review = db.query(PartyReview).filter(PartyReview.id == review_id).first()
     if not review:
         raise HTTPException(status_code=404, detail="Отзыв не найден")
+    # Prevent the same user from reporting the same review more than once
+    already_reported = db.query(ReviewReportModel).filter(
+        ReviewReportModel.review_id == review_id,
+        ReviewReportModel.reporter_id == current_user.id,
+    ).first()
+    if already_reported:
+        raise HTTPException(status_code=409, detail="Вы уже жаловались на этот отзыв")
+    db.add(ReviewReportModel(review_id=review_id, reporter_id=current_user.id))
     review.report_count = (review.report_count or 0) + 1
     if review.report_count >= 3:
         review.is_hidden = True
