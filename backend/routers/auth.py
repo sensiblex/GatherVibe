@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from typing import Optional
 
@@ -33,14 +33,33 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
+def login(
+    user_credentials: UserLogin,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     user = authenticate_user(user_credentials.email, user_credentials.password, db)
     if not user:
         raise HTTPException(status_code=401, detail="Неверный email или пароль",
                             headers={"WWW-Authenticate": "Bearer"})
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Пользователь заблокирован")
-    return create_user_token(user)
+    token_data = create_user_token(user)
+    response.set_cookie(
+        key="token",
+        value=token_data["access_token"],
+        httponly=True,
+        samesite="lax",
+        max_age=604800,  # 7 days
+        path="/",
+    )
+    return token_data
+
+
+@router.post("/logout", status_code=204)
+def logout(response: Response):
+    response.delete_cookie(key="token", path="/")
+    return None
 
 
 @router.get("/users/me", response_model=UserResponse)
@@ -61,8 +80,8 @@ def update_profile(
             raise HTTPException(status_code=400, detail="Укажите текущий пароль")
         if not verify_password(data.old_password, user.hashed_password):
             raise HTTPException(status_code=400, detail="Неверный текущий пароль")
-        if len(data.new_password) < 6:
-            raise HTTPException(status_code=400, detail="Новый пароль должен быть не менее 6 символов")
+        if len(data.new_password) < 8:
+            raise HTTPException(status_code=400, detail="Новый пароль должен быть не менее 8 символов")
         user.hashed_password = hash_password(data.new_password)
 
     if data.username is not None:

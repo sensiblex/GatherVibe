@@ -59,7 +59,7 @@ function typeAccentColor(type: string, isRead: boolean): { bg: string; color: st
 }
 
 export default function NotificationsPage() {
-  const { token, user } = useAuth();
+  const { token, user, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const [items, setItems]       = useState<NotificationItem[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -68,6 +68,7 @@ export default function NotificationsPage() {
   const [markingAll, setMarkingAll] = useState(false);
 
   const load = useCallback(async () => {
+    if (authLoading) return;
     if (!token) { router.push('/login'); return; }
     setLoading(true);
     setError(null);
@@ -81,7 +82,7 @@ export default function NotificationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [token, router]);
+  }, [token, authLoading, router]);
 
   useEffect(() => { load(); }, [load]);
 

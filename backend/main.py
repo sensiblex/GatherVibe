@@ -224,9 +224,38 @@ async def send_party_message(sid, data: dict):
         await sio.emit('error', {'message': str(e)}, room=sid)
         db.close()
         return
-    party_id = data['partyId']
+    party_id = data.get('partyId')
+    message_text = data.get('message', '').strip()
+    if not party_id or not message_text:
+        await sio.emit('error', {'message': 'partyId и message обязательны'}, room=sid)
+        db.close()
+        return
+    if len(message_text) > 2000:
+        await sio.emit('error', {'message': 'Сообщение слишком длинное (макс. 2000 символов)'}, room=sid)
+        db.close()
+        return
+
+    db2 = SessionLocal()
+    try:
+        party = db2.query(EventParty).filter(EventParty.id == party_id).first()
+        is_member = party and (
+            party.creator_id == user.id or
+            db2.query(PartyMember).filter(
+                PartyMember.party_id == party_id,
+                PartyMember.user_id == user.id,
+                PartyMember.status == MemberStatus.accepted,
+            ).first() is not None
+        )
+    finally:
+        db2.close()
+
+    if not is_member:
+        await sio.emit('error', {'message': 'Нет доступа к этому чату'}, room=sid)
+        db.close()
+        return
+
     msg = {
-        'message':   data['message'],
+        'message':   message_text,
         'userId':    str(user.id),
         'username':  user.username,
         'timestamp': datetime.utcnow().isoformat(),
@@ -237,7 +266,7 @@ async def send_party_message(sid, data: dict):
             room=f'party_{party_id}',
             user_id=str(user.id),
             username=user.username,
-            message=msg['message'],
+            message=message_text,
             timestamp=datetime.utcnow(),
         ))
         db.commit()

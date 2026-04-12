@@ -43,6 +43,7 @@ export default function RegisterPage() {
       const res = await fetch(`${API_BASE}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           ...form,
           // Хранить без пробелов: "concert,cinema" — единый формат с profile
@@ -51,7 +52,11 @@ export default function RegisterPage() {
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.detail || 'Ошибка регистрации');
+        const detail = data.detail;
+        const message = Array.isArray(detail)
+          ? detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
+          : (typeof detail === 'string' ? detail : 'Ошибка регистрации');
+        throw new Error(message);
       }
       router.push('/login');
     } catch (err: unknown) {
@@ -111,7 +116,7 @@ export default function RegisterPage() {
                 <div>
                   <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Пароль *</label>
                   <input type="password" name="password" value={form.password} onChange={handleChange}
-                    placeholder="Не менее 6 символов" required minLength={6} className="gv-input" />
+                    placeholder="Не менее 8 символов" required minLength={8} className="gv-input" />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Город</label>

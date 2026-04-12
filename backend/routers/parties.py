@@ -189,7 +189,12 @@ def get_my_pending_requests(
 
 
 @router.get("/parties/by-id/{party_id}", response_model=PartyOut)
-def get_party_detail(party_id: int, db: Session = Depends(get_db)):
+def get_party_detail(
+    party_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    get_current_user_from_token(token, db)
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
         raise HTTPException(status_code=404, detail="Компания не найдена")
@@ -197,7 +202,12 @@ def get_party_detail(party_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/parties/detail/{party_id}", response_model=PartyOut)
-def get_party_detail_public(party_id: int, db: Session = Depends(get_db)):
+def get_party_detail_public(
+    party_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    get_current_user_from_token(token, db)
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
         raise HTTPException(status_code=404, detail="Компания не найдена")
@@ -205,7 +215,12 @@ def get_party_detail_public(party_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/parties/{event_id}", response_model=List[PartyOut])
-def get_parties(event_id: str, db: Session = Depends(get_db)):
+def get_parties(
+    event_id: str,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    get_current_user_from_token(token, db)
     try:
         local_event = db.query(Event).filter(Event.id == int(event_id)).first()
         if local_event and local_event.date_time < datetime.utcnow():

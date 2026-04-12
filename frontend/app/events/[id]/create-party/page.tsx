@@ -31,17 +31,17 @@ export default function CreatePartyPage() {
   const params  = useParams();
   const router  = useRouter();
   const eventId = params?.id as string;
-  const { token } = useAuth();
+  const { token, isLoading } = useAuth();
 
   const [form, setForm]         = useState({ title: '', description: '', max_members: 4 });
   const [creating, setCreating] = useState(false);
   const [error, setError]       = useState<string | null>(null);
 
   useEffect(() => {
-    if (token === null) {
+    if (!isLoading && token === null) {
       router.replace('/login');
     }
-  }, [token, router]);
+  }, [isLoading, token, router]);
 
   const handleCreate = async () => {
     if (!token) return;

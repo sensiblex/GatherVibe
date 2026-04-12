@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '../context/AuthContext';
+import { apiFetch } from '../lib/apiFetch';
 import { toast } from './Toast';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -302,7 +303,7 @@ export default function EventParty({ eventId }: { eventId: string }) {
 
   const fetchParties = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/parties/${eventId}`);
+      const res = await apiFetch(`/parties/${eventId}`);
       if (!res.ok) return;
       const data: Party[] = await res.json();
 

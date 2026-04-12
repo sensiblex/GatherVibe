@@ -4,14 +4,39 @@ Shared FastAPI dependencies for GatherVibe.
 Centralises get_db, auth helpers, and oauth2 schemes so routers
 can import from one place without circular imports.
 """
+from typing import Optional
+
+from fastapi import HTTPException, Request
+from fastapi.security import OAuth2
+from fastapi.openapi.models import OAuthFlows as OAuthFlowsModel
 from sqlalchemy.orm import Session
+
 from database import SessionLocal
-from fastapi import HTTPException
-from fastapi.security import OAuth2PasswordBearer
 from models.user import User
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
+
+class OAuth2BearerOrCookie(OAuth2):
+    """Accepts a JWT from Authorization: Bearer header OR an HttpOnly 'token' cookie."""
+
+    def __init__(self, tokenUrl: str, auto_error: bool = True):
+        flows = OAuthFlowsModel(password={"tokenUrl": tokenUrl, "scopes": {}})
+        super().__init__(flows=flows, auto_error=auto_error)
+        self._auto_error = auto_error
+
+    async def __call__(self, request: Request) -> Optional[str]:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            return auth_header[7:]
+        cookie_token = request.cookies.get("token")
+        if cookie_token:
+            return cookie_token
+        if self._auto_error:
+            raise HTTPException(status_code=401, detail="Требуется авторизация")
+        return None
+
+
+oauth2_scheme = OAuth2BearerOrCookie(tokenUrl="login")
+oauth2_scheme_optional = OAuth2BearerOrCookie(tokenUrl="login", auto_error=False)
 
 
 def get_db():

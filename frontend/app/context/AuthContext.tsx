@@ -11,6 +11,7 @@ interface AuthUser {
 interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
+  isLoading: boolean;
   login: (token: string, user: AuthUser) => void;
   logout: () => void;
 }
@@ -18,62 +19,52 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue>({
   user: null,
   token: null,
+  isLoading: true,
   login: () => {},
   logout: () => {},
 });
 
-/** Cookie helpers ---------------------------------------------------------- */
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-function setCookie(name: string, value: string, maxAge: number) {
-  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; SameSite=Lax`;
+/** Выставляет cookie, которую читает proxy.ts на сервере (не HttpOnly — нужна только для SSR-редиректов) */
+function setProxyCookie(value: string) {
+  document.cookie = `token=${encodeURIComponent(value)}; path=/; max-age=604800; SameSite=Lax`;
 }
 
-function deleteCookie(name: string) {
-  document.cookie = `${name}=; path=/; max-age=0`;
+function clearProxyCookie() {
+  document.cookie = 'token=; path=/; max-age=0';
 }
-
-function getCookieValue(name: string): string | null {
-  if (typeof document === 'undefined') return null;
-  const match = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]*)'));
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
-/** Provider ---------------------------------------------------------------- */
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(null);
-  const [user, setUser]   = useState<AuthUser | null>(null);
+  const [token, setToken]       = useState<string | null>(null);
+  const [user, setUser]         = useState<AuthUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Initialise from cookie (primary source) or fall back to localStorage
+  // Восстанавливаем сессию из localStorage при монтировании
   useEffect(() => {
-    const t = getCookieValue('token') ?? localStorage.getItem('token');
+    const t = localStorage.getItem('token');
     if (t) {
       try {
         const p = JSON.parse(atob(t.split('.')[1]));
         setToken(t);
         setUser({ id: p.id ?? p.user_id, username: p.username, email: p.sub });
-      } catch {}
+      } catch {
+        localStorage.removeItem('token');
+      }
     }
+    setIsLoading(false);
   }, []);
 
-  // Слушаем storage-событие — реагируем на логаут из другой вкладки
+  // Логаут из другой вкладки
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === 'token' && !e.newValue) {
-        setToken(null);
-        setUser(null);
-      }
+      if (e.key === 'token' && !e.newValue) { setToken(null); setUser(null); }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  /**
-   * Слушаем кастомное событие auth:logout.
-   * Диспатчится:
-   *  - вручную через logout() из того же контекста
-   *  - автоматически через apiFetch при получении HTTP 401
-   */
+  // Логаут по событию от apiFetch (401)
   useEffect(() => {
     const onLogout = () => { setToken(null); setUser(null); };
     window.addEventListener('auth:logout', onLogout);
@@ -81,28 +72,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback((t: string, u: AuthUser) => {
-    // Persist to cookie (7 days) so the Next.js middleware can read it server-side
-    setCookie('token', t, 604800);
-    // Keep localStorage as a fallback for client-side reads
     localStorage.setItem('token', t);
     localStorage.setItem('username', u.username);
     localStorage.setItem('email', u.email);
+    // Эту cookie читает proxy.ts для SSR-защиты маршрутов
+    setProxyCookie(t);
     setToken(t);
     setUser(u);
   }, []);
 
-  const logout = useCallback(() => {
-    // Clear both the cookie and localStorage
-    deleteCookie('token');
-    ['token', 'user_id', 'username', 'email'].forEach(k => localStorage.removeItem(k));
+  const logout = useCallback(async () => {
+    // Просим сервер очистить HttpOnly cookie (если есть)
+    await fetch(`${API_BASE}/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
+    localStorage.removeItem('token');
+    localStorage.removeItem('user_id');
+    localStorage.removeItem('username');
+    localStorage.removeItem('email');
+    clearProxyCookie();
     setToken(null);
     setUser(null);
-    // Бросаем событие — все компоненты на странице реагируют мгновенно
     window.dispatchEvent(new Event('auth:logout'));
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

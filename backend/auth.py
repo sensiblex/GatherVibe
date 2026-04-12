@@ -2,8 +2,7 @@ from passlib.context import CryptContext
 from jwt_handler import create_access_token
 from datetime import timedelta
 
-# sha256 — достаточно для курсовика
-pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:

@@ -1,14 +1,14 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Dict, List, Optional
 from datetime import datetime
 
 
 class UserCreate(BaseModel):
     email: EmailStr
-    username: str
-    password: str
-    city: Optional[str] = None
-    interests: Optional[str] = None
+    username: str = Field(min_length=1, max_length=50)
+    password: str = Field(min_length=8, max_length=128)
+    city: Optional[str] = Field(default=None, max_length=100)
+    interests: Optional[str] = Field(default=None, max_length=500)
 
 
 class UserLogin(BaseModel):

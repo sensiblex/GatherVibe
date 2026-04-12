@@ -26,6 +26,7 @@ export default function LoginPage() {
       const res = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(form),
       });
       if (!res.ok) {
@@ -130,7 +131,7 @@ export default function LoginPage() {
 
             <button
               type="button"
-              onClick={() => setForm({ email: 'test@example.com', password: '123456' })}
+              onClick={() => setForm({ email: 'test@example.com', password: 'testpass123' })}
               className="w-full mt-4 text-xs py-1.5 transition hover:opacity-80"
               style={{ color: 'var(--text-muted)' }}
             >
