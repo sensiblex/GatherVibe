@@ -16,6 +16,15 @@ import models.attendee
 import models.party
 import models.chat_message
 import models.review
+import models.notification
+from models.notification import Notification
+from notification_helpers import (
+    create_notification,
+    get_user_notifications,
+    mark_as_read,
+    mark_all_as_read,
+    get_unread_count,
+)
 from models.attendee import EventAttendee
 from models.party import EventParty, PartyMember
 from models.review import PartyReview, ReviewReport as ReviewReportModel
@@ -53,16 +62,9 @@ models.review.Base.metadata.create_all(bind=engine)
 app = FastAPI(title="GatherVibe API")
 
 # ===== SOCKET.IO =====
-import os as _os
-
-_ALLOWED_ORIGINS = [o.strip() for o in _os.getenv(
-    'CORS_ALLOWED_ORIGINS',
-    'http://localhost:3000,http://127.0.0.1:3000'
-).split(',') if o.strip()]
-
 sio = socketio.AsyncServer(
     async_mode='asgi',
-    cors_allowed_origins=_ALLOWED_ORIGINS,
+    cors_allowed_origins=['http://localhost:3000', 'http://127.0.0.1:3000', '*']
 )
 
 
@@ -215,18 +217,9 @@ async def send_party_message(sid, data: dict):
         await sio.emit('error', {'message': str(e)}, room=sid)
         db.close()
         return
-    party_id = data.get('partyId')
-    message_text = data.get('message', '').strip()
-    if not party_id or not message_text:
-        db.close()
-        await sio.emit('error', {'message': 'partyId и message обязательны'}, room=sid)
-        return
-    if len(message_text) > 2000:
-        db.close()
-        await sio.emit('error', {'message': 'Сообщение слишком длинное (макс. 2000 символов)'}, room=sid)
-        return
+    party_id = data['partyId']
     msg = {
-        'message':   message_text,
+        'message':   data['message'],
         'userId':    str(user.id),
         'username':  user.username,
         'timestamp': datetime.utcnow().isoformat(),
@@ -238,7 +231,7 @@ async def send_party_message(sid, data: dict):
             room=f'party_{party_id}',
             user_id=str(user.id),
             username=user.username,
-            message=message_text,
+            message=msg['message'],
             timestamp=datetime.utcnow(),
         ))
         db.commit()
@@ -1243,11 +1236,18 @@ async def approve_request(
     member.status = MemberStatus.accepted
     db.flush()                        # делаем статус видимым для _check_and_close_party
     _check_and_close_party(party, db)
+    notif = create_notification(
+        db, member.user_id, "request_status_changed",
+        "Заявка принята",
+        f"Вас приняли в компанию «{party.title}»",
+        {"party_id": party.id, "status": "accepted"},
+    )
     db.commit()
     # Уведомляем заявителя о принятии
     await sio.emit(
         "request_status_changed",
-        {"status": "accepted", "party_id": party.id, "party_title": party.title},
+        {"status": "accepted", "party_id": party.id, "party_title": party.title,
+         "notification_id": notif.id},
         room=f"user_{member.user_id}",
     )
     return _build_party_out(party, db)
@@ -1270,11 +1270,18 @@ async def reject_request(
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может отклонять заявки")
     member.status = MemberStatus.rejected
+    notif = create_notification(
+        db, member.user_id, "request_status_changed",
+        "Заявка отклонена",
+        f"Заявка в компанию «{party.title}» отклонена",
+        {"party_id": party.id, "status": "rejected"},
+    )
     db.commit()
     # Уведомляем заявителя об отклонении
     await sio.emit(
         "request_status_changed",
-        {"status": "rejected", "party_id": party.id, "party_title": party.title},
+        {"status": "rejected", "party_id": party.id, "party_title": party.title,
+         "notification_id": notif.id},
         room=f"user_{member.user_id}",
     )
     return _build_party_out(party, db)
@@ -1408,22 +1415,36 @@ async def join_party(
         if existing.status == MemberStatus.rejected:
             existing.status = MemberStatus.pending
             existing.message = body.message
+            notif = create_notification(
+                db, party.creator_id, "new_party_request",
+                "Новая заявка в компанию",
+                f"{user.username} хочет вступить в компанию «{party.title}»",
+                {"party_id": party.id, "user_id": user.id, "username": user.username},
+            )
             db.commit()
             await sio.emit(
                 "new_party_request",
                 {"party_id": party.id, "party_title": party.title,
-                 "user_id": user.id, "username": user.username},
+                 "user_id": user.id, "username": user.username,
+                 "notification_id": notif.id},
                 room=f"creator_{party.creator_id}",
             )
             return _build_party_out(party, db)
         elif existing.status == MemberStatus.left:
             existing.status = MemberStatus.pending
             existing.message = body.message
+            notif = create_notification(
+                db, party.creator_id, "new_party_request",
+                "Новая заявка в компанию",
+                f"{user.username} хочет вступить в компанию «{party.title}»",
+                {"party_id": party.id, "user_id": user.id, "username": user.username},
+            )
             db.commit()
             await sio.emit(
                 "new_party_request",
                 {"party_id": party.id, "party_title": party.title,
-                 "user_id": user.id, "username": user.username},
+                 "user_id": user.id, "username": user.username,
+                 "notification_id": notif.id},
                 room=f"creator_{party.creator_id}",
             )
             return _build_party_out(party, db)
@@ -1431,11 +1452,18 @@ async def join_party(
             raise HTTPException(status_code=400, detail="Вы уже в этой компании или подали заявку")
     m = PartyMember(party_id=party_id, user_id=user.id, status="pending", message=body.message)
     db.add(m)
+    notif = create_notification(
+        db, party.creator_id, "new_party_request",
+        "Новая заявка в компанию",
+        f"{user.username} хочет вступить в компанию «{party.title}»",
+        {"party_id": party.id, "user_id": user.id, "username": user.username},
+    )
     db.commit()
     await sio.emit(
         "new_party_request",
         {"party_id": party.id, "party_title": party.title,
-         "user_id": user.id, "username": user.username},
+         "user_id": user.id, "username": user.username,
+         "notification_id": notif.id},
         room=f"creator_{party.creator_id}",
     )
     return _build_party_out(party, db)
@@ -1466,7 +1494,7 @@ def leave_party(
 
 
 @app.post("/parties/{party_id}/members/{user_id}/kick", response_model=PartyOut)
-def kick_member(
+async def kick_member(
     party_id: int,
     user_id: int,
     body: PartyKickBody,
@@ -1502,7 +1530,20 @@ def kick_member(
         # создатель (1) + оставшиеся принятые
         if 1 + accepted_after < party.max_members:
             party.is_open = True
+    notif = create_notification(
+        db, user_id, "kicked_from_party",
+        "Вы исключены из компании",
+        f"Вас исключили из компании «{party.title}»",
+        {"party_id": party.id},
+    )
     db.commit()
+    # Уведомляем исключённого участника в реальном времени
+    await sio.emit(
+        "kicked_from_party",
+        {"party_id": party.id, "party_title": party.title,
+         "notification_id": notif.id},
+        room=f"user_{user_id}",
+    )
     return _build_party_out(party, db)
 
 
@@ -1527,11 +1568,18 @@ async def accept_member(
     m.status = MemberStatus.accepted
     db.flush()                        # делаем статус видимым для _check_and_close_party
     _check_and_close_party(party, db)
+    notif = create_notification(
+        db, m.user_id, "request_status_changed",
+        "Заявка принята",
+        f"Вас приняли в компанию «{party.title}»",
+        {"party_id": party.id, "status": "accepted"},
+    )
     db.commit()
     # Уведомляем заявителя о принятии
     await sio.emit(
         "request_status_changed",
-        {"status": "accepted", "party_id": party.id, "party_title": party.title},
+        {"status": "accepted", "party_id": party.id, "party_title": party.title,
+         "notification_id": notif.id},
         room=f"user_{m.user_id}",
     )
     return _build_party_out(party, db)
@@ -1556,11 +1604,18 @@ async def reject_member(
     if not m:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     m.status = MemberStatus.rejected
+    notif = create_notification(
+        db, m.user_id, "request_status_changed",
+        "Заявка отклонена",
+        f"Заявка в компанию «{party.title}» отклонена",
+        {"party_id": party.id, "status": "rejected"},
+    )
     db.commit()
     # Уведомляем заявителя об отклонении
     await sio.emit(
         "request_status_changed",
-        {"status": "rejected", "party_id": party.id, "party_title": party.title},
+        {"status": "rejected", "party_id": party.id, "party_title": party.title,
+         "notification_id": notif.id},
         room=f"user_{m.user_id}",
     )
     return _build_party_out(party, db)
@@ -1972,3 +2027,67 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
         "avatar_url": user.avatar_url,
         "is_active":  user.is_active,
     }
+
+
+# ── Notifications ────────────────────────────────────────────────────────────
+
+class NotificationOut(BaseModel):
+    id: int
+    type: str
+    title: str
+    body: str | None
+    data: str | None   # raw JSON string — frontend parses if needed
+    is_read: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class MarkReadBody(BaseModel):
+    notification_id: int
+
+
+@app.get("/notifications/", response_model=list[NotificationOut])
+def list_notifications(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_token(token, db)
+    return get_user_notifications(db, current_user.id, limit=limit, offset=offset)
+
+
+@app.get("/notifications/unread-count")
+def unread_count(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_token(token, db)
+    return {"count": get_unread_count(db, current_user.id)}
+
+
+@app.post("/notifications/read")
+def read_notification(
+    body: MarkReadBody,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_token(token, db)
+    found = mark_as_read(db, body.notification_id, current_user.id)
+    if not found:
+        raise HTTPException(status_code=404, detail="Уведомление не найдено")
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/notifications/read-all")
+def read_all_notifications(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_token(token, db)
+    count = mark_all_as_read(db, current_user.id)
+    db.commit()
+    return {"ok": True, "marked": count}

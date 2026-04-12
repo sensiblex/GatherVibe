@@ -51,19 +51,18 @@ export default function Navbar() {
   const { user, logout, token } = useAuth();
   const pathname = usePathname();
   const isActive = (href: string) => pathname === href;
-  const [pendingCount, setPendingCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
-  const fetchPending = useCallback(async () => {
+  const fetchUnread = useCallback(async () => {
     if (!token) return;
     try {
-      const res = await fetch(`${API_BASE}/parties/my-pending-requests`, {
+      const res = await fetch(`${API_BASE}/notifications/unread-count`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
         const data = await res.json();
-        if (Array.isArray(data)) setPendingCount(data.length);
-        else if (typeof data.count === 'number') setPendingCount(data.count);
+        if (typeof data.count === 'number') setUnreadCount(data.count);
       }
     } catch {}
   }, [token]);
@@ -97,10 +96,25 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => {
-    fetchPending();
-    const id = setInterval(fetchPending, 30_000);
+    fetchUnread();
+    const id = setInterval(fetchUnread, 30_000);
     return () => clearInterval(id);
-  }, [fetchPending]);
+  }, [fetchUnread]);
+
+  // Sync badge with mark-read and new-notification events
+  useEffect(() => {
+    const onNew     = () => setUnreadCount(c => c + 1);
+    const onRead    = () => setUnreadCount(c => Math.max(0, c - 1));
+    const onReadAll = () => setUnreadCount(0);
+    window.addEventListener('notification:new',      onNew);
+    window.addEventListener('notification:read',     onRead);
+    window.addEventListener('notification:read-all', onReadAll);
+    return () => {
+      window.removeEventListener('notification:new',      onNew);
+      window.removeEventListener('notification:read',     onRead);
+      window.removeEventListener('notification:read-all', onReadAll);
+    };
+  }, []);
 
   return (
     <nav
@@ -170,8 +184,8 @@ export default function Navbar() {
                   <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
                   <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
                 </svg>
-                {pendingCount > 0 && (
-                  <span className="gv-badge">{pendingCount > 9 ? '9+' : pendingCount}</span>
+                {unreadCount > 0 && (
+                  <span className="gv-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>
                 )}
               </Link>
 

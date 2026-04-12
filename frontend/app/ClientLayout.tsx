@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
 import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/AuthContext';
@@ -14,6 +15,11 @@ interface RequestStatusPayload {
   party_title: string;
 }
 
+interface KickedFromPartyPayload {
+  party_id: number;
+  party_title: string;
+}
+
 /**
  * Глобальный socket-компонент для уведомлений заявителя.
  * Подписывается на комнату user_{id} и показывает toast при изменении
@@ -22,6 +28,8 @@ interface RequestStatusPayload {
 function UserNotificationSocket() {
   const { token } = useAuth();
   const socketRef = useRef<Socket | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     if (!token) return;
@@ -39,13 +47,26 @@ function UserNotificationSocket() {
       } else {
         toast(`Заявка в компанию "${data.party_title}" отклонена`, 'error');
       }
+      window.dispatchEvent(new CustomEvent('notification:new'));
+    });
+
+    socket.on('kicked_from_party', (data: KickedFromPartyPayload) => {
+      toast(`Вы были исключены из компании "${data.party_title}"`, 'error');
+      window.dispatchEvent(new CustomEvent('notification:new'));
+      if (pathname === `/parties/${data.party_id}`) {
+        router.push('/my-events');
+      }
+    });
+
+    socket.on('new_party_request', () => {
+      window.dispatchEvent(new CustomEvent('notification:new'));
     });
 
     return () => {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [token]);
+  }, [token, pathname, router]);
 
   return null;
 }
