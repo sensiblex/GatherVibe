@@ -1,0 +1,307 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from typing import Optional, List
+from datetime import datetime
+
+from deps import get_db, get_current_user_from_token, oauth2_scheme
+from schemas import ReviewCreate, ReviewOut, ReviewReport, ReviewSummary, ReviewableUser, ALLOWED_REVIEW_TAGS
+from models.user import User
+from models.attendee import EventAttendee
+from models.party import EventParty, PartyMember
+from models.review import PartyReview, ReviewReport as ReviewReportModel
+import kudago_api
+
+router = APIRouter(tags=["reviews"])
+
+REVIEW_WINDOW_DAYS = 30
+
+
+@router.post("/reviews/", response_model=ReviewOut)
+def create_review(
+    payload: ReviewCreate,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_token(token, db)
+
+    if payload.reviewed_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Нельзя оценивать самого себя")
+
+    tags = payload.tags or []
+    if len(tags) > 3:
+        raise HTTPException(status_code=400, detail="Максимум 3 тега")
+    invalid = [t for t in tags if t not in ALLOWED_REVIEW_TAGS]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Недопустимые теги: {invalid}")
+
+    party = db.query(EventParty).filter(EventParty.id == payload.party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Пати не найдена")
+
+    now_ts = int(datetime.utcnow().timestamp())
+    event_ts: int | None = None
+    attendee_row = db.query(EventAttendee).filter(
+        EventAttendee.event_id == party.event_id,
+    ).first()
+    if attendee_row and attendee_row.event_date_ts:
+        event_ts = attendee_row.event_date_ts
+    else:
+        try:
+            raw = kudago_api.get_event_by_id(int(party.event_id))
+            dates = raw.get("dates") or []
+            for d in dates:
+                ts = d.get("start")
+                if ts:
+                    event_ts = int(ts)
+                    break
+        except Exception:
+            pass
+
+    if event_ts is not None:
+        if event_ts > now_ts:
+            raise HTTPException(status_code=400, detail="Событие ещё не прошло")
+        window_deadline = event_ts + REVIEW_WINDOW_DAYS * 24 * 3600
+        if now_ts > window_deadline:
+            raise HTTPException(status_code=400, detail="Окно для отзыва (30 дней) истекло")
+
+    def _is_party_participant(user_id: int) -> bool:
+        if party.creator_id == user_id:
+            return True
+        return db.query(PartyMember).filter(
+            PartyMember.party_id == payload.party_id,
+            PartyMember.user_id == user_id,
+            PartyMember.status == "accepted",
+        ).first() is not None
+
+    if not _is_party_participant(current_user.id):
+        raise HTTPException(status_code=403, detail="Вы не являетесь участником этой пати")
+    if not _is_party_participant(payload.reviewed_id):
+        raise HTTPException(status_code=400, detail="Оцениваемый не является участником этой пати")
+
+    if not (1 <= payload.rating <= 5):
+        raise HTTPException(status_code=400, detail="Рейтинг должен быть от 1 до 5")
+
+    existing = db.query(PartyReview).filter(
+        PartyReview.reviewer_id == current_user.id,
+        PartyReview.reviewed_id == payload.reviewed_id,
+        PartyReview.party_id == payload.party_id,
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Вы уже оценили этого участника")
+
+    review = PartyReview(
+        reviewer_id=current_user.id,
+        reviewed_id=payload.reviewed_id,
+        party_id=payload.party_id,
+        rating=payload.rating,
+        text=payload.text,
+        tags=tags or None,
+    )
+    db.add(review)
+    db.commit()
+    db.refresh(review)
+
+    reviewer = db.query(User).filter(User.id == current_user.id).first()
+    return ReviewOut(
+        id=review.id,
+        reviewer_id=review.reviewer_id,
+        reviewer_username=reviewer.username,
+        reviewer_avatar_url=reviewer.avatar_url,
+        rating=review.rating,
+        text=review.text,
+        tags=review.tags,
+        created_at=review.created_at,
+    )
+
+
+@router.post("/reviews/{review_id}/report", status_code=204)
+def report_review(
+    review_id: int,
+    payload: ReviewReport,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_token(token, db)
+    review = db.query(PartyReview).filter(PartyReview.id == review_id).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Отзыв не найден")
+    already_reported = db.query(ReviewReportModel).filter(
+        ReviewReportModel.review_id == review_id,
+        ReviewReportModel.reporter_id == current_user.id,
+    ).first()
+    if already_reported:
+        raise HTTPException(status_code=409, detail="Вы уже жаловались на этот отзыв")
+    db.add(ReviewReportModel(review_id=review_id, reporter_id=current_user.id))
+    review.report_count = (review.report_count or 0) + 1
+    if review.report_count >= 3:
+        review.is_hidden = True
+    db.commit()
+
+
+@router.get("/users/{user_id}/reviews", response_model=ReviewSummary)
+def get_user_reviews(user_id: int, db: Session = Depends(get_db)):
+    rows = (
+        db.query(PartyReview)
+        .filter(
+            PartyReview.reviewed_id == user_id,
+            PartyReview.is_hidden == False,  # noqa: E712
+        )
+        .order_by(PartyReview.created_at.desc())
+        .all()
+    )
+    total = len(rows)
+    avg = round(sum(r.rating for r in rows) / total, 2) if total > 0 else None
+
+    dist: dict[int, int] = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    for r in rows:
+        dist[r.rating] = dist.get(r.rating, 0) + 1
+
+    tag_counts: dict[str, int] = {}
+    for r in rows:
+        for tag in (r.tags or []):
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+    top_tags = [t for t, _ in sorted(tag_counts.items(), key=lambda x: -x[1])[:5]]
+
+    reviewer_ids = {r.reviewer_id for r in rows[:10]}
+    reviewers = {u.id: u for u in db.query(User).filter(User.id.in_(reviewer_ids)).all()}
+
+    recent = [
+        ReviewOut(
+            id=r.id,
+            reviewer_id=r.reviewer_id,
+            reviewer_username=reviewers[r.reviewer_id].username if r.reviewer_id in reviewers else "Аноним",
+            reviewer_avatar_url=reviewers[r.reviewer_id].avatar_url if r.reviewer_id in reviewers else None,
+            rating=r.rating,
+            text=r.text,
+            tags=r.tags,
+            created_at=r.created_at,
+        )
+        for r in rows[:10]
+    ]
+    return ReviewSummary(
+        avg_rating=avg,
+        total_reviews=total,
+        reviews=recent,
+        stars_distribution=dist,
+        top_tags=top_tags,
+    )
+
+
+@router.get("/users/me/reviewable", response_model=List[ReviewableUser])
+def get_reviewable_users(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_token(token, db)
+    now_ts = int(datetime.utcnow().timestamp())
+
+    member_party_ids = [
+        pm.party_id
+        for pm in db.query(PartyMember).filter(
+            PartyMember.user_id == current_user.id,
+            PartyMember.status == "accepted",
+        ).all()
+    ]
+    creator_party_ids = [
+        ep.id
+        for ep in db.query(EventParty).filter(
+            EventParty.creator_id == current_user.id,
+        ).all()
+    ]
+    my_party_ids = list(set(member_party_ids) | set(creator_party_ids))
+    if not my_party_ids:
+        return []
+
+    past_party_ids = []
+    for party_id in my_party_ids:
+        party = db.query(EventParty).filter(EventParty.id == party_id).first()
+        if not party:
+            continue
+        att = db.query(EventAttendee).filter(
+            EventAttendee.event_id == party.event_id,
+        ).first()
+        if att and att.event_date_ts:
+            if att.event_date_ts < now_ts:
+                past_party_ids.append(party_id)
+            continue
+        try:
+            raw = kudago_api.get_event_by_id(int(party.event_id))
+            dates = raw.get("dates") or []
+            event_ts = None
+            for d in dates:
+                ts = d.get("start")
+                if ts:
+                    event_ts = int(ts)
+                    break
+            if event_ts and event_ts < now_ts:
+                past_party_ids.append(party_id)
+        except Exception:
+            pass
+
+    if not past_party_ids:
+        return []
+
+    already_reviewed = {
+        (r.reviewed_id, r.party_id)
+        for r in db.query(PartyReview).filter(
+            PartyReview.reviewer_id == current_user.id,
+            PartyReview.party_id.in_(past_party_ids),
+        ).all()
+    }
+
+    parties_map = {
+        ep.id: ep
+        for ep in db.query(EventParty).filter(EventParty.id.in_(past_party_ids)).all()
+    }
+
+    result: list[ReviewableUser] = []
+    seen_pairs: set[tuple[int, int]] = set()
+
+    members = db.query(PartyMember).filter(
+        PartyMember.party_id.in_(past_party_ids),
+        PartyMember.status == "accepted",
+        PartyMember.user_id != current_user.id,
+    ).all()
+
+    creators = db.query(EventParty).filter(
+        EventParty.id.in_(past_party_ids),
+        EventParty.creator_id != current_user.id,
+    ).all()
+
+    candidate_ids = {m.user_id for m in members} | {ep.creator_id for ep in creators}
+    users_map = {u.id: u for u in db.query(User).filter(User.id.in_(candidate_ids)).all()}
+
+    for member in members:
+        pair = (member.user_id, member.party_id)
+        if pair in already_reviewed or pair in seen_pairs:
+            continue
+        u = users_map.get(member.user_id)
+        party = parties_map.get(member.party_id)
+        if not u or not party:
+            continue
+        seen_pairs.add(pair)
+        result.append(ReviewableUser(
+            user_id=u.id,
+            username=u.username,
+            avatar_url=u.avatar_url,
+            party_id=member.party_id,
+            event_id=party.event_id,
+        ))
+
+    for ep in creators:
+        pair = (ep.creator_id, ep.id)
+        if pair in already_reviewed or pair in seen_pairs:
+            continue
+        u = users_map.get(ep.creator_id)
+        if not u:
+            continue
+        seen_pairs.add(pair)
+        result.append(ReviewableUser(
+            user_id=u.id,
+            username=u.username,
+            avatar_url=u.avatar_url,
+            party_id=ep.id,
+            event_id=ep.event_id,
+        ))
+
+    return result

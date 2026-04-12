@@ -1,0 +1,470 @@
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from typing import Optional, List
+from datetime import datetime
+import time
+
+from pydantic import BaseModel
+from deps import get_db, get_current_user_from_token, oauth2_scheme
+from schemas import EventCreate, EventResponse, EventUpdate
+from models.event import Event
+from models.attendee import EventAttendee
+from models.chat_message import ChatMessage
+from models.user import User
+import kudago_api
+
+router = APIRouter(tags=["events"])
+
+
+# ─── Attendee schemas ──────────────────────────────────────────────────────
+
+
+class AttendeeCreateBody(BaseModel):
+    comment: Optional[str] = None
+    is_looking: bool = True
+    event_title:     Optional[str] = None
+    event_date_ts:   Optional[int] = None
+    event_city:      Optional[str] = None
+    event_image_url: Optional[str] = None
+    event_category:  Optional[str] = None
+    event_location:  Optional[str] = None
+
+
+class AttendeeOut(BaseModel):
+    id: int
+    user_id: int
+    username: str
+    city: Optional[str]
+    interests: Optional[str]
+    comment: Optional[str]
+    is_looking: bool
+    created_at: datetime
+    avatar_url: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AttendeeMatchOut(AttendeeOut):
+    common_count: int = 0
+
+
+# ─── Chat / messages ────────────────────────────────────────────────────────
+
+
+@router.get("/messages/{room}")
+def get_messages(
+    room: str,
+    limit: int = Query(default=50, le=200),
+    before_id: Optional[int] = Query(default=None),
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    get_current_user_from_token(token, db)
+    query = db.query(ChatMessage).filter(ChatMessage.room == room)
+    if before_id is not None:
+        query = query.filter(ChatMessage.id < before_id)
+    rows = query.order_by(ChatMessage.id.desc()).limit(limit).all()
+    rows = list(reversed(rows))
+    return {
+        "messages": [
+            {
+                "id":        r.id,
+                "message":   r.message,
+                "userId":    r.user_id,
+                "username":  r.username,
+                "timestamp": r.timestamp.isoformat(),
+            }
+            for r in rows
+        ],
+        "has_more":  len(rows) == limit,
+        "oldest_id": rows[0].id if rows else None,
+    }
+
+
+# ─── Local events ───────────────────────────────────────────────────────────
+
+
+@router.get("/events/categories")
+def get_categories(db: Session = Depends(get_db)):
+    categories = db.query(Event.category).distinct().all()
+    return {"categories": [cat[0] for cat in categories if cat[0]]}
+
+
+@router.get("/events/cities")
+def get_cities(db: Session = Depends(get_db)):
+    cities = db.query(Event.city).distinct().all()
+    return {"cities": [city[0] for city in cities if city[0]]}
+
+
+@router.get("/events", response_model=List[EventResponse])
+def get_events(
+    skip: int = 0,
+    limit: int = 20,
+    city: Optional[str] = None,
+    category: Optional[str] = None,
+    search: Optional[str] = None,
+    date_from: Optional[datetime] = Query(default=None),
+    date_to: Optional[datetime] = Query(default=None),
+    is_free: Optional[bool] = Query(default=None),
+    max_price: Optional[float] = Query(default=None, ge=0),
+    has_spots: Optional[bool] = Query(default=None),
+    sort_by: Optional[str] = Query(default="date", pattern="^(date|price|participants)$"),
+    db: Session = Depends(get_db),
+):
+    now = datetime.utcnow()
+    query = db.query(Event).filter(Event.is_active == True, Event.date_time >= now)
+
+    if city:
+        query = query.filter(Event.city.ilike(f"%{city}%"))
+    if category:
+        query = query.filter(Event.category == category)
+    if search:
+        query = query.filter(
+            (Event.title.ilike(f"%{search}%")) |
+            (Event.description.ilike(f"%{search}%")) |
+            (Event.location.ilike(f"%{search}%"))
+        )
+    if date_from:
+        query = query.filter(Event.date_time >= date_from)
+    if date_to:
+        query = query.filter(Event.date_time <= date_to)
+
+    if is_free is True:
+        query = query.filter(
+            (Event.price == None) | (Event.price == 0)  # noqa: E711
+        )
+    elif is_free is False:
+        query = query.filter(Event.price > 0)
+    if max_price is not None:
+        query = query.filter(
+            (Event.price == None) | (Event.price <= max_price)  # noqa: E711
+        )
+
+    if has_spots is True:
+        query = query.filter(
+            (Event.max_participants == None) |  # noqa: E711
+            (Event.current_participants < Event.max_participants)
+        )
+
+    if sort_by == "price":
+        query = query.order_by(Event.price.asc().nullsfirst())
+    elif sort_by == "participants":
+        query = query.order_by(Event.current_participants.desc())
+    else:
+        query = query.order_by(Event.date_time.asc())
+
+    return query.offset(skip).limit(limit).all()
+
+
+@router.get("/events/{event_id}", response_model=EventResponse)
+def get_event(event_id: int, db: Session = Depends(get_db)):
+    event = db.query(Event).filter(Event.id == event_id, Event.is_active == True).first()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Событие не найдено")
+    return event
+
+
+@router.post("/events", response_model=EventResponse)
+def create_event(
+    event: EventCreate,
+    db: Session = Depends(get_db),
+    token: str = Depends(oauth2_scheme),
+):
+    user = get_current_user_from_token(token, db)
+    db_event = Event(**event.dict(), created_by=user.id, current_participants=0)
+    db.add(db_event)
+    db.commit()
+    db.refresh(db_event)
+    return db_event
+
+
+@router.patch("/events/{event_id}", response_model=EventResponse)
+def update_event(
+    event_id: int,
+    data: EventUpdate,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user_from_token(token, db)
+    event = db.query(Event).filter(Event.id == event_id).first()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Событие не найдено")
+    if event.created_by != user.id:
+        raise HTTPException(status_code=403, detail="Только создатель может редактировать событие")
+
+    if data.date_time is not None:
+        if data.date_time < datetime.utcnow():
+            raise HTTPException(status_code=400, detail="Дата не может быть в прошлом")
+        event.date_time = data.date_time
+    if data.title is not None:
+        event.title = data.title
+    if data.description is not None:
+        event.description = data.description
+    if data.location is not None:
+        event.location = data.location
+    if data.address is not None:
+        event.address = data.address
+    if data.city is not None:
+        event.city = data.city
+    if data.category is not None:
+        event.category = data.category
+    if data.price is not None:
+        event.price = data.price
+    if data.max_participants is not None:
+        event.max_participants = data.max_participants
+    if data.image_url is not None:
+        event.image_url = data.image_url
+    if data.external_link is not None:
+        event.external_link = data.external_link
+    if data.is_active is not None:
+        event.is_active = data.is_active
+
+    db.commit()
+    db.refresh(event)
+    return event
+
+
+# ─── KudaGo ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/kudago/events")
+def kudago_get_events(
+    location: str = Query(default="kzn"),
+    categories: Optional[str] = Query(default=None),
+    is_free: Optional[bool] = Query(default=None),
+    search: Optional[str] = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    actual_since: Optional[int] = Query(default=None),
+    actual_until: Optional[int] = Query(default=None),
+):
+    try:
+        now_ts = int(time.time())
+        effective_since = max(actual_since, now_ts) if actual_since else now_ts
+        effective_until = actual_until
+
+        if search:
+            raw = kudago_api.search(
+                query=search, ctype="event", location=location,
+                is_free=is_free, page=page, page_size=page_size,
+                actual_since=effective_since, actual_until=effective_until,
+            )
+        else:
+            raw = kudago_api.get_events(
+                location=location, categories=categories, is_free=is_free,
+                page=page, page_size=page_size,
+                actual_since=effective_since, actual_until=effective_until,
+            )
+        events = kudago_api.parse_events(raw)
+        return {
+            "count": raw.get("count", len(events)),
+            "next": raw.get("next"),
+            "previous": raw.get("previous"),
+            "page": page,
+            "page_size": page_size,
+            "results": events,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
+
+
+@router.get("/kudago/events/{event_id}")
+def kudago_get_event_detail(event_id: int):
+    try:
+        return kudago_api.parse_event_detail(kudago_api.get_event_by_id(event_id))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
+
+
+@router.get("/kudago/today")
+def kudago_events_today(location: str = Query(default="kzn")):
+    try:
+        return kudago_api.get_events_today(location=location)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
+
+
+@router.get("/kudago/categories")
+def kudago_categories():
+    try:
+        return kudago_api.get_event_categories()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
+
+
+@router.get("/kudago/locations")
+def kudago_locations():
+    try:
+        return kudago_api.get_locations()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
+
+
+# ─── Attendees ───────────────────────────────────────────────────────────────
+
+
+@router.post("/attendees/{event_id}", response_model=AttendeeOut)
+def join_event(
+    event_id: str,
+    body: AttendeeCreateBody,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user_from_token(token, db)
+    existing = db.query(EventAttendee).filter(
+        EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
+    ).first()
+    if existing:
+        existing.comment    = body.comment
+        existing.is_looking = body.is_looking
+        if body.event_title     is not None: existing.event_title     = body.event_title
+        if body.event_date_ts   is not None: existing.event_date_ts   = body.event_date_ts
+        if body.event_city      is not None: existing.event_city      = body.event_city
+        if body.event_image_url is not None: existing.event_image_url = body.event_image_url
+        if body.event_category  is not None: existing.event_category  = body.event_category
+        if body.event_location  is not None: existing.event_location  = body.event_location
+        db.commit()
+        db.refresh(existing)
+        row = existing
+    else:
+        row = EventAttendee(
+            event_id=event_id,
+            user_id=user.id,
+            comment=body.comment,
+            is_looking=body.is_looking,
+            event_title=body.event_title,
+            event_date_ts=body.event_date_ts,
+            event_city=body.event_city,
+            event_image_url=body.event_image_url,
+            event_category=body.event_category,
+            event_location=body.event_location,
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+
+    created_at = row.created_at or datetime.utcnow()
+
+    try:
+        local_event = db.query(Event).filter(Event.id == int(event_id)).first()
+        if local_event:
+            local_event.current_participants = (
+                db.query(EventAttendee)
+                .filter(EventAttendee.event_id == event_id)
+                .count()
+            )
+            db.commit()
+    except (ValueError, TypeError):
+        pass
+
+    return AttendeeOut(
+        id=row.id,
+        user_id=user.id,
+        username=user.username,
+        city=user.city,
+        interests=user.interests,
+        comment=row.comment,
+        is_looking=row.is_looking,
+        created_at=created_at,
+        avatar_url=user.avatar_url,
+    )
+
+
+@router.delete("/attendees/{event_id}", status_code=204)
+def leave_event(
+    event_id: str,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user_from_token(token, db)
+    db.query(EventAttendee).filter(
+        EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
+    ).delete()
+    db.commit()
+
+    try:
+        local_event = db.query(Event).filter(Event.id == int(event_id)).first()
+        if local_event:
+            local_event.current_participants = (
+                db.query(EventAttendee)
+                .filter(EventAttendee.event_id == event_id)
+                .count()
+            )
+            db.commit()
+    except (ValueError, TypeError):
+        pass
+
+
+@router.get("/attendees/{event_id}/me")
+def get_my_attendance(
+    event_id: str,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user_from_token(token, db)
+    row = db.query(EventAttendee).filter(
+        EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
+    ).first()
+    if not row:
+        return {"attending": False}
+    return {"attending": True, "is_looking": row.is_looking, "comment": row.comment}
+
+
+@router.get("/attendees/{event_id}/matches", response_model=List[AttendeeMatchOut])
+def get_matches(
+    event_id: str,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user_from_token(token, db)
+    my_interests: set = set(
+        i.strip() for i in (user.interests or "").split(",") if i.strip()
+    )
+
+    rows = (
+        db.query(EventAttendee, User)
+        .join(User, EventAttendee.user_id == User.id)
+        .filter(EventAttendee.event_id == event_id, EventAttendee.user_id != user.id)
+        .all()
+    )
+
+    result = []
+    for a, u in rows:
+        their = set(i.strip() for i in (u.interests or "").split(",") if i.strip())
+        common = len(my_interests & their)
+        result.append(AttendeeMatchOut(
+            id=a.id, user_id=u.id, username=u.username, city=u.city,
+            interests=u.interests, comment=a.comment,
+            is_looking=a.is_looking,
+            created_at=a.created_at or datetime.utcnow(),
+            common_count=common,
+            avatar_url=u.avatar_url,
+        ))
+
+    result.sort(key=lambda x: x.common_count, reverse=True)
+    return result
+
+
+@router.get("/attendees/{event_id}", response_model=List[AttendeeOut])
+def get_attendees(
+    event_id: str,
+    only_looking: bool = Query(default=False),
+    db: Session = Depends(get_db),
+):
+    query = db.query(EventAttendee, User).join(User, EventAttendee.user_id == User.id).filter(
+        EventAttendee.event_id == event_id
+    )
+    if only_looking:
+        query = query.filter(EventAttendee.is_looking == True)
+    rows = query.order_by(EventAttendee.created_at.desc()).all()
+    return [
+        AttendeeOut(
+            id=a.id, user_id=u.id, username=u.username, city=u.city,
+            interests=u.interests, comment=a.comment,
+            is_looking=a.is_looking,
+            created_at=a.created_at or datetime.utcnow(),
+            avatar_url=u.avatar_url,
+        )
+        for a, u in rows
+    ]
