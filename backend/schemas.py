@@ -174,6 +174,9 @@ class PartySearchItem(BaseModel):
     is_open: bool
     city: Optional[str]
     member_count: int
+    event_title: Optional[str] = None
+    event_date_ts: Optional[int] = None
+    event_image_url: Optional[str] = None
     created_at: datetime
 
     class Config:

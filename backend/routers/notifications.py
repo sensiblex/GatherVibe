@@ -31,7 +31,7 @@ class MarkReadBody(BaseModel):
     notification_id: int
 
 
-@router.get("/notifications/", response_model=list[NotificationOut])
+@router.get("/notifications", response_model=list[NotificationOut])
 def list_notifications(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),

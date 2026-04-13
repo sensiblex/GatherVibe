@@ -73,7 +73,7 @@ export default function NotificationsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiFetch('/notifications/?limit=100');
+      const res = await apiFetch('/notifications?limit=100');
       if (!res.ok) throw new Error(`${res.status}`);
       const data: NotificationItem[] = await res.json();
       setItems(data);

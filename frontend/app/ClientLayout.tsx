@@ -30,11 +30,21 @@ function UserNotificationSocket() {
   const socketRef = useRef<Socket | null>(null);
   const router = useRouter();
   const pathname = usePathname();
+  // Refs to avoid recreating socket on router/pathname changes
+  const routerRef = useRef(router);
+  const pathnameRef = useRef(pathname);
+  useEffect(() => { routerRef.current = router; }, [router]);
+  useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
 
   useEffect(() => {
     if (!token) return;
 
-    const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
+    const socket = io(SOCKET_URL, {
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+    });
     socketRef.current = socket;
 
     socket.on('connect', () => {
@@ -53,8 +63,8 @@ function UserNotificationSocket() {
     socket.on('kicked_from_party', (data: KickedFromPartyPayload) => {
       toast(`Вы были исключены из компании "${data.party_title}"`, 'error');
       window.dispatchEvent(new CustomEvent('notification:new'));
-      if (pathname === `/parties/${data.party_id}`) {
-        router.push('/my-events');
+      if (pathnameRef.current === `/parties/${data.party_id}`) {
+        routerRef.current.push('/my-events');
       }
     });
 
@@ -66,7 +76,7 @@ function UserNotificationSocket() {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [token, pathname, router]);
+  }, [token]);
 
   return null;
 }

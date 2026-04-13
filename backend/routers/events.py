@@ -67,14 +67,22 @@ def get_messages(
         query = query.filter(ChatMessage.id < before_id)
     rows = query.order_by(ChatMessage.id.desc()).limit(limit).all()
     rows = list(reversed(rows))
+    user_ids = [int(r.user_id) for r in rows if r.user_id and r.user_id.isdigit()]
+    users_map = {}
+    if user_ids:
+        users_map = {
+            str(u.id): u.avatar_url
+            for u in db.query(User).filter(User.id.in_(user_ids)).all()
+        }
     return {
         "messages": [
             {
-                "id":        r.id,
-                "message":   r.message,
-                "userId":    r.user_id,
-                "username":  r.username,
-                "timestamp": r.timestamp.isoformat(),
+                "id":         r.id,
+                "message":    r.message,
+                "userId":     r.user_id,
+                "username":   r.username,
+                "timestamp":  r.timestamp.isoformat(),
+                "avatarUrl":  users_map.get(r.user_id),
             }
             for r in rows
         ],

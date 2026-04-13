@@ -4,10 +4,12 @@ from typing import Optional
 from datetime import datetime
 
 import kudago_api
+from auth import verify_password, hash_password
 from deps import get_db, get_current_user_from_token, oauth2_scheme
 from models.user import User
 from models.attendee import EventAttendee
 from models.party import EventParty, PartyMember
+from schemas import UserUpdate
 
 router = APIRouter(tags=["users"])
 
@@ -183,4 +185,50 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
         "bio":        user.bio,
         "avatar_url": user.avatar_url,
         "is_active":  user.is_active,
+    }
+
+
+@router.patch("/users/me")
+def update_me(
+    body: UserUpdate,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user_from_token(token, db)
+
+    if body.username is not None:
+        if not body.username.strip():
+            raise HTTPException(status_code=400, detail="Имя пользователя не может быть пустым")
+        user.username = body.username.strip()
+
+    if body.new_password is not None:
+        if not body.old_password:
+            raise HTTPException(status_code=400, detail="Необходимо указать текущий пароль для смены")
+        if len(body.new_password) < 8:
+            raise HTTPException(status_code=400, detail="Новый пароль должен содержать минимум 8 символов")
+        if not verify_password(body.old_password, user.hashed_password):
+            raise HTTPException(status_code=400, detail="Неверный текущий пароль")
+        user.hashed_password = hash_password(body.new_password)
+
+    if body.city is not None:
+        user.city = body.city
+    if body.bio is not None:
+        user.bio = body.bio
+    if body.interests is not None:
+        user.interests = body.interests
+    if body.avatar_url is not None:
+        user.avatar_url = body.avatar_url
+
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "id": user.id,
+        "username": user.username,
+        "email": user.email,
+        "city": user.city,
+        "bio": user.bio,
+        "interests": user.interests,
+        "avatar_url": user.avatar_url,
+        "is_active": user.is_active,
     }

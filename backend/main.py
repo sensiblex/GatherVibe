@@ -299,6 +299,7 @@ async def send_party_message(sid, data: dict):
         'message':   message_text,
         'userId':    str(user.id),
         'username':  user.username,
+        'avatarUrl': user.avatar_url,
         'timestamp': datetime.utcnow().isoformat(),
         'partyId':   party_id,
     }

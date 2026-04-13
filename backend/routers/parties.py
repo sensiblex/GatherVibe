@@ -5,6 +5,7 @@ from typing import Literal, Optional, List
 from datetime import datetime
 from enum import Enum
 
+import kudago_api
 from pydantic import BaseModel, Field
 from deps import get_db, get_current_user_from_token, oauth2_scheme
 from schemas import PartySearchItem, PartySearchResponse
@@ -84,6 +85,9 @@ class PartyOut(BaseModel):
     creator_username: str
     is_open: bool
     members: List[PartyMemberOut]
+    event_title: Optional[str] = None
+    event_date_ts: Optional[int] = None
+    event_image_url: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -111,7 +115,9 @@ def _build_party_out(party: EventParty, db: Session) -> PartyOut:
         description=party.description, max_members=party.max_members,
         creator_id=party.creator_id,
         creator_username=creator.username if creator else "?",
-        is_open=party.is_open, members=members, created_at=party.created_at,
+        is_open=party.is_open, members=members,
+        event_title=party.event_title, event_date_ts=party.event_date_ts,
+        event_image_url=party.event_image_url, created_at=party.created_at,
     )
 
 
@@ -276,6 +282,9 @@ def search_parties(
             is_open=party.is_open,
             city=party.city,
             member_count=int(count),
+            event_title=party.event_title,
+            event_date_ts=party.event_date_ts,
+            event_image_url=party.event_image_url,
             created_at=party.created_at,
         )
         for party, creator, count in rows
@@ -416,6 +425,24 @@ def create_party(
             status_code=400,
             detail="Нельзя создать более 2 активных компаний для одного события",
         )
+
+    event_title: Optional[str] = None
+    event_date_ts: Optional[int] = None
+    event_image_url: Optional[str] = None
+    try:
+        raw = kudago_api.get_event_by_id(int(event_id))
+        event_title = raw.get("title")
+        dates = raw.get("dates") or []
+        for d in dates:
+            ts = d.get("start")
+            if ts:
+                event_date_ts = int(ts)
+                break
+        images = raw.get("images") or []
+        event_image_url = images[0].get("image") if images else None
+    except Exception:
+        pass
+
     party = EventParty(
         event_id=event_id,
         title=body.title.strip(),
@@ -423,6 +450,9 @@ def create_party(
         max_members=body.max_members,
         creator_id=user.id,
         is_open=True,
+        event_title=event_title,
+        event_date_ts=event_date_ts,
+        event_image_url=event_image_url,
     )
     db.add(party)
     db.commit()

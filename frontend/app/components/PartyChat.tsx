@@ -5,6 +5,8 @@ import { io, Socket } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+/** Socket.IO подключается напрямую к backend (CORS разрешён) */
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:8000';
 
 interface Message {
   message: string;
@@ -12,6 +14,7 @@ interface Message {
   username: string;
   timestamp: string;
   partyId: number;
+  avatarUrl?: string | null;
 }
 
 interface Props {
@@ -51,7 +54,7 @@ export default function PartyChat({
       })
       .catch(() => setHistoryLoaded(true));
 
-    const socket = io(API_BASE, { transports: ['websocket'] });
+    const socket = io(SOCKET_URL, { transports: ['websocket'] });
     socketRef.current = socket;
 
     socket.on('connect', () => {
@@ -149,16 +152,20 @@ export default function PartyChat({
                 {!isOwn && (
                   <Link
                     href={`/users/${msg.userId}`}
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 transition hover:opacity-75 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-                    style={{
-                      background: 'linear-gradient(135deg,#4f46e5,#9333ea)',
-                    }}
+                    className="w-7 h-7 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-white text-xs font-bold transition hover:opacity-75 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                    style={msg.avatarUrl ? undefined : { background: 'linear-gradient(135deg,#4f46e5,#9333ea)' }}
                     title={msg.username}
                     aria-label={`Профиль ${msg.username}`}
                   >
-                    {(msg.username || String(msg.userId))
-                      .slice(0, 1)
-                      .toUpperCase()}
+                    {msg.avatarUrl ? (
+                      <img
+                        src={msg.avatarUrl}
+                        alt={msg.username}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      (msg.username || String(msg.userId)).slice(0, 1).toUpperCase()
+                    )}
                   </Link>
                 )}
 

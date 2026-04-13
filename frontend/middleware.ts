@@ -2,13 +2,18 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 /** Routes that require an authenticated user (server-side guard) */
-const PROTECTED_PREFIXES = ['/profile', '/notifications', '/my-events'];
+const PROTECTED_PREFIXES = ['/profile', '/notifications', '/my-events', '/parties'];
 
 /** Routes that an already-authenticated user should be redirected away from */
 const AUTH_ONLY_ROUTES = ['/login', '/register'];
 
-export function proxy(request: NextRequest) {
+export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Skip API requests — middleware should only guard pages
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.next();
+  }
 
   // Read JWT from the `token` cookie (set by AuthContext on login)
   const token = request.cookies.get('token')?.value;
@@ -41,6 +46,7 @@ export const config = {
     '/profile/:path*',
     '/notifications/:path*',
     '/my-events/:path*',
+    '/parties/:path*',
     '/login',
     '/register',
   ],

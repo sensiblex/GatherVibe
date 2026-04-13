@@ -1,12 +1,18 @@
 /**
  * apiFetch — глобальный fetch-wrapper для GatherVibe.
  *
- * - Читает JWT из localStorage, добавляет Authorization: Bearer header.
- * - При 401 очищает auth-данные, редиректит на /login.
+ * - В Docker все API-запросы идут через Next.js реврайты:
+ *   /api/* → http://backend:8000/*
+ *   /socket.io/* → http://backend:8000/socket.io/*
+ * - В dev-режиме без Docker можно задать NEXT_PUBLIC_API_URL=http://localhost:8000
+ *
+ * Читает JWT из localStorage, добавляет Authorization: Bearer header.
+ * При 401 очищает auth-данные, редиректит на /login.
  */
 
 import { toast } from '../components/Toast';
 
+/** Если задана NEXT_PUBLIC_API_URL (Docker = "/api", dev = "http://localhost:8000") */
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 function getToken(): string | null {
@@ -34,7 +40,15 @@ export async function apiFetch(
 ): Promise<Response> {
   let url: RequestInfo | URL = input;
   if (typeof input === 'string' && input.startsWith('/')) {
-    url = `${API_BASE}${input}`;
+    // Если путь уже начинается с API_BASE (/api или http://...), не дублируем
+    if (API_BASE && (
+      input.startsWith(API_BASE + '/') ||
+      (API_BASE.startsWith('/') && input.startsWith(API_BASE))
+    )) {
+      url = input;
+    } else {
+      url = `${API_BASE}${input}`;
+    }
   }
 
   const headers = new Headers(init.headers);
