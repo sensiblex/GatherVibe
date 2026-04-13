@@ -1,11 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
-from typing import Optional, List
+from typing import Literal, Optional, List
 from datetime import datetime
 from enum import Enum
 
 from pydantic import BaseModel, Field
 from deps import get_db, get_current_user_from_token, oauth2_scheme
+from schemas import PartySearchItem, PartySearchResponse
 from sio_instance import sio
 from models.user import User
 from models.event import Event
@@ -186,6 +188,100 @@ def get_my_pending_requests(
             message=member.message,
         ))
     return result
+
+
+# ─── Party Search ─────────────────────────────────────────────────────────────
+# IMPORTANT: must be declared before /parties/{event_id} to avoid shadowing
+
+
+@router.get("/parties/search", response_model=PartySearchResponse)
+def search_parties(
+    q: Optional[str] = Query(default=None, max_length=200),
+    city: Optional[str] = Query(default=None, max_length=100),
+    date_from: Optional[datetime] = Query(default=None),
+    date_to: Optional[datetime] = Query(default=None),
+    min_members: Optional[int] = Query(default=None, ge=1),
+    max_members: Optional[int] = Query(default=None, ge=1),
+    sort_by: Literal["date", "popular", "new"] = Query(default="new"),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=20, ge=1, le=100),
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    get_current_user_from_token(token, db)
+
+    # Subquery: count accepted members per party (creator is not in party_members)
+    member_count_sq = (
+        db.query(
+            PartyMember.party_id,
+            sa_func.count(PartyMember.id).label("member_count"),
+        )
+        .filter(PartyMember.status == MemberStatus.accepted)
+        .group_by(PartyMember.party_id)
+        .subquery()
+    )
+
+    base_q = (
+        db.query(
+            EventParty,
+            User,
+            sa_func.coalesce(member_count_sq.c.member_count, 0).label("member_count"),
+        )
+        .join(User, EventParty.creator_id == User.id)
+        .outerjoin(member_count_sq, EventParty.id == member_count_sq.c.party_id)
+    )
+
+    if q and q.strip():
+        pattern = f"%{q.strip()}%"
+        base_q = base_q.filter(
+            EventParty.title.ilike(pattern) | EventParty.description.ilike(pattern)
+        )
+
+    if city and city.strip():
+        base_q = base_q.filter(EventParty.city.ilike(f"%{city.strip()}%"))
+
+    if date_from is not None:
+        base_q = base_q.filter(EventParty.created_at >= date_from)
+
+    if date_to is not None:
+        base_q = base_q.filter(EventParty.created_at <= date_to)
+
+    if min_members is not None:
+        base_q = base_q.filter(EventParty.max_members >= min_members)
+
+    if max_members is not None:
+        base_q = base_q.filter(EventParty.max_members <= max_members)
+
+    total = base_q.count()
+
+    if sort_by == "popular":
+        base_q = base_q.order_by(sa_func.coalesce(member_count_sq.c.member_count, 0).desc())
+    elif sort_by == "date":
+        base_q = base_q.order_by(EventParty.created_at.asc())
+    else:  # "new"
+        base_q = base_q.order_by(EventParty.created_at.desc())
+
+    offset = (page - 1) * per_page
+    rows = base_q.offset(offset).limit(per_page).all()
+
+    items = [
+        PartySearchItem(
+            id=party.id,
+            event_id=party.event_id,
+            title=party.title,
+            description=party.description,
+            max_members=party.max_members,
+            creator_id=party.creator_id,
+            creator_username=creator.username,
+            is_open=party.is_open,
+            city=party.city,
+            member_count=int(count),
+            created_at=party.created_at,
+        )
+        for party, creator, count in rows
+    ]
+
+    return PartySearchResponse.build(items=items, total=total, page=page, per_page=per_page)
 
 
 @router.get("/parties/by-id/{party_id}", response_model=PartyOut)

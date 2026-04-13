@@ -185,6 +185,7 @@ export default function EventsPage() {
   const [hasMore, setHasMore]         = useState(true);
   const [total, setTotal]             = useState<number | null>(null);
   const [allEvents, setAllEvents]     = useState<KudaGoEvent[]>([]);
+  const [searchVariants, setSearchVariants] = useState<string[]>([]);
 
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch]           = useState('');
@@ -283,9 +284,15 @@ export default function EventsPage() {
       const incoming: KudaGoEvent[] = data.results || [];
       setTotal(data.count ?? null);
       setHasMore(!!data.next || incoming.length === PAGE_SIZE);
+      // Показываем варианты запроса только если были задействованы fallback-варианты
+      if (!append) {
+        const variants: string[] = data._variants_used || [];
+        setSearchVariants(variants.length > 1 ? variants.slice(1) : []);
+      }
 
       const filtered = singleDay && (from || to)
         ? incoming.filter(e => {
+            if (e.is_permanent) return true;
             if (!e.start_date) return false;
             if (from && e.start_date < from) return false;
             if (to && e.start_date > to) return false;
@@ -369,7 +376,11 @@ export default function EventsPage() {
   const onSearchChange = (val: string) => {
     setSearchInput(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => setSearch(val), 500);
+    if (!val.trim()) {
+      setSearch('');
+    } else {
+      debounceRef.current = setTimeout(() => setSearch(val), 500);
+    }
   };
 
   const loadMore = () => {
@@ -382,7 +393,7 @@ export default function EventsPage() {
     setSearchInput(''); setSearch(''); setCategory('');
     setIsFree(false); setDateFrom(''); setDateTo('');
     setCalSelectedDate(null); setIsSingleDayFilter(false);
-    setSortBy('date');
+    setSortBy('date'); setSearchVariants([]);
   };
 
   const hasActive = !!(search || category || isFree || dateFrom || dateTo || sortBy !== 'date');
@@ -698,6 +709,37 @@ export default function EventsPage() {
                     ⚡ Показаны события из общей выборки
                   </span>
                 )}
+              </div>
+            )}
+
+            {/* Smart search hints */}
+            {!loading && searchVariants.length > 0 && search && (
+              <div
+                className="mb-5 flex items-start gap-2 flex-wrap rounded-2xl px-4 py-3"
+                style={{
+                  background: 'var(--primary-hl)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <span className="text-xs font-semibold shrink-0 mt-0.5" style={{ color: 'var(--primary)' }}>
+                  🔍 Также искали:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {searchVariants.map(v => (
+                    <button
+                      key={v}
+                      onClick={() => { setSearchInput(v); setSearch(v); setSearchVariants([]); }}
+                      className="text-xs font-medium px-2.5 py-1 rounded-full transition hover:opacity-80"
+                      style={{
+                        background: 'var(--surface)',
+                        color: 'var(--primary)',
+                        border: '1px solid var(--border)',
+                      }}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 

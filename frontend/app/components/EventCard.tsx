@@ -18,6 +18,7 @@ export interface KudaGoEvent {
   price: string;
   is_free: boolean;
   age_restriction: string | number | null;
+  is_permanent: boolean;
   start_date: string | null;
   start_time: string | null;
   place_title: string;

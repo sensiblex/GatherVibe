@@ -123,7 +123,7 @@ def _is_permanent_date(d: dict) -> bool:
     return bool(d.get("is_endless") or d.get("is_startless") or d.get("use_place_schedule"))
 
 
-def parse_events(raw: dict) -> list:
+def parse_events(raw: dict, skip_date_filter: bool = False) -> list:
     import datetime
     import time
     now_ts = int(time.time())
@@ -200,8 +200,9 @@ def parse_events(raw: dict) -> list:
                 start_date = dt.strftime("%Y-%m-%d")
                 start_time = dt.strftime("%H:%M")
         else:
-            # Нет ни постоянных, ни будущих дат — событие уже прошло, пропускаем
-            continue
+            # Нет ни постоянных, ни будущих дат — либо прошло, либо даты не развёрнуты
+            if not skip_date_filter:
+                continue
 
         place = e.get("place") or {}
         images = e.get("images") or []

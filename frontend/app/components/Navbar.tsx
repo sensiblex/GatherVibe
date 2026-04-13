@@ -152,6 +152,18 @@ export default function Navbar() {
           </Link>
           {user && (
             <Link
+              href="/parties"
+              className="px-4 py-2 rounded-xl text-sm font-medium transition"
+              style={{
+                background: pathname.startsWith('/parties') ? 'var(--primary-hl)' : 'transparent',
+                color: pathname.startsWith('/parties') ? 'var(--primary)' : 'var(--text-muted)',
+              }}
+            >
+              Компании
+            </Link>
+          )}
+          {user && (
+            <Link
               href="/my-events"
               className="px-4 py-2 rounded-xl text-sm font-medium transition"
               style={{

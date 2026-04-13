@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Dict, List, Optional
+from typing import Dict, List, Literal, Optional
 from datetime import datetime
+import math
 
 
 class UserCreate(BaseModel):
@@ -145,3 +146,54 @@ class EventResponse(EventBase):
 
     class Config:
         from_attributes = True
+
+
+# ─── Party Search ────────────────────────────────────────────────────────────
+
+
+class PartySearchParams(BaseModel):
+    q: Optional[str] = None
+    city: Optional[str] = None
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+    min_members: Optional[int] = Field(default=None, ge=1)
+    max_members: Optional[int] = Field(default=None, ge=1)
+    sort_by: Literal["date", "popular", "new"] = "new"
+    page: int = Field(default=1, ge=1)
+    per_page: int = Field(default=20, ge=1, le=100)
+
+
+class PartySearchItem(BaseModel):
+    id: int
+    event_id: str
+    title: str
+    description: Optional[str]
+    max_members: int
+    creator_id: int
+    creator_username: str
+    is_open: bool
+    city: Optional[str]
+    member_count: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PartySearchResponse(BaseModel):
+    items: List[PartySearchItem]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+
+    @classmethod
+    def build(
+        cls,
+        items: List[PartySearchItem],
+        total: int,
+        page: int,
+        per_page: int,
+    ) -> "PartySearchResponse":
+        pages = math.ceil(total / per_page) if total > 0 else 0
+        return cls(items=items, total=total, page=page, per_page=per_page, pages=pages)

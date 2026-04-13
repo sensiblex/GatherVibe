@@ -14,6 +14,7 @@ class EventParty(Base):
     max_members = Column(Integer, default=4)
     creator_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     is_open = Column(Boolean, default=True)  # False = closed for new requests
+    city = Column(String(100), nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

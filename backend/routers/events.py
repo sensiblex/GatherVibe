@@ -12,6 +12,7 @@ from models.attendee import EventAttendee
 from models.chat_message import ChatMessage
 from models.user import User
 import kudago_api
+from search_utils import smart_search
 
 router = APIRouter(tags=["events"])
 
@@ -245,18 +246,30 @@ def kudago_get_events(
         effective_until = actual_until
 
         if search:
-            raw = kudago_api.search(
-                query=search, ctype="event", location=location,
-                is_free=is_free, page=page, page_size=page_size,
-                actual_since=effective_since, actual_until=effective_until,
-            )
+            def _do_search(query: str) -> dict:
+                return kudago_api.search(
+                    query=query, ctype="event", location=location,
+                    is_free=is_free, page=page, page_size=page_size,
+                    actual_since=effective_since, actual_until=effective_until,
+                )
+
+            raw = smart_search(search, _do_search, min_results=3, max_variants=3)
+            # KudaGo /search/ wraps each item as {"object": {...}, "ctype": "event"}
+            # unwrap before parse_events which expects plain event dicts
+            unwrapped = [
+                r["object"] if isinstance(r, dict) and "object" in r else r
+                for r in raw.get("results", [])
+            ]
+            raw["results"] = kudago_api.parse_events({"results": unwrapped}, skip_date_filter=True)
+            events = raw["results"]
         else:
             raw = kudago_api.get_events(
                 location=location, categories=categories, is_free=is_free,
                 page=page, page_size=page_size,
                 actual_since=effective_since, actual_until=effective_until,
             )
-        events = kudago_api.parse_events(raw)
+            events = kudago_api.parse_events(raw)
+
         return {
             "count": raw.get("count", len(events)),
             "next": raw.get("next"),

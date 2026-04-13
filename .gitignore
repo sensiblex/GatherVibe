@@ -28,3 +28,12 @@ node_modules/
 
 # IDE
 .vscode/settings.json
+
+# Claude Code / AI settings
+.claude/
+CLAUDE.md
+hooks/
+scripts/
+pyproject.toml
+uv.lock
+.venv/
