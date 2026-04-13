@@ -40,7 +40,7 @@ function UserNotificationSocket() {
     if (!token) return;
 
     const socket = io(SOCKET_URL, {
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,

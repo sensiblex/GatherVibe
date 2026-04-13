@@ -54,13 +54,20 @@ export default function PartyChat({
       })
       .catch(() => setHistoryLoaded(true));
 
-    const socket = io(SOCKET_URL, { transports: ['websocket'] });
+    const socket = io(SOCKET_URL, {
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1500,
+    });
     socketRef.current = socket;
 
     socket.on('connect', () => {
       setConnected(true);
-      // Pass token so backend can authenticate the user
       socket.emit('join_party_chat', { partyId, token });
+    });
+
+    socket.on('connect_error', (err) => {
+      console.error('[PartyChat] Socket.IO connect error:', err.message);
     });
 
     socket.on('disconnect', () => setConnected(false));

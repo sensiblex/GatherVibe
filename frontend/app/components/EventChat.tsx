@@ -13,6 +13,7 @@ interface Message {
   userId: string;
   username: string;
   timestamp: string;
+  avatarUrl?: string | null;
 }
 
 export default function EventChat({
@@ -156,15 +157,16 @@ export default function EventChat({
                 {!isMe && (
                   <Link
                     href={`/users/${m.userId}`}
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 self-end transition hover:opacity-75 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-                    style={{
-                      background:
-                        'linear-gradient(135deg,var(--accent,#4f46e5),#9333ea)',
-                    }}
+                    className="w-8 h-8 rounded-full shrink-0 self-end overflow-hidden flex items-center justify-center text-white text-xs font-bold transition hover:opacity-75 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                    style={m.avatarUrl ? undefined : { background: 'linear-gradient(135deg,var(--accent,#4f46e5),#9333ea)' }}
                     title={m.username}
                     aria-label={`Профиль ${m.username}`}
                   >
-                    {(m.username || m.userId).slice(0, 1).toUpperCase()}
+                    {m.avatarUrl ? (
+                      <img src={m.avatarUrl} alt={m.username} className="w-full h-full object-cover" />
+                    ) : (
+                      (m.username || m.userId).slice(0, 1).toUpperCase()
+                    )}
                   </Link>
                 )}
 

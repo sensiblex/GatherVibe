@@ -48,6 +48,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const p = JSON.parse(atob(t.split('.')[1]));
         setToken(t);
         setUser({ id: p.id ?? p.user_id, username: p.username, email: p.sub });
+        // Восстанавливаем cookie для middleware (server-side route protection)
+        setProxyCookie(t);
       } catch {
         localStorage.removeItem('token');
       }
