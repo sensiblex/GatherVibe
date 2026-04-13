@@ -2,9 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export interface KudaGoEvent {
   kudago_id: number;
@@ -103,33 +101,15 @@ function formatDate(dateStr: string | null, timeStr: string | null): string {
   );
 }
 
+interface AttendeeBasic {
+  user_id: number;
+  username: string;
+  avatar_url?: string | null;
+}
+
 // ──────────────────────────────────────────────────────────────────────
-export default function EventCard({ event }: { event: KudaGoEvent }) {
+export default function EventCard({ event, attendees = [] }: { event: KudaGoEvent; attendees?: AttendeeBasic[] }) {
   const ageLabel = event.age_restriction ? (typeof event.age_restriction === 'string' && event.age_restriction.endsWith('+') ? event.age_restriction : `${event.age_restriction}+`) : null;
-
-  interface AttendeeBasic {
-    user_id: number;
-    username: string;
-    avatar_url?: string | null;
-  }
-
-  const [attendees, setAttendees] = useState<AttendeeBasic[]>([]);
-
-  useEffect(() => {
-    if (!event.kudago_id) return;
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/attendees/${event.kudago_id}`);
-        if (!res.ok) return;
-        const data: AttendeeBasic[] = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setAttendees(data);
-        }
-      } catch {
-        // не блокируем рендер карточки
-      }
-    })();
-  }, [event.kudago_id]);
 
   return (
     <Link

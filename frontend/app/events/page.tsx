@@ -186,6 +186,7 @@ export default function EventsPage() {
   const [total, setTotal]             = useState<number | null>(null);
   const [allEvents, setAllEvents]     = useState<KudaGoEvent[]>([]);
   const [searchVariants, setSearchVariants] = useState<string[]>([]);
+  const [attendeesMap, setAttendeesMap] = useState<Record<number, { user_id: number; username: string; avatar_url?: string | null }[]>>({});
 
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch]           = useState('');
@@ -230,8 +231,7 @@ export default function EventsPage() {
       .then(r => r.json())
       .then((d: Category[]) => { if (Array.isArray(d)) setCategories(d); })
       .catch(() => {});
-    const nowTs = Math.floor(Date.now() / 1000);
-    fetch(`${API_BASE}/kudago/events?location=kzn&page=1&page_size=100&actual_since=${nowTs}`)
+    fetch(`${API_BASE}/kudago/events?location=kzn&page=1&page_size=100`)
       .then(r => r.json())
       .then(d => setAllEvents(d.results || []))
       .catch(() => {});
@@ -300,7 +300,27 @@ export default function EventsPage() {
           })
         : incoming;
 
-      setEvents(prev => append ? [...prev, ...filtered] : filtered);
+      setEvents(prev => {
+        if (!append) return filtered;
+        const seen = new Set(prev.map(e => e.kudago_id));
+        return [...prev, ...filtered.filter(e => !seen.has(e.kudago_id))];
+      });
+
+      // Батч-загрузка attendees для всех событий на странице
+      const ids = filtered.map(e => e.kudago_id).filter(Boolean);
+      if (ids.length > 0) {
+        const results = await Promise.allSettled(
+          ids.map(id => fetch(`${API_BASE}/attendees/${id}`).then(r => r.ok ? r.json() : []))
+        );
+        const newMap: Record<number, { user_id: number; username: string; avatar_url?: string | null }[]> = {};
+        ids.forEach((id, i) => {
+          const r = results[i];
+          if (r.status === 'fulfilled' && Array.isArray(r.value) && r.value.length > 0) {
+            newMap[id] = r.value;
+          }
+        });
+        setAttendeesMap(prev => append ? { ...prev, ...newMap } : newMap);
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Неизвестная ошибка');
     } finally {
@@ -312,6 +332,7 @@ export default function EventsPage() {
 
   useEffect(() => {
     setPage(1);
+    loadingRef.current = false; // сбрасываем блокировку при смене фильтров
     load(1, search, category, isFree, dateFrom, dateTo, false, isSingleDayFilter);
   }, [search, category, isFree, dateFrom, dateTo, isSingleDayFilter, load]);
 
@@ -794,7 +815,7 @@ export default function EventsPage() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {displayEvents.map(event => <EventCard key={event.kudago_id} event={event} />)}
+                    {displayEvents.map(event => <EventCard key={event.kudago_id} event={event} attendees={attendeesMap[event.kudago_id] ?? []} />)}
                   </div>
                 )}
 

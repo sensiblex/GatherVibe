@@ -1,7 +1,12 @@
+import asyncio
+import logging
 import socketio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 # ── Database ──────────────────────────────────────────────────────────────────
 from database import engine
@@ -12,6 +17,7 @@ import models.party
 import models.chat_message
 import models.review
 import models.notification
+import models.kudago_event
 
 models.user.Base.metadata.create_all(bind=engine)
 models.event.Base.metadata.create_all(bind=engine)
@@ -36,8 +42,43 @@ from models.chat_message import ChatMessage  # noqa: E402
 from models.party import EventParty, PartyMember  # noqa: E402
 from routers.parties import MemberStatus  # noqa: E402
 
+# ── KudaGo cache sync ─────────────────────────────────────────────────────────
+import kudago_cache  # noqa: E402
+
+CACHE_SYNC_INTERVAL = 3600  # секунды между синками (1 час)
+
+
+async def _cache_sync_loop():
+    """Фоновая задача: синхронизирует кэш событий каждый час."""
+    while True:
+        try:
+            loop = asyncio.get_event_loop()
+            stats = await loop.run_in_executor(None, kudago_cache.sync_all)
+            logger.info("KudaGo cache sync done: %s", stats)
+        except Exception as exc:
+            logger.error("KudaGo cache sync error: %s", exc)
+        await asyncio.sleep(CACHE_SYNC_INTERVAL)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    loop = asyncio.get_event_loop()
+    if not kudago_cache.location_has_cache_direct("kzn"):
+        print("[KudaGo] Cache empty — syncing kzn on startup...", flush=True)
+        try:
+            n = await loop.run_in_executor(None, lambda: kudago_cache.sync_location("kzn", pages=3))
+            print(f"[KudaGo] kzn sync done: {n} events", flush=True)
+        except Exception as exc:
+            print(f"[KudaGo] kzn sync FAILED: {exc}", flush=True)
+    else:
+        print("[KudaGo] kzn cache already populated, skipping startup sync", flush=True)
+    task = asyncio.create_task(_cache_sync_loop())
+    yield
+    task.cancel()
+
+
 # ── FastAPI app ───────────────────────────────────────────────────────────────
-app = FastAPI(title="GatherVibe API")
+app = FastAPI(title="GatherVibe API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

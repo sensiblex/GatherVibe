@@ -5,6 +5,14 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'media.kudago.com',
+      },
+    ],
+  },
 };
 
 module.exports = nextConfig;

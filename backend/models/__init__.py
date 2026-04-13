@@ -5,5 +5,6 @@ from .party import EventParty, PartyMember
 from .chat_message import ChatMessage
 from .review import PartyReview, ReviewReport
 from .notification import Notification
+from .kudago_event import KudaGoEvent
 
-__all__ = ["User", "Event", "EventAttendee", "EventParty", "PartyMember", "ChatMessage", "PartyReview", "ReviewReport", "Notification"]
+__all__ = ["User", "Event", "EventAttendee", "EventParty", "PartyMember", "ChatMessage", "PartyReview", "ReviewReport", "Notification", "KudaGoEvent"]

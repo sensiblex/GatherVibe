@@ -12,7 +12,7 @@ from models.attendee import EventAttendee
 from models.chat_message import ChatMessage
 from models.user import User
 import kudago_api
-from search_utils import smart_search
+import kudago_cache
 
 router = APIRouter(tags=["events"])
 
@@ -231,7 +231,7 @@ def update_event(
 
 @router.get("/kudago/events")
 def kudago_get_events(
-    location: str = Query(default="kzn"),
+    location: str = Query(default="msk"),
     categories: Optional[str] = Query(default=None),
     is_free: Optional[bool] = Query(default=None),
     search: Optional[str] = Query(default=None),
@@ -239,47 +239,105 @@ def kudago_get_events(
     page_size: int = Query(default=20, ge=1, le=100),
     actual_since: Optional[int] = Query(default=None),
     actual_until: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
 ):
+    """Возвращает события из локального кэша. Фоллбэк на KudaGo API только для browsing без поиска."""
+    cache_has_location = kudago_cache.location_has_cache(db, location)
+
+    if cache_has_location:
+        # Кэш есть — всегда читаем из него. Поиск точный, по title.
+        try:
+            return kudago_cache.query_cache(
+                db=db,
+                location=location,
+                categories=categories,
+                is_free=is_free,
+                search=search,
+                page=page,
+                page_size=page_size,
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Ошибка кэша: {str(e)}")
+
+    # Кэш пустой — фоллбэк на KudaGo API
     try:
         now_ts = int(time.time())
         effective_since = max(actual_since, now_ts) if actual_since else now_ts
-        effective_until = actual_until
+        raw = kudago_api.get_events(
+            location=location, categories=categories, is_free=is_free,
+            page=page, page_size=page_size,
+            actual_since=effective_since, actual_until=actual_until,
+        )
+        events = kudago_api.parse_events(raw)
 
+        # Если есть поиск — фильтруем по title на backend (KudaGo не умеет title-only search)
         if search:
-            def _do_search(query: str) -> dict:
-                return kudago_api.search(
-                    query=query, ctype="event", location=location,
-                    is_free=is_free, page=page, page_size=page_size,
-                    actual_since=effective_since, actual_until=effective_until,
-                )
-
-            raw = smart_search(search, _do_search, min_results=3, max_variants=3)
-            # KudaGo /search/ wraps each item as {"object": {...}, "ctype": "event"}
-            # unwrap before parse_events which expects plain event dicts
-            unwrapped = [
-                r["object"] if isinstance(r, dict) and "object" in r else r
-                for r in raw.get("results", [])
-            ]
-            raw["results"] = kudago_api.parse_events({"results": unwrapped}, skip_date_filter=True)
-            events = raw["results"]
-        else:
-            raw = kudago_api.get_events(
-                location=location, categories=categories, is_free=is_free,
-                page=page, page_size=page_size,
-                actual_since=effective_since, actual_until=effective_until,
-            )
-            events = kudago_api.parse_events(raw)
+            search_lower = search.lower()
+            events = [e for e in events if search_lower in e.get("title", "").lower()]
 
         return {
-            "count": raw.get("count", len(events)),
-            "next": raw.get("next"),
-            "previous": raw.get("previous"),
+            "count": len(events) if search else raw.get("count", len(events)),
+            "next": None if search else raw.get("next"),
+            "previous": None if search else raw.get("previous"),
             "page": page,
             "page_size": page_size,
             "results": events,
+            "from_cache": False,
         }
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
+
+
+@router.post("/kudago/sync")
+def kudago_sync(
+    locations: Optional[str] = Query(default=None, description="Через запятую: msk,spb,kzn"),
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Принудительная синхронизация кэша событий из KudaGo API."""
+    get_current_user_from_token(token, db)
+    loc_list = [l.strip() for l in locations.split(",")] if locations else kudago_cache.DEFAULT_LOCATIONS
+    try:
+        stats = kudago_cache.sync_all(loc_list)
+        return {"synced": stats}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Ошибка синхронизации: {str(e)}")
+
+
+@router.get("/kudago/debug")
+def kudago_debug(location: str = Query(default="kzn"), search: str = Query(default="мир"), db: Session = Depends(get_db)):
+    import time as _time
+    from models.kudago_event import KudaGoEvent as KE
+    from sqlalchemy import func as sf
+    now_ts = int(_time.time())
+    stats = db.query(KE.location, sf.count()).group_by(KE.location).all()
+    search_lower = search.lower()
+
+    # Все события с "мир" в title_lower (без фильтра дат)
+    found_all = db.query(KE.kudago_id, KE.title, KE.is_permanent, KE.start_ts).filter(
+        KE.location == location, KE.title_lower.like(f"%{search_lower}%")
+    ).all()
+
+    # После фильтра дат
+    found_dated = db.query(KE.kudago_id, KE.title).filter(
+        KE.location == location,
+        KE.title_lower.like(f"%{search_lower}%"),
+        (KE.is_permanent == True) | (KE.start_ts >= now_ts)  # noqa: E712
+    ).all()
+
+    query_cache_result = kudago_cache.query_cache(db=db, location=location, search=search, page=1, page_size=10)
+
+    return {
+        "cache_stats": {loc: cnt for loc, cnt in stats},
+        "now_ts": now_ts,
+        "found_before_date_filter": [
+            {"id": r[0], "title": r[1], "is_permanent": r[2], "start_ts": r[3]}
+            for r in found_all
+        ],
+        "found_after_date_filter": [r[1] for r in found_dated],
+        "query_cache_count": query_cache_result["count"],
+        "query_cache_titles": [e["title"] for e in query_cache_result["results"]],
+    }
 
 
 @router.get("/kudago/events/{event_id}")
