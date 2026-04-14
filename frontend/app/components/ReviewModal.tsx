@@ -4,8 +4,6 @@ import { useState } from 'react';
 import { apiFetch } from '../lib/apiFetch';
 import { toast } from './Toast';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
 const ALLOWED_TAGS = [
   'Пунктуальный',
   'Общительный',
@@ -140,7 +138,7 @@ export default function ReviewModal({ users, onClose, onAllReviewed }: ReviewMod
     }
     setSubmitting(true);
     try {
-      const res = await apiFetch(`${API_BASE}/reviews/`, {
+      const res = await apiFetch('/reviews/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

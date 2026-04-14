@@ -208,6 +208,8 @@ def update_me(
             raise HTTPException(status_code=400, detail="Новый пароль должен содержать минимум 8 символов")
         if not verify_password(body.old_password, user.hashed_password):
             raise HTTPException(status_code=400, detail="Неверный текущий пароль")
+        if body.new_password == body.old_password:
+            raise HTTPException(status_code=400, detail="Новый пароль должен отличаться от текущего")
         user.hashed_password = hash_password(body.new_password)
 
     if body.city is not None:
