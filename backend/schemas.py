@@ -78,9 +78,16 @@ class ReviewOut(BaseModel):
     text: Optional[str] = None
     tags: Optional[List[str]] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
+
+
+class ReviewUpdate(BaseModel):
+    rating: Optional[int] = None
+    text: Optional[str] = None
+    tags: Optional[List[str]] = None
 
 
 class ReviewSummary(BaseModel):
@@ -89,6 +96,9 @@ class ReviewSummary(BaseModel):
     reviews: List[ReviewOut]
     stars_distribution: Dict[int, int]  # {1: count, 2: count, ...}
     top_tags: List[str]                  # up to 5 most frequent tags
+    page: int = 1
+    per_page: int = 10
+    total_pages: int = 1
 
 
 class ReviewableUser(BaseModel):

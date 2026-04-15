@@ -1,10 +1,12 @@
+import math
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime
 
 from deps import get_db, get_current_user_from_token, oauth2_scheme
-from schemas import ReviewCreate, ReviewOut, ReviewReport, ReviewSummary, ReviewableUser, ALLOWED_REVIEW_TAGS
+from schemas import ReviewCreate, ReviewOut, ReviewReport, ReviewSummary, ReviewUpdate, ReviewableUser, ALLOWED_REVIEW_TAGS
 from models.user import User
 from models.attendee import EventAttendee
 from models.party import EventParty, PartyMember
@@ -16,7 +18,23 @@ router = APIRouter(tags=["reviews"])
 REVIEW_WINDOW_DAYS = 30
 
 
-@router.post("/reviews/", response_model=ReviewOut)
+def _recalc_trust_score(user_id: int, db: Session) -> None:
+    try:
+        rows = db.query(PartyReview).filter(
+            PartyReview.reviewed_id == user_id,
+            PartyReview.is_hidden == False,  # noqa: E712
+            PartyReview.is_deleted == False,  # noqa: E712
+        ).all()
+        avg = round(sum(r.rating for r in rows) / len(rows), 2) if rows else None
+        user = db.query(User).filter(User.id == user_id).first()
+        if user and hasattr(user, 'trust_score'):
+            user.trust_score = avg
+            db.commit()
+    except Exception:
+        db.rollback()
+
+
+@router.post("/reviews", response_model=ReviewOut)
 def create_review(
     payload: ReviewCreate,
     token: str = Depends(oauth2_scheme),
@@ -60,9 +78,9 @@ def create_review(
     if event_ts is not None:
         if event_ts > now_ts:
             raise HTTPException(status_code=400, detail="Событие ещё не прошло")
-        window_deadline = event_ts + REVIEW_WINDOW_DAYS * 24 * 3600
-        if now_ts > window_deadline:
-            raise HTTPException(status_code=400, detail="Окно для отзыва (30 дней) истекло")
+        # window_deadline = event_ts + REVIEW_WINDOW_DAYS * 24 * 3600
+        # if now_ts > window_deadline:
+        #     raise HTTPException(status_code=400, detail="Окно для отзыва (30 дней) истекло")
 
     def _is_party_participant(user_id: int) -> bool:
         if party.creator_id == user_id:
@@ -85,6 +103,7 @@ def create_review(
         PartyReview.reviewer_id == current_user.id,
         PartyReview.reviewed_id == payload.reviewed_id,
         PartyReview.party_id == payload.party_id,
+        PartyReview.is_deleted == False,  # noqa: E712
     ).first()
     if existing:
         raise HTTPException(status_code=409, detail="Вы уже оценили этого участника")
@@ -100,6 +119,7 @@ def create_review(
     db.add(review)
     db.commit()
     db.refresh(review)
+    _recalc_trust_score(payload.reviewed_id, db)
 
     reviewer = db.query(User).filter(User.id == current_user.id).first()
     return ReviewOut(
@@ -138,34 +158,144 @@ def report_review(
     db.commit()
 
 
-@router.get("/users/{user_id}/reviews", response_model=ReviewSummary)
-def get_user_reviews(user_id: int, db: Session = Depends(get_db)):
-    rows = (
-        db.query(PartyReview)
-        .filter(
-            PartyReview.reviewed_id == user_id,
-            PartyReview.is_hidden == False,  # noqa: E712
-        )
-        .order_by(PartyReview.created_at.desc())
-        .all()
+@router.get("/reviews/my", response_model=ReviewOut)
+def get_my_review(
+    party_id: int,
+    reviewed_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_token(token, db)
+    review = db.query(PartyReview).filter(
+        PartyReview.reviewer_id == current_user.id,
+        PartyReview.party_id == party_id,
+        PartyReview.reviewed_id == reviewed_id,
+        PartyReview.is_deleted == False,  # noqa: E712
+    ).first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Отзыв не найден")
+    reviewer = db.query(User).filter(User.id == current_user.id).first()
+    return ReviewOut(
+        id=review.id,
+        reviewer_id=review.reviewer_id,
+        reviewer_username=reviewer.username if reviewer else "Аноним",
+        reviewer_avatar_url=reviewer.avatar_url if reviewer else None,
+        rating=review.rating,
+        text=review.text,
+        tags=review.tags,
+        created_at=review.created_at,
+        updated_at=review.updated_at,
     )
-    total = len(rows)
-    avg = round(sum(r.rating for r in rows) / total, 2) if total > 0 else None
+
+
+@router.put("/reviews/{review_id}", response_model=ReviewOut)
+def update_review(
+    review_id: int,
+    payload: ReviewUpdate,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_token(token, db)
+    review = db.query(PartyReview).filter(PartyReview.id == review_id).first()
+    if not review or review.is_deleted:
+        raise HTTPException(status_code=404, detail="Отзыв не найден")
+    if review.reviewer_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Нет доступа")
+
+    if payload.rating is not None:
+        if not (1 <= payload.rating <= 5):
+            raise HTTPException(status_code=400, detail="Рейтинг должен быть от 1 до 5")
+        review.rating = payload.rating
+
+    if payload.text is not None:
+        review.text = payload.text
+
+    if payload.tags is not None:
+        if len(payload.tags) > 3:
+            raise HTTPException(status_code=400, detail="Максимум 3 тега")
+        invalid = [t for t in payload.tags if t not in ALLOWED_REVIEW_TAGS]
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"Недопустимые теги: {invalid}")
+        review.tags = payload.tags or None
+
+    review.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(review)
+    _recalc_trust_score(review.reviewed_id, db)
+
+    reviewer = db.query(User).filter(User.id == current_user.id).first()
+    return ReviewOut(
+        id=review.id,
+        reviewer_id=review.reviewer_id,
+        reviewer_username=reviewer.username if reviewer else "Аноним",
+        reviewer_avatar_url=reviewer.avatar_url if reviewer else None,
+        rating=review.rating,
+        text=review.text,
+        tags=review.tags,
+        created_at=review.created_at,
+        updated_at=review.updated_at,
+    )
+
+
+@router.delete("/reviews/{review_id}", status_code=204)
+def delete_review(
+    review_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_token(token, db)
+    review = db.query(PartyReview).filter(PartyReview.id == review_id).first()
+    if not review or review.is_deleted:
+        raise HTTPException(status_code=404, detail="Отзыв не найден")
+    if review.reviewer_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Нет доступа")
+
+    reviewed_id = review.reviewed_id
+    review.is_deleted = True
+    review.updated_at = datetime.utcnow()
+    db.commit()
+    _recalc_trust_score(reviewed_id, db)
+
+
+@router.get("/users/{user_id}/reviews", response_model=ReviewSummary)
+def get_user_reviews(
+    user_id: int,
+    page: int = 1,
+    per_page: int = 10,
+    db: Session = Depends(get_db),
+):
+    per_page = min(per_page, 50)
+    page = max(page, 1)
+
+    base_query = db.query(PartyReview).filter(
+        PartyReview.reviewed_id == user_id,
+        PartyReview.is_hidden == False,  # noqa: E712
+        PartyReview.is_deleted == False,  # noqa: E712
+    )
+
+    all_rows = base_query.order_by(PartyReview.created_at.desc()).all()
+    total = len(all_rows)
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
+
+    avg = round(sum(r.rating for r in all_rows) / total, 2) if total > 0 else None
 
     dist: dict[int, int] = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-    for r in rows:
+    for r in all_rows:
         dist[r.rating] = dist.get(r.rating, 0) + 1
 
     tag_counts: dict[str, int] = {}
-    for r in rows:
+    for r in all_rows:
         for tag in (r.tags or []):
             tag_counts[tag] = tag_counts.get(tag, 0) + 1
     top_tags = [t for t, _ in sorted(tag_counts.items(), key=lambda x: -x[1])[:5]]
 
-    reviewer_ids = {r.reviewer_id for r in rows[:10]}
+    offset = (page - 1) * per_page
+    page_rows = all_rows[offset: offset + per_page]
+
+    reviewer_ids = {r.reviewer_id for r in page_rows}
     reviewers = {u.id: u for u in db.query(User).filter(User.id.in_(reviewer_ids)).all()}
 
-    recent = [
+    page_reviews = [
         ReviewOut(
             id=r.id,
             reviewer_id=r.reviewer_id,
@@ -175,15 +305,19 @@ def get_user_reviews(user_id: int, db: Session = Depends(get_db)):
             text=r.text,
             tags=r.tags,
             created_at=r.created_at,
+            updated_at=r.updated_at,
         )
-        for r in rows[:10]
+        for r in page_rows
     ]
     return ReviewSummary(
         avg_rating=avg,
         total_reviews=total,
-        reviews=recent,
+        reviews=page_reviews,
         stars_distribution=dist,
         top_tags=top_tags,
+        page=page,
+        per_page=per_page,
+        total_pages=total_pages,
     )
 
 
@@ -246,6 +380,7 @@ def get_reviewable_users(
         for r in db.query(PartyReview).filter(
             PartyReview.reviewer_id == current_user.id,
             PartyReview.party_id.in_(past_party_ids),
+            PartyReview.is_deleted == False,  # noqa: E712
         ).all()
     }
 

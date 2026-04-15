@@ -80,6 +80,8 @@ def update_profile(
             raise HTTPException(status_code=400, detail="Укажите текущий пароль")
         if not verify_password(data.old_password, user.hashed_password):
             raise HTTPException(status_code=400, detail="Неверный текущий пароль")
+        if data.new_password == data.old_password:
+            raise HTTPException(status_code=400, detail="Новый пароль должен отличаться от текущего")
         if len(data.new_password) < 8:
             raise HTTPException(status_code=400, detail="Новый пароль должен быть не менее 8 символов")
         user.hashed_password = hash_password(data.new_password)

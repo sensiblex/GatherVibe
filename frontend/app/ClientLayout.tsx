@@ -2,12 +2,11 @@
 
 import { useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { io, Socket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
 import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/AuthContext';
 import { ToastContainer, toast } from './components/Toast';
-
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:8000';
+import { getSocket, connectSocket, disconnectSocket } from './lib/socket';
 
 interface RequestStatusPayload {
   status: 'accepted' | 'rejected';
@@ -37,43 +36,53 @@ function UserNotificationSocket() {
   useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      disconnectSocket();
+      return;
+    }
 
-    const socket = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionAttempts: 10,
-      reconnectionDelay: 1000,
-    });
+    connectSocket();
+    const socket = getSocket();
     socketRef.current = socket;
 
-    socket.on('connect', () => {
+    const onConnect = () => {
       socket.emit('subscribe_user_notifications', { token });
-    });
+    };
 
-    socket.on('request_status_changed', (data: RequestStatusPayload) => {
+    // Если уже подключены — сразу подписываемся
+    if (socket.connected) onConnect();
+    socket.on('connect', onConnect);
+
+    const onStatusChanged = (data: RequestStatusPayload) => {
       if (data.status === 'accepted') {
         toast(`Вас приняли в компанию "${data.party_title}"!`, 'success');
       } else {
         toast(`Заявка в компанию "${data.party_title}" отклонена`, 'error');
       }
       window.dispatchEvent(new CustomEvent('notification:new'));
-    });
+    };
 
-    socket.on('kicked_from_party', (data: KickedFromPartyPayload) => {
+    const onKicked = (data: KickedFromPartyPayload) => {
       toast(`Вы были исключены из компании "${data.party_title}"`, 'error');
       window.dispatchEvent(new CustomEvent('notification:new'));
       if (pathnameRef.current === `/parties/${data.party_id}`) {
         routerRef.current.push('/my-events');
       }
-    });
+    };
 
-    socket.on('new_party_request', () => {
+    const onNewRequest = () => {
       window.dispatchEvent(new CustomEvent('notification:new'));
-    });
+    };
+
+    socket.on('request_status_changed', onStatusChanged);
+    socket.on('kicked_from_party', onKicked);
+    socket.on('new_party_request', onNewRequest);
 
     return () => {
-      socket.disconnect();
+      socket.off('connect', onConnect);
+      socket.off('request_status_changed', onStatusChanged);
+      socket.off('kicked_from_party', onKicked);
+      socket.off('new_party_request', onNewRequest);
       socketRef.current = null;
     };
   }, [token]);

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, JSON, DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, Integer, JSON, DateTime, ForeignKey, Index, Text, UniqueConstraint
 from sqlalchemy.sql import func
 from database import Base
 
@@ -15,11 +15,15 @@ class PartyReview(Base):
     text = Column(Text, nullable=True)
     tags = Column(JSON, nullable=True)           # list[str], max 3 from allowed set
     is_hidden = Column(Boolean, server_default='false', nullable=False, default=False)
+    is_deleted = Column(Boolean, server_default='false', nullable=False, default=False)
     report_count = Column(Integer, server_default='0', nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("reviewer_id", "reviewed_id", "party_id", name="uq_review_per_party"),
+        Index("ix_party_reviews_reviewed_id", "reviewed_id"),
+        Index("ix_party_reviews_party_id", "party_id"),
     )
 
 

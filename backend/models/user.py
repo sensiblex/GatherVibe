@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Text
+from sqlalchemy import Column, Float, Integer, String, Boolean, Text
 from database import Base
 
 class User(Base):
@@ -16,3 +16,4 @@ class User(Base):
     show_email     = Column(Boolean, default=False)
     show_city      = Column(Boolean, default=True)
     show_interests = Column(Boolean, default=True)
+    trust_score    = Column(Float, nullable=True, default=None)

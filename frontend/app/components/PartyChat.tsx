@@ -1,12 +1,11 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { io, Socket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
+import { getSocket } from '../lib/socket';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-/** Socket.IO подключается напрямую к backend (CORS разрешён) */
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:8000';
 
 interface Message {
   message: string;
@@ -54,34 +53,41 @@ export default function PartyChat({
       })
       .catch(() => setHistoryLoaded(true));
 
-    const socket = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1500,
-    });
+    const socket = getSocket();
     socketRef.current = socket;
 
-    socket.on('connect', () => {
+    const join = () => {
       setConnected(true);
       socket.emit('join_party_chat', { partyId, token });
-    });
+    };
 
-    socket.on('connect_error', (err) => {
+    if (socket.connected) {
+      join();
+    } else {
+      socket.on('connect', join);
+    }
+
+    const onConnect = () => setConnected(true);
+    const onDisconnect = () => setConnected(false);
+    const onConnectError = (err: Error) => {
       console.error('[PartyChat] Socket.IO connect error:', err.message);
-    });
-
-    socket.on('disconnect', () => setConnected(false));
-
-    socket.on('receive_party_message', (msg: Message) => {
+    };
+    const onMessage = (msg: Message) => {
       setMessages(prev => [...prev, msg]);
-    });
+    };
+
+    socket.on('connect', onConnect);
+    socket.on('connect_error', onConnectError);
+    socket.on('disconnect', onDisconnect);
+    socket.on('receive_party_message', onMessage);
 
     return () => {
       socket.emit('leave_party_chat', { partyId });
-      socket.off('connect');
-      socket.off('disconnect');
-      socket.off('receive_party_message');
-      socket.disconnect();
+      socket.off('connect', join);
+      socket.off('connect', onConnect);
+      socket.off('connect_error', onConnectError);
+      socket.off('disconnect', onDisconnect);
+      socket.off('receive_party_message', onMessage);
       socketRef.current = null;
     };
   }, [partyId, currentUserId, isAcceptedMember, token]);

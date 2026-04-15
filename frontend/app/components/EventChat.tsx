@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { io, Socket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
+import { getSocket } from '../lib/socket';
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:8000';
-const API_BASE   = process.env.NEXT_PUBLIC_API_URL    || 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface Message {
   message: string;
@@ -46,19 +46,24 @@ export default function EventChat({
       })
       .catch(() => setHistoryLoaded(true));
 
-    const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
+    const socket = getSocket();
     socketRef.current = socket;
 
     const join = () => {
       setConnected(true);
-      // Always send the new dict format with token so the backend authenticates
       socket.emit('join_event_chat', { eventId, token: token ?? '' });
     };
 
-    socket.on('connect', join);
-    if (socket.connected) join();
+    if (socket.connected) {
+      join();
+    } else {
+      socket.on('connect', join);
+    }
 
-    socket.on('disconnect', () => setConnected(false));
+    const onDisconnect = () => setConnected(false);
+    const onConnect = () => setConnected(true);
+    socket.on('disconnect', onDisconnect);
+    socket.on('connect', onConnect);
 
     const handleMessage = (data: Message) => {
       setMessages(prev => [...prev, data].slice(-200));
@@ -68,9 +73,9 @@ export default function EventChat({
     return () => {
       socket.emit('leave_event_chat', eventId);
       socket.off('connect', join);
-      socket.off('disconnect');
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
       socket.off('receive_message', handleMessage);
-      socket.disconnect();
       socketRef.current = null;
     };
   }, [eventId, token]);

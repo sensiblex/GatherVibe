@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import Navbar from '../../../app/components/Navbar';
-import EventAttendees from '../../../app/components/EventAttendees';
-import EventChat from '../../../app/components/EventChat';
-import EventParty from '../../../app/components/EventParty';
+import Navbar from '../../components/Navbar';
+import EventAttendees from '../../components/EventAttendees';
+import EventChat from '../../components/EventChat';
+import EventParty from '../../components/EventParty';
 import { apiFetch } from '../../lib/apiFetch';
 import { useAuth } from '../../context/AuthContext';
 
