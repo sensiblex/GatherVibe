@@ -20,6 +20,7 @@ import models.chat_message
 import models.review
 import models.notification
 import models.kudago_event
+import models.party_coordination
 
 models.user.Base.metadata.create_all(bind=engine)
 models.event.Base.metadata.create_all(bind=engine)
@@ -27,6 +28,25 @@ models.attendee.Base.metadata.create_all(bind=engine)
 models.party.Base.metadata.create_all(bind=engine)
 models.chat_message.Base.metadata.create_all(bind=engine)
 models.review.Base.metadata.create_all(bind=engine)
+models.party_coordination.Base.metadata.create_all(bind=engine)
+
+
+def _run_column_migrations():
+    """Add new columns to existing tables (idempotent via IF NOT EXISTS)."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text(
+            "ALTER TABLE chat_messages "
+            "ADD COLUMN IF NOT EXISTS is_system BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
+        conn.execute(text(
+            "ALTER TABLE chat_messages "
+            "ADD COLUMN IF NOT EXISTS event_type VARCHAR(50)"
+        ))
+        conn.commit()
+
+
+_run_column_migrations()
 
 # ── Shared dependencies (re-exported so tests can override via main.get_db) ──
 from deps import (  # noqa: E402
@@ -96,13 +116,14 @@ app.add_middleware(
 )
 
 # ── Routers ───────────────────────────────────────────────────────────────────
-from routers import auth, users, events, parties, reviews, notifications  # noqa: E402
+from routers import auth, users, events, parties, reviews, notifications, party_coordination  # noqa: E402
 
 # Order matters: specific /users/me/* routes before wildcard /users/{user_id}
 app.include_router(auth.router)
-app.include_router(parties.router)    # has /users/me/parties — must precede users
-app.include_router(reviews.router)    # has /users/me/reviewable — must precede users
-app.include_router(users.router)      # has /users/{user_id} — must be last of users/*
+app.include_router(parties.router)          # has /users/me/parties — must precede users
+app.include_router(party_coordination.router)
+app.include_router(reviews.router)          # has /users/me/reviewable — must precede users
+app.include_router(users.router)            # has /users/{user_id} — must be last of users/*
 app.include_router(events.router)
 app.include_router(notifications.router)
 

@@ -6,6 +6,9 @@ import Link from 'next/link';
 import { Socket } from 'socket.io-client';
 import Navbar from '../../components/Navbar';
 import PartyChat from '../../components/PartyChat';
+import PinnedBlock from '../../components/PartyCoordination/PinnedBlock';
+import AttendanceBar from '../../components/PartyCoordination/AttendanceBar';
+import ActivePoll from '../../components/PartyCoordination/ActivePoll';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from '../../components/Toast';
 import { apiFetch } from '../../lib/apiFetch';
@@ -339,6 +342,7 @@ export default function PartyDetailPage() {
   const [kickTarget, setKickTarget] = useState<PartyMember | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const prevPartyRef = useRef<Party | null>(null);
+  const socketRef = useRef<Socket | null>(null);
 
   const fetchParty = useCallback(async () => {
     try {
@@ -370,6 +374,11 @@ export default function PartyDetailPage() {
     const id = setInterval(fetchParty, POLL_INTERVAL);
     return () => clearInterval(id);
   }, [fetchParty]);
+
+  // Инициализируем socketRef для компонентов координации
+  useEffect(() => {
+    socketRef.current = getSocket();
+  }, []);
 
   // Слушаем party_deleted — чтобы участники узнали о роспуске в реальном времени
   useEffect(() => {
@@ -607,6 +616,31 @@ export default function PartyDetailPage() {
                 )}
               </div>
             </div>
+
+            {/* Coordination layer */}
+            {isAcceptedMember && user && (
+              <div className="space-y-4">
+                <PinnedBlock
+                  partyId={party.id}
+                  isCreator={isCreator}
+                  socket={socketRef.current}
+                />
+                <AttendanceBar
+                  partyId={party.id}
+                  partyMembers={party.members}
+                  creatorId={party.creator_id}
+                  creatorUsername={party.creator_username}
+                  currentUserId={myId}
+                  socket={socketRef.current}
+                />
+                <ActivePoll
+                  partyId={party.id}
+                  isCreator={isCreator}
+                  currentUserId={myId}
+                  socket={socketRef.current}
+                />
+              </div>
+            )}
 
             {/* Chat */}
             {isAcceptedMember && user && (

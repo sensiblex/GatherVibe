@@ -14,6 +14,8 @@ interface Message {
   timestamp: string;
   partyId: number;
   avatarUrl?: string | null;
+  isSystem?: boolean;
+  eventType?: string;
 }
 
 interface Props {
@@ -40,14 +42,17 @@ export default function PartyChat({
   useEffect(() => {
     if (!isAcceptedMember || !currentUserId || !token) return;
 
-    // Load history
     fetch(`${API_BASE}/messages/party_${partyId}?limit=50`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then(r => r.ok ? r.json() : { messages: [] })
       .then((data: { messages: Message[] } | Message[]) => {
-        // API вернул { messages, has_more, oldest_id } — берём поле messages
-        const history = Array.isArray(data) ? data : data.messages ?? [];
+        const raw = Array.isArray(data) ? data : (data.messages ?? []);
+        const history = raw.map((m: any) => ({
+          ...m,
+          isSystem: m.isSystem ?? m.is_system ?? false,
+          eventType: m.eventType ?? m.event_type ?? null,
+        }));
         setMessages(history);
         setHistoryLoaded(true);
       })
@@ -115,82 +120,85 @@ export default function PartyChat({
 
   if (!isAcceptedMember) {
     return (
-      <div className="mt-3 rounded-2xl border border-gray-100 bg-gray-50 p-4 text-center">
-        <p className="text-sm text-gray-400">💬 Чат доступен только участникам компании</p>
+      <div className="rounded-xl p-4 text-center" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+        <p className="text-sm" style={{ color: 'var(--text-faint)' }}>💬 Чат доступен только участникам компании</p>
       </div>
     );
   }
 
   return (
-    <div className="mt-3 rounded-3xl border border-gray-100 shadow-sm bg-white overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600">
-        <div className="flex items-center gap-2">
-          <span className="text-white font-bold text-sm">💬 Чат компании</span>
-          {connected && <span className="text-xs text-indigo-200">• онлайн</span>}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span
-            className={`w-2 h-2 rounded-full transition-colors ${
-              connected ? 'bg-green-400' : 'bg-red-400'
-            }`}
-          />
-          <span className="text-xs text-indigo-200">
-            {connected ? 'подключено' : 'соединение...'}
-          </span>
-        </div>
+    <div className="overflow-hidden" style={{ borderTop: '1px solid var(--border)' }}>
+      {/* Connection indicator */}
+      <div className="flex items-center justify-end gap-1.5 px-4 py-2" style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
+        <span
+          className={`w-1.5 h-1.5 rounded-full transition-colors ${connected ? 'bg-green-500' : 'bg-red-400'}`}
+        />
+        <span className="text-xs" style={{ color: 'var(--text-faint)' }}>
+          {connected ? 'онлайн' : 'соединение...'}
+        </span>
       </div>
 
       {/* Messages */}
-      <div className="h-[320px] overflow-y-auto p-4 flex flex-col gap-2 bg-gray-50/30">
+      <div
+        className="h-[320px] overflow-y-auto p-4 flex flex-col gap-2"
+        style={{ background: 'var(--bg)' }}
+      >
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full gap-2">
             <span className="text-3xl">💬</span>
-            <p className="text-sm text-gray-400 text-center">
+            <p className="text-sm text-center" style={{ color: 'var(--text-faint)' }}>
               Сообщений пока нет.<br />Начните общение!
             </p>
           </div>
         ) : (
           messages.map((msg, i) => {
+            if (msg.isSystem) {
+              return (
+                <div key={i} className="flex justify-center my-1">
+                  <div
+                    className="text-xs px-3 py-1.5 rounded-full text-center max-w-[80%]"
+                    style={{
+                      background: 'var(--surface-2)',
+                      color: 'var(--text-faint)',
+                      border: '1px solid var(--border)',
+                    }}
+                  >
+                    {msg.message}
+                  </div>
+                </div>
+              );
+            }
+
             const isOwn =
               currentUserId !== null &&
               String(msg.userId) === String(currentUserId);
             return (
               <div
                 key={i}
-                className={`flex gap-2 items-end ${
-                  isOwn ? 'flex-row-reverse' : 'flex-row'
-                }`}
+                className={`flex gap-2 items-end ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}
               >
                 {!isOwn && (
                   <Link
                     href={`/users/${msg.userId}`}
-                    className="w-7 h-7 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-white text-xs font-bold transition hover:opacity-75 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                    className="w-7 h-7 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-white text-xs font-bold transition hover:opacity-75 hover:scale-110"
                     style={msg.avatarUrl ? undefined : { background: 'linear-gradient(135deg,#4f46e5,#9333ea)' }}
                     title={msg.username}
                     aria-label={`Профиль ${msg.username}`}
                   >
                     {msg.avatarUrl ? (
-                      <img
-                        src={msg.avatarUrl}
-                        alt={msg.username}
-                        className="w-full h-full object-cover"
-                      />
+                      <img src={msg.avatarUrl} alt={msg.username} className="w-full h-full object-cover" />
                     ) : (
                       (msg.username || String(msg.userId)).slice(0, 1).toUpperCase()
                     )}
                   </Link>
                 )}
 
-                <div
-                  className={`flex flex-col max-w-[72%] ${
-                    isOwn ? 'items-end' : 'items-start'
-                  }`}
-                >
+                <div className={`flex flex-col max-w-[72%] ${isOwn ? 'items-end' : 'items-start'}`}>
                   {!isOwn && (
                     <Link
                       href={`/users/${msg.userId}`}
-                      className="text-xs text-gray-500 mb-0.5 px-1 font-semibold transition hover:text-indigo-600 hover:underline"
+                      className="text-xs mb-0.5 px-1 font-semibold transition hover:underline"
+                      style={{ color: 'var(--text-muted)' }}
                       title={msg.username}
                     >
                       {msg.username}
@@ -199,15 +207,18 @@ export default function PartyChat({
 
                   <div
                     className={`px-3 py-2 rounded-2xl text-sm leading-relaxed break-words ${
-                      isOwn
-                        ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-br-sm'
-                        : 'bg-white text-gray-800 border border-gray-100 shadow-sm rounded-bl-sm'
+                      isOwn ? 'rounded-br-sm' : 'rounded-bl-sm'
                     }`}
+                    style={
+                      isOwn
+                        ? { background: 'linear-gradient(135deg,#4f46e5,#9333ea)', color: '#fff' }
+                        : { background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }
+                    }
                   >
                     {msg.message}
                   </div>
 
-                  <span className="text-[10px] text-gray-400 mt-0.5 px-1">
+                  <span className="text-[10px] mt-0.5 px-1" style={{ color: 'var(--text-faint)' }}>
                     {new Date(msg.timestamp).toLocaleTimeString('ru-RU', {
                       hour: '2-digit',
                       minute: '2-digit',
@@ -222,9 +233,17 @@ export default function PartyChat({
       </div>
 
       {/* Input */}
-      <div className="flex gap-2 px-4 py-3 border-t border-gray-100 bg-white">
+      <div
+        className="flex gap-2 px-4 py-3"
+        style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)' }}
+      >
         <input
-          className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition bg-gray-50"
+          className="flex-1 rounded-xl px-3 py-2 text-sm outline-none transition"
+          style={{
+            background: 'var(--surface-2)',
+            border: '1px solid var(--border)',
+            color: 'var(--text)',
+          }}
           placeholder="Написать сообщение..."
           value={input}
           onChange={e => setInput(e.target.value)}
@@ -235,7 +254,8 @@ export default function PartyChat({
         <button
           onClick={send}
           disabled={!input.trim() || !connected || !token}
-          className="rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-4 py-2 text-sm text-white font-semibold disabled:opacity-40 hover:opacity-90 transition shrink-0"
+          className="rounded-xl px-4 py-2 text-sm text-white font-semibold disabled:opacity-40 hover:opacity-90 transition shrink-0"
+          style={{ background: 'linear-gradient(135deg,#4f46e5,#9333ea)' }}
         >
           Отправить
         </button>
