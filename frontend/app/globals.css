@@ -253,3 +253,15 @@ a, button {
   border: 2px solid var(--surface);
   line-height: 1;
 }
+
+/* ── Leaflet dark mode ───────────────────────────────────── */
+[data-theme="dark"] .leaflet-tile,
+[data-theme="dark"] .leaflet-tile-container {
+  filter: invert(1) hue-rotate(180deg) brightness(0.85);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .leaflet-tile,
+  :root:not([data-theme]) .leaflet-tile-container {
+    filter: invert(1) hue-rotate(180deg) brightness(0.85);
+  }
+}

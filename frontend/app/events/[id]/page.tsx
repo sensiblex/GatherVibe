@@ -9,6 +9,9 @@ import EventChat from '../../components/EventChat';
 import EventParty from '../../components/EventParty';
 import { apiFetch } from '../../lib/apiFetch';
 import { useAuth } from '../../context/AuthContext';
+import dynamic from 'next/dynamic';
+
+const EventMap = dynamic(() => import('../../components/EventMap'), { ssr: false });
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -71,6 +74,9 @@ interface UnifiedEvent {
   place_subway?: string;
   site_url?: string;
   participants?: Array<{ role: string; name: string; image_url: string | null }>;
+  lat?: number | null;
+  lon?: number | null;
+  location_slug?: string | null;
 }
 
 function formatIsoDate(iso: string): string {
@@ -140,6 +146,12 @@ function normaliseLocal(data: Record<string, unknown>): UnifiedEvent {
   };
 }
 
+const KUDAGO_CITY_NAMES: Record<string, string> = {
+  msk: 'Москва', spb: 'Санкт-Петербург', kzn: 'Казань', nsk: 'Новосибирск',
+  ekt: 'Екатеринбург', nny: 'Нижний Новгород', vbg: 'Выборг', krd: 'Краснодар',
+  sochi: 'Сочи', ufa: 'Уфа', smr: 'Самара', kev: 'Киев',
+};
+
 function normaliseKudago(data: Record<string, unknown>): UnifiedEvent {
   const imgs = (data.images as Array<{ url: string }>) ?? [];
   const cats = (data.categories as string[]) ?? [];
@@ -147,6 +159,8 @@ function normaliseKudago(data: Record<string, unknown>): UnifiedEvent {
   const isPermanent = Boolean(data.is_permanent) ||
     allDates.some(d => d.is_endless || d.is_startless || d.use_place_schedule);
   const placeSchedules: ScheduleEntry[] = [];
+  const locationSlug = (data.location as string) || null;
+  const city = locationSlug ? (KUDAGO_CITY_NAMES[locationSlug] ?? null) : null;
 
   return {
     id: String(data.kudago_id ?? data.id ?? ''),
@@ -155,7 +169,7 @@ function normaliseKudago(data: Record<string, unknown>): UnifiedEvent {
     description: (data.description as string) || null,
     body_text: (data.body_text as string) || null,
     location: (data.place_address as string) || null,
-    city: null,
+    city,
     date_time: null,
     start_date: (data.start_date as string) ?? null,
     start_time: (data.start_time as string) ?? null,
@@ -174,7 +188,15 @@ function normaliseKudago(data: Record<string, unknown>): UnifiedEvent {
     place_subway: (data.place_subway as string) || '',
     site_url: (data.site_url as string) || '',
     participants: (data.participants as UnifiedEvent['participants']) ?? [],
+    lat: (data.lat as number) ?? null,
+    lon: (data.lon as number) ?? null,
+    location_slug: locationSlug,
   };
+}
+
+function isVirtualAddress(addr: string): boolean {
+  const keywords = ['онлайн', 'online', 'tbd', 'уточняется', 'zoom', 'discord'];
+  return keywords.some(k => addr.toLowerCase().includes(k));
 }
 
 function stripHtml(html: string): string {
@@ -356,6 +378,13 @@ export default function EventDetailPage() {
       })
       .catch(() => setStatus('error'));
   }, [eventId]);
+
+  const mapAddress = event ? (event.place_address || event.location || null) : null;
+  const mapQuery = mapAddress
+    ? (event?.city ? `${event.city}, ${mapAddress}` : mapAddress)
+    : null;
+  const mapLat = event?.lat ?? null;
+  const mapLon = event?.lon ?? null;
 
   const categoryLabel = (() => {
     if (!event) return null;
@@ -540,6 +569,17 @@ export default function EventDetailPage() {
                     </a>
                   )}
                 </div>
+
+                {mapQuery && !isVirtualAddress(mapQuery) && (
+                  <EventMap
+                    address={mapQuery}
+                    title={event.place_title || event.title}
+                    height="220px"
+                    className="rounded-2xl overflow-hidden mt-4 mb-2"
+                    lat={mapLat}
+                    lon={mapLon}
+                  />
+                )}
 
                 {/* Descriptions */}
                 {event.description && (
