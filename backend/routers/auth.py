@@ -1,14 +1,21 @@
+import uuid
+import time
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from typing import Optional
-
 from pydantic import BaseModel
+
 from deps import get_db, get_current_user_from_token, oauth2_scheme
 from schemas import UserCreate, UserResponse, UserUpdate, UserLogin, Token
 from auth import hash_password, verify_password, authenticate_user, create_user_token
 from models.user import User
+from services.email import send_verification_email
 
 router = APIRouter(tags=["auth"])
+
+# In-memory rate limit: email -> last_sent_timestamp
+_resend_rate: dict[str, float] = {}
+_RESEND_COOLDOWN = 60  # seconds
 
 
 class PrivacyUpdate(BaseModel):
@@ -17,18 +24,26 @@ class PrivacyUpdate(BaseModel):
     show_interests: Optional[bool] = None
 
 
+class ResendVerificationRequest(BaseModel):
+    email: str
+
+
 @router.post("/register", response_model=UserResponse)
 def register_user(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
+    token = str(uuid.uuid4())
     new_user = User(
         email=user.email, username=user.username,
         hashed_password=hash_password(user.password),
         city=user.city, interests=user.interests,
+        is_verified=False,
+        verification_token=token,
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    send_verification_email(new_user.email, new_user.username, token)
     return new_user
 
 
@@ -44,6 +59,8 @@ def login(
                             headers={"WWW-Authenticate": "Bearer"})
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Пользователь заблокирован")
+    if not user.is_verified:
+        raise HTTPException(status_code=403, detail="email_not_verified")
     token_data = create_user_token(user)
     response.set_cookie(
         key="token",
@@ -54,6 +71,39 @@ def login(
         path="/",
     )
     return token_data
+
+
+@router.get("/auth/verify-email")
+def verify_email(token: str, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.verification_token == token).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Неверный или устаревший токен")
+    user.is_verified = True
+    user.verification_token = None
+    db.commit()
+    return {"message": "Email успешно подтверждён"}
+
+
+@router.post("/auth/resend-verification")
+def resend_verification(body: ResendVerificationRequest, db: Session = Depends(get_db)):
+    email = body.email.lower().strip()
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        # Не раскрываем факт отсутствия пользователя
+        return {"message": "Если email зарегистрирован, письмо будет отправлено"}
+    if user.is_verified:
+        raise HTTPException(status_code=400, detail="Email уже подтверждён")
+    now = time.time()
+    last_sent = _resend_rate.get(email, 0)
+    if now - last_sent < _RESEND_COOLDOWN:
+        wait = int(_RESEND_COOLDOWN - (now - last_sent))
+        raise HTTPException(status_code=429, detail=f"Повторная отправка возможна через {wait} сек.")
+    new_token = str(uuid.uuid4())
+    user.verification_token = new_token
+    db.commit()
+    _resend_rate[email] = now
+    send_verification_email(email, user.username, new_token)
+    return {"message": "Если email зарегистрирован, письмо будет отправлено"}
 
 
 @router.post("/logout", status_code=204)

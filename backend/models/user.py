@@ -17,3 +17,5 @@ class User(Base):
     show_city      = Column(Boolean, default=True)
     show_interests = Column(Boolean, default=True)
     trust_score    = Column(Float, nullable=True, default=None)
+    is_verified        = Column(Boolean, default=False, nullable=False)
+    verification_token = Column(String(64), nullable=True, index=True)
