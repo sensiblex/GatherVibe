@@ -13,4 +13,8 @@ class ChatMessage(Base):
     timestamp   = Column(DateTime, default=datetime.utcnow, nullable=False)
     # System message fields (default False/None for backward compatibility)
     is_system   = Column(Boolean, default=False, nullable=False, server_default="0")
-    event_type  = Column(String(50), nullable=True)  # e.g. 'poll_created', 'pinned_updated'
+    event_type  = Column(String(50), nullable=True)   # e.g. 'poll_created', 'pinned_updated'
+    # File attachment fields
+    file_url    = Column(Text, nullable=True)
+    file_type   = Column(String(50), nullable=True)   # e.g. 'image', 'pdf', 'file'
+    file_name   = Column(String(255), nullable=True)

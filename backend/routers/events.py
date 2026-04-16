@@ -1,8 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime
 import time
+import os
+import uuid
+import pathlib
 
 from pydantic import BaseModel
 from deps import get_db, get_current_user_from_token, oauth2_scheme
@@ -10,6 +13,7 @@ from schemas import EventCreate, EventResponse, EventUpdate
 from models.event import Event
 from models.attendee import EventAttendee
 from models.chat_message import ChatMessage
+from models.message_reaction import MessageReaction
 from models.user import User
 import kudago_api
 import kudago_cache
@@ -74,6 +78,17 @@ def get_messages(
             str(u.id): u.avatar_url
             for u in db.query(User).filter(User.id.in_(user_ids)).all()
         }
+    message_ids = [r.id for r in rows]
+    reactions_map: dict = {}
+    if message_ids:
+        reaction_rows = (
+            db.query(MessageReaction)
+            .filter(MessageReaction.message_id.in_(message_ids))
+            .all()
+        )
+        for rr in reaction_rows:
+            msg_reactions = reactions_map.setdefault(rr.message_id, {})
+            msg_reactions.setdefault(rr.emoji, []).append(rr.user_id)
     return {
         "messages": [
             {
@@ -83,11 +98,71 @@ def get_messages(
                 "username":   r.username,
                 "timestamp":  r.timestamp.isoformat(),
                 "avatarUrl":  users_map.get(r.user_id),
+                "isSystem":   r.is_system,
+                "eventType":  r.event_type,
+                "fileUrl":    r.file_url,
+                "fileType":   r.file_type,
+                "fileName":   r.file_name,
+                "reactions":  reactions_map.get(r.id, {}),
             }
             for r in rows
         ],
         "has_more":  len(rows) == limit,
         "oldest_id": rows[0].id if rows else None,
+    }
+
+
+ALLOWED_MIME_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "application/pdf",
+    "application/zip",
+}
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+@router.post("/upload/chat")
+async def upload_chat_file(
+    file: UploadFile = File(...),
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    get_current_user_from_token(token, db)
+
+    content_type = file.content_type or ""
+    if content_type not in ALLOWED_MIME_TYPES and not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail=f"Недопустимый тип файла: {content_type}")
+
+    contents = await file.read()
+    if len(contents) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="Файл превышает допустимый размер (макс. 10 MB)")
+
+    if content_type.startswith("image/"):
+        file_type = "image"
+    elif content_type == "application/pdf":
+        file_type = "pdf"
+    else:
+        file_type = "file"
+
+    # Strip any directory components from the filename (path traversal guard)
+    bare_name = pathlib.Path(file.filename or "upload").name or "upload"
+    safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in bare_name)
+    safe_name = safe_name[:128] or "upload"
+    unique_name = f"{uuid.uuid4()}_{safe_name}"
+
+    upload_dir = os.path.join("uploads", "chat")
+    os.makedirs(upload_dir, exist_ok=True)
+    save_path = os.path.join(upload_dir, unique_name)
+
+    with open(save_path, "wb") as f:
+        f.write(contents)
+
+    return {
+        "file_url":  f"/uploads/chat/{unique_name}",
+        "file_type": file_type,
+        "file_name": bare_name,
     }
 
 

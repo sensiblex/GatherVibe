@@ -22,6 +22,7 @@ import models.notification
 import models.kudago_event
 import models.party_coordination
 import models.push_subscription
+import models.message_reaction
 
 models.user.Base.metadata.create_all(bind=engine)
 models.event.Base.metadata.create_all(bind=engine)
@@ -31,6 +32,7 @@ models.chat_message.Base.metadata.create_all(bind=engine)
 models.review.Base.metadata.create_all(bind=engine)
 models.party_coordination.Base.metadata.create_all(bind=engine)
 models.push_subscription.Base.metadata.create_all(bind=engine)
+models.message_reaction.Base.metadata.create_all(bind=engine)
 
 
 def _run_column_migrations():
@@ -46,6 +48,18 @@ def _run_column_migrations():
         if "event_type" not in existing:
             conn.execute(text(
                 "ALTER TABLE chat_messages ADD COLUMN event_type VARCHAR(50)"
+            ))
+        if "file_url" not in existing:
+            conn.execute(text(
+                "ALTER TABLE chat_messages ADD COLUMN file_url TEXT"
+            ))
+        if "file_type" not in existing:
+            conn.execute(text(
+                "ALTER TABLE chat_messages ADD COLUMN file_type VARCHAR(50)"
+            ))
+        if "file_name" not in existing:
+            conn.execute(text(
+                "ALTER TABLE chat_messages ADD COLUMN file_name VARCHAR(255)"
             ))
         conn.commit()
 
@@ -65,6 +79,7 @@ from deps import (  # noqa: E402
 from sio_instance import sio  # noqa: E402
 from database import SessionLocal  # noqa: E402
 from models.chat_message import ChatMessage  # noqa: E402
+from models.message_reaction import MessageReaction  # noqa: E402
 from models.party import EventParty, PartyMember  # noqa: E402
 from routers.parties import MemberStatus  # noqa: E402
 
@@ -225,6 +240,11 @@ async def lifespan(app: FastAPI):
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 app = FastAPI(title="GatherVibe API", lifespan=lifespan)
+
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+import os as _os  # noqa: E402
+_os.makedirs("uploads/chat", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,
@@ -419,11 +439,14 @@ async def send_party_message(sid, data: dict):
         return
     party_id = data.get('partyId')
     message_text = data.get('message', '').strip()
-    if not party_id or not message_text:
-        await sio.emit('error', {'message': 'partyId и message обязательны'}, room=sid)
+    file_url = data.get('file_url')
+    file_type = data.get('file_type')
+    file_name = data.get('file_name')
+    if not party_id or (not message_text and not file_url):
+        await sio.emit('error', {'message': 'partyId и message (или file_url) обязательны'}, room=sid)
         db.close()
         return
-    if len(message_text) > 2000:
+    if message_text and len(message_text) > 2000:
         await sio.emit('error', {'message': 'Сообщение слишком длинное (макс. 2000 символов)'}, room=sid)
         db.close()
         return
@@ -447,25 +470,39 @@ async def send_party_message(sid, data: dict):
         db.close()
         return
 
-    msg = {
-        'message':   message_text,
-        'userId':    str(user.id),
-        'username':  user.username,
-        'avatarUrl': user.avatar_url,
-        'timestamp': datetime.utcnow().isoformat(),
-        'partyId':   party_id,
-    }
     try:
-        db.add(ChatMessage(
+        chat_msg = ChatMessage(
             room=f'party_{party_id}',
             user_id=str(user.id),
             username=user.username,
             message=message_text,
             timestamp=datetime.utcnow(),
-        ))
+            file_url=file_url,
+            file_type=file_type,
+            file_name=file_name,
+        )
+        db.add(chat_msg)
         db.commit()
+        db.refresh(chat_msg)
+        msg_id = chat_msg.id
+        user_id_str  = str(user.id)
+        user_username = user.username
+        user_avatar   = user.avatar_url
     finally:
         db.close()
+    msg = {
+        'messageId': msg_id,
+        'message':   message_text,
+        'userId':    user_id_str,
+        'username':  user_username,
+        'avatarUrl': user_avatar,
+        'timestamp': datetime.utcnow().isoformat(),
+        'partyId':   party_id,
+        'fileUrl':   file_url,
+        'fileType':  file_type,
+        'fileName':  file_name,
+        'reactions': {},
+    }
     await sio.emit('receive_party_message', msg, room=f'party_{party_id}')
 
 
@@ -473,6 +510,84 @@ async def send_party_message(sid, data: dict):
 async def leave_party_chat(sid, data: dict):
     party_id = data['partyId']
     await sio.leave_room(sid, f'party_{party_id}')
+
+
+ALLOWED_REACTION_EMOJIS = {'👍', '❤️', '😂'}
+
+
+@sio.on('add_party_reaction')
+async def add_party_reaction(sid, data: dict):
+    token = data.get('token')
+    if not token:
+        await sio.emit('error', {'message': 'Токен отсутствует'}, room=sid)
+        return
+    party_id = data.get('party_id')
+    message_id = data.get('message_id')
+    emoji = data.get('emoji')
+    if not party_id or not message_id or not emoji:
+        await sio.emit('error', {'message': 'party_id, message_id и emoji обязательны'}, room=sid)
+        return
+    if emoji not in ALLOWED_REACTION_EMOJIS:
+        await sio.emit('error', {'message': f'Недопустимый эмодзи. Разрешены: {", ".join(ALLOWED_REACTION_EMOJIS)}'}, room=sid)
+        return
+
+    db = SessionLocal()
+    try:
+        try:
+            user = get_user_from_socket_token(token, db)
+        except ValueError as e:
+            await sio.emit('error', {'message': str(e)}, room=sid)
+            return
+
+        party = db.query(EventParty).filter(EventParty.id == party_id).first()
+        is_member = party and (
+            party.creator_id == user.id or
+            db.query(PartyMember).filter(
+                PartyMember.party_id == party_id,
+                PartyMember.user_id == user.id,
+                PartyMember.status == MemberStatus.accepted,
+            ).first() is not None
+        )
+        if not is_member:
+            await sio.emit('error', {'message': 'Нет доступа к этому чату'}, room=sid)
+            return
+
+        existing = db.query(MessageReaction).filter(
+            MessageReaction.message_id == message_id,
+            MessageReaction.user_id == str(user.id),
+            MessageReaction.emoji == emoji,
+        ).first()
+        if existing:
+            db.delete(existing)
+        else:
+            db.add(MessageReaction(
+                message_id=message_id,
+                room=f'party_{party_id}',
+                user_id=str(user.id),
+                emoji=emoji,
+            ))
+        db.commit()
+
+        reaction_rows = (
+            db.query(MessageReaction)
+            .filter(MessageReaction.message_id == message_id)
+            .all()
+        )
+        reactions: dict = {}
+        for rr in reaction_rows:
+            reactions.setdefault(rr.emoji, []).append(rr.user_id)
+    finally:
+        db.close()
+
+    await sio.emit(
+        'party_reaction_updated',
+        {
+            'messageId': message_id,
+            'partyId':   party_id,
+            'reactions': reactions,
+        },
+        room=f'party_{party_id}',
+    )
 
 
 # -- Notifications --

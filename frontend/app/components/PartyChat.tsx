@@ -8,6 +8,7 @@ import { getSocket } from '../lib/socket';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface Message {
+  messageId?: number;
   message: string;
   userId: string | number;
   username: string;
@@ -16,6 +17,10 @@ interface Message {
   avatarUrl?: string | null;
   isSystem?: boolean;
   eventType?: string;
+  fileUrl?: string | null;
+  fileType?: string | null;
+  fileName?: string | null;
+  reactions?: Record<string, string[]>;
 }
 
 interface Props {
@@ -36,8 +41,11 @@ export default function PartyChat({
   const [input, setInput] = useState('');
   const [connected, setConnected] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [hoveredId, setHoveredId] = useState<number | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isAcceptedMember || !currentUserId || !token) return;
@@ -48,10 +56,15 @@ export default function PartyChat({
       .then(r => r.ok ? r.json() : { messages: [] })
       .then((data: { messages: Message[] } | Message[]) => {
         const raw = Array.isArray(data) ? data : (data.messages ?? []);
-        const history = raw.map((m: any) => ({
+        const history = raw.map((m: Record<string, unknown>) => ({
           ...m,
-          isSystem: m.isSystem ?? m.is_system ?? false,
-          eventType: m.eventType ?? m.event_type ?? null,
+          messageId: (m.id ?? m.messageId) as number | undefined,
+          isSystem: (m.isSystem ?? m.is_system ?? false) as boolean,
+          eventType: (m.eventType ?? m.event_type ?? null) as string | null,
+          fileUrl: (m.fileUrl ?? m.file_url ?? null) as string | null,
+          fileType: (m.fileType ?? m.file_type ?? null) as string | null,
+          fileName: (m.fileName ?? m.file_name ?? null) as string | null,
+          reactions: (m.reactions ?? {}) as Record<string, string[]>,
         }));
         setMessages(history);
         setHistoryLoaded(true);
@@ -78,13 +91,20 @@ export default function PartyChat({
       console.error('[PartyChat] Socket.IO connect error:', err.message);
     };
     const onMessage = (msg: Message) => {
-      setMessages(prev => [...prev, msg]);
+      setMessages(prev => [...prev, { ...msg, reactions: msg.reactions ?? {} }]);
+    };
+
+    const onReactionUpdated = (data: { messageId: number; partyId: number; reactions: Record<string, string[]> }) => {
+      setMessages(prev =>
+        prev.map(m => m.messageId === data.messageId ? { ...m, reactions: data.reactions } : m)
+      );
     };
 
     socket.on('connect', onConnect);
     socket.on('connect_error', onConnectError);
     socket.on('disconnect', onDisconnect);
     socket.on('receive_party_message', onMessage);
+    socket.on('party_reaction_updated', onReactionUpdated);
 
     return () => {
       socket.emit('leave_party_chat', { partyId });
@@ -93,6 +113,7 @@ export default function PartyChat({
       socket.off('connect_error', onConnectError);
       socket.off('disconnect', onDisconnect);
       socket.off('receive_party_message', onMessage);
+      socket.off('party_reaction_updated', onReactionUpdated);
       socketRef.current = null;
     };
   }, [partyId, currentUserId, isAcceptedMember, token]);
@@ -102,13 +123,55 @@ export default function PartyChat({
   }, [messages]);
 
   const send = () => {
-    if (!input.trim() || !socketRef.current || !currentUserId || !token) return;
+    if (!socketRef.current || !currentUserId || !token) return;
+    if (!input.trim()) return;
     socketRef.current.emit('send_party_message', {
       partyId,
       message: input.trim(),
       token,
     });
     setInput('');
+  };
+
+  const sendReaction = (messageId: number, emoji: string) => {
+    if (!socketRef.current || !token) return;
+    socketRef.current.emit('add_party_reaction', { party_id: partyId, message_id: messageId, emoji, token });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !socketRef.current || !token) return;
+    e.target.value = '';
+
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch(`${API_BASE}/upload/chat`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      if (!res.ok) throw new Error('Upload failed');
+      const { file_url, file_type, file_name } = await res.json() as {
+        file_url: string;
+        file_type: string;
+        file_name: string;
+      };
+      socketRef.current.emit('send_party_message', {
+        partyId,
+        message: input.trim(),
+        token,
+        file_url,
+        file_type,
+        file_name,
+      });
+      setInput('');
+    } catch (err) {
+      console.error('[PartyChat] File upload error:', err);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -154,17 +217,12 @@ export default function PartyChat({
           messages.map((msg, i) => {
             if (msg.isSystem) {
               return (
-                <div key={i} className="flex justify-center my-1">
-                  <div
-                    className="text-xs px-3 py-1.5 rounded-full text-center max-w-[80%]"
-                    style={{
-                      background: 'var(--surface-2)',
-                      color: 'var(--text-faint)',
-                      border: '1px solid var(--border)',
-                    }}
-                  >
+                <div key={i} className="flex items-center gap-2 my-1">
+                  <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
+                  <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>
                     {msg.message}
-                  </div>
+                  </span>
+                  <div className="flex-1 h-px" style={{ background: 'var(--border)' }} />
                 </div>
               );
             }
@@ -176,6 +234,8 @@ export default function PartyChat({
               <div
                 key={i}
                 className={`flex gap-2 items-end ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}
+                onMouseEnter={() => msg.messageId != null && setHoveredId(msg.messageId)}
+                onMouseLeave={() => setHoveredId(null)}
               >
                 {!isOwn && (
                   <Link
@@ -205,6 +265,22 @@ export default function PartyChat({
                     </Link>
                   )}
 
+                  {/* Reaction picker on hover */}
+                  {hoveredId === msg.messageId && msg.messageId != null && (
+                    <div className={`flex gap-1 mb-1 ${isOwn ? 'self-end' : 'self-start'}`}>
+                      {['👍', '❤️', '😂'].map(emoji => (
+                        <button
+                          key={emoji}
+                          onClick={() => sendReaction(msg.messageId!, emoji)}
+                          className="text-base rounded-full px-1.5 py-0.5 transition hover:scale-110"
+                          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   <div
                     className={`px-3 py-2 rounded-2xl text-sm leading-relaxed break-words ${
                       isOwn ? 'rounded-br-sm' : 'rounded-bl-sm'
@@ -215,8 +291,52 @@ export default function PartyChat({
                         : { background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }
                     }
                   >
-                    {msg.message}
+                    {/* File preview — only serve files from our own uploads path */}
+                    {msg.fileType === 'image' && msg.fileUrl?.startsWith('/uploads/chat/') && (
+                      <img
+                        src={`${API_BASE}${msg.fileUrl}`}
+                        alt={msg.fileName ?? 'image'}
+                        className="rounded-xl max-w-full mb-1 cursor-pointer"
+                        style={{ maxHeight: '200px', objectFit: 'contain' }}
+                        onClick={() => window.open(`${API_BASE}${msg.fileUrl}`, '_blank')}
+                      />
+                    )}
+                    {msg.fileType && msg.fileType !== 'image' && msg.fileUrl?.startsWith('/uploads/chat/') && (
+                      <a
+                        href={`${API_BASE}${msg.fileUrl}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-2 text-xs underline mb-1"
+                        style={{ color: 'inherit', opacity: 0.85 }}
+                      >
+                        📎 {msg.fileName ?? 'файл'}
+                      </a>
+                    )}
+                    {msg.message && <span>{msg.message}</span>}
                   </div>
+
+                  {/* Reaction bar */}
+                  {Object.keys(msg.reactions ?? {}).length > 0 && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {Object.entries(msg.reactions!).map(([emoji, userIds]) => {
+                        const isMine = currentUserId !== null && userIds.includes(String(currentUserId));
+                        return (
+                          <button
+                            key={emoji}
+                            onClick={() => msg.messageId != null && sendReaction(msg.messageId, emoji)}
+                            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs transition"
+                            style={{
+                              background: isMine ? 'rgba(99,102,241,0.15)' : 'var(--surface-2)',
+                              border: isMine ? '1px solid rgba(99,102,241,0.4)' : '1px solid var(--border)',
+                              color: 'var(--text)',
+                            }}
+                          >
+                            {emoji} <span style={{ color: 'var(--text-muted)' }}>{userIds.length}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
 
                   <span className="text-[10px] mt-0.5 px-1" style={{ color: 'var(--text-faint)' }}>
                     {new Date(msg.timestamp).toLocaleTimeString('ru-RU', {
@@ -237,6 +357,33 @@ export default function PartyChat({
         className="flex gap-2 px-4 py-3"
         style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)' }}
       >
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,.pdf,.zip"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+
+        {/* Attachment button */}
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={!connected || uploading}
+          className="rounded-xl px-3 py-2 text-base transition hover:opacity-75 disabled:opacity-40 shrink-0"
+          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+          title="Прикрепить файл"
+        >
+          {uploading ? (
+            <span
+              className="inline-block w-4 h-4 rounded-full border-2 border-t-transparent animate-spin align-middle"
+              style={{ borderColor: 'var(--text-muted)', borderTopColor: 'transparent' }}
+            />
+          ) : (
+            '📎'
+          )}
+        </button>
+
         <input
           className="flex-1 rounded-xl px-3 py-2 text-sm outline-none transition"
           style={{
@@ -249,11 +396,11 @@ export default function PartyChat({
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           maxLength={500}
-          disabled={!connected}
+          disabled={!connected || uploading}
         />
         <button
           onClick={send}
-          disabled={!input.trim() || !connected || !token}
+          disabled={!input.trim() || !connected || !token || uploading}
           className="rounded-xl px-4 py-2 text-sm text-white font-semibold disabled:opacity-40 hover:opacity-90 transition shrink-0"
           style={{ background: 'linear-gradient(135deg,#4f46e5,#9333ea)' }}
         >
