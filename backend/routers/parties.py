@@ -15,6 +15,7 @@ from models.event import Event
 from models.attendee import EventAttendee
 from models.party import EventParty, PartyMember
 from notification_helpers import create_notification
+import push_helpers
 
 router = APIRouter(tags=["parties"])
 
@@ -393,6 +394,13 @@ async def approve_request(
         {"party_id": party.id, "status": "accepted"},
     )
     db.commit()
+    push_helpers.send_push_to_user(
+        db, member.user_id,
+        "Заявка принята",
+        f"Вас приняли в компанию «{party.title}»",
+        {"party_id": party.id, "type": "request_status_changed"},
+    )
+    db.commit()
     await sio.emit("new_notification", {
         "id": notif.id,
         "type": notif.type,
@@ -434,6 +442,13 @@ async def reject_request(
         "Заявка отклонена",
         f"Заявка в компанию «{party.title}» отклонена",
         {"party_id": party.id, "status": "rejected"},
+    )
+    db.commit()
+    push_helpers.send_push_to_user(
+        db, member.user_id,
+        "Заявка отклонена",
+        f"Заявка в компанию «{party.title}» отклонена",
+        {"party_id": party.id, "type": "request_status_changed"},
     )
     db.commit()
     await sio.emit("new_notification", {
@@ -743,6 +758,13 @@ async def kick_member(
         "Вы исключены из компании",
         f"Вас исключили из компании «{party.title}»",
         {"party_id": party.id},
+    )
+    db.commit()
+    push_helpers.send_push_to_user(
+        db, user_id,
+        "Вы исключены из компании",
+        f"Вас исключили из компании «{party.title}»",
+        {"party_id": party.id, "type": "kicked_from_party"},
     )
     db.commit()
     await sio.emit("new_notification", {

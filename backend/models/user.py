@@ -19,3 +19,4 @@ class User(Base):
     trust_score    = Column(Float, nullable=True, default=None)
     is_verified        = Column(Boolean, default=False, nullable=False)
     verification_token = Column(String(64), nullable=True, index=True)
+    email_notifications = Column(Boolean, default=True, nullable=False, server_default='true')

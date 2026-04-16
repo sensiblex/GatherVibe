@@ -6,5 +6,6 @@ from .chat_message import ChatMessage
 from .review import PartyReview, ReviewReport
 from .notification import Notification
 from .kudago_event import KudaGoEvent
+from .push_subscription import PushSubscription
 
-__all__ = ["User", "Event", "EventAttendee", "EventParty", "PartyMember", "ChatMessage", "PartyReview", "ReviewReport", "Notification", "KudaGoEvent"]
+__all__ = ["User", "Event", "EventAttendee", "EventParty", "PartyMember", "ChatMessage", "PartyReview", "ReviewReport", "Notification", "KudaGoEvent", "PushSubscription"]

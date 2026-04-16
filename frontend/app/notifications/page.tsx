@@ -5,6 +5,10 @@ import { useRouter } from 'next/navigation';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationsContext';
+import { usePushNotifications } from '../hooks/usePushNotifications';
+import { apiFetch } from '../lib/apiFetch';
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 function typeIcon(type: string) {
   switch (type) {
@@ -63,11 +67,187 @@ function ArrowIcon() {
   );
 }
 
+// ─── Toggle row ─────────────────────────────────────────────────────────────
+
+interface ToggleRowProps {
+  title: string;
+  description: string;
+  enabled: boolean;
+  disabled?: boolean;
+  loading?: boolean;
+  onToggle: () => void;
+}
+
+function ToggleRow({ title, description, enabled, disabled = false, loading = false, onToggle }: ToggleRowProps) {
+  return (
+    <div
+      style={{
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderRadius: '16px',
+        padding: '16px 20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: '8px',
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <div>
+        <p style={{ color: 'var(--text)', fontWeight: 600, fontSize: '14px', margin: 0 }}>{title}</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: '12px', margin: '2px 0 0' }}>{description}</p>
+      </div>
+      <button
+        onClick={disabled || loading ? undefined : onToggle}
+        aria-pressed={enabled}
+        aria-disabled={disabled || loading}
+        style={{
+          width: '44px',
+          height: '24px',
+          background: enabled ? 'var(--primary)' : 'var(--border)',
+          borderRadius: '12px',
+          border: 'none',
+          cursor: disabled || loading ? 'not-allowed' : 'pointer',
+          position: 'relative',
+          transition: 'background 0.2s',
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            position: 'absolute',
+            top: '2px',
+            left: enabled ? '22px' : '2px',
+            width: '20px',
+            height: '20px',
+            background: 'white',
+            borderRadius: '50%',
+            transition: 'left 0.2s',
+            display: 'block',
+          }}
+        />
+      </button>
+    </div>
+  );
+}
+
+// ─── Settings section ────────────────────────────────────────────────────────
+
+interface NotificationSettingsProps {
+  emailEnabled: boolean;
+  onEmailToggle: () => void;
+  emailLoading: boolean;
+}
+
+function NotificationSettings({ emailEnabled, onEmailToggle, emailLoading }: NotificationSettingsProps) {
+  const { isSupported, permission, isSubscribed, isLoading: pushLoading, subscribe, unsubscribe } = usePushNotifications();
+
+  function getPushDescription(): string {
+    if (!isSupported) return 'Браузер не поддерживает push';
+    if (permission === 'denied') return 'Уведомления заблокированы в браузере';
+    if (isSubscribed) return 'Мгновенные уведомления включены';
+    return 'Получайте уведомления, даже когда сайт закрыт';
+  }
+
+  function handlePushToggle() {
+    if (isSubscribed) {
+      unsubscribe();
+    } else {
+      subscribe();
+    }
+  }
+
+  return (
+    <div style={{ marginBottom: '32px' }}>
+      <p
+        style={{
+          color: 'var(--text-muted)',
+          fontSize: '11px',
+          fontWeight: 700,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          marginBottom: '12px',
+        }}
+      >
+        Настройки уведомлений
+      </p>
+
+      {/* Push toggle */}
+      {permission === 'denied' ? (
+        <div
+          style={{
+            background: 'var(--error-hl)',
+            border: '1px solid var(--error)',
+            borderRadius: '16px',
+            padding: '16px 20px',
+            marginBottom: '8px',
+          }}
+        >
+          <p style={{ color: 'var(--error)', fontWeight: 600, fontSize: '14px', margin: 0 }}>
+            Push-уведомления в браузере
+          </p>
+          <p style={{ color: 'var(--error)', fontSize: '12px', margin: '2px 0 0', opacity: 0.8 }}>
+            Уведомления заблокированы в браузере. Разрешите их в настройках браузера.
+          </p>
+        </div>
+      ) : (
+        <ToggleRow
+          title="Push-уведомления в браузере"
+          description={getPushDescription()}
+          enabled={isSubscribed}
+          disabled={!isSupported || pushLoading}
+          loading={pushLoading}
+          onToggle={handlePushToggle}
+        />
+      )}
+
+      {/* Email toggle */}
+      <ToggleRow
+        title="Email-напоминания о событиях"
+        description="Напоминания о предстоящих событиях на почту"
+        enabled={emailEnabled}
+        disabled={emailLoading}
+        loading={emailLoading}
+        onToggle={onEmailToggle}
+      />
+    </div>
+  );
+}
+
+// ─── Page ────────────────────────────────────────────────────────────────────
+
 export default function NotificationsPage() {
   const { user } = useAuth();
   const { notifications, unreadCount, markRead, markAllRead, isLoaded } = useNotifications();
   const router = useRouter();
   const [markingAll, setMarkingAll] = useState(false);
+
+  // Email notifications state — initialise from the user object (extended in AuthContext).
+  const [emailEnabled, setEmailEnabled] = useState<boolean>(
+    user?.email_notifications ?? true
+  );
+  const [emailLoading, setEmailLoading] = useState(false);
+
+  const handleEmailToggle = useCallback(async () => {
+    const next = !emailEnabled;
+    setEmailEnabled(next);
+    setEmailLoading(true);
+    try {
+      const res = await apiFetch('/notifications/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email_notifications: next }),
+      });
+      if (!res.ok) {
+        // Revert optimistic update on failure.
+        setEmailEnabled(!next);
+      }
+    } catch {
+      setEmailEnabled(!next);
+    } finally {
+      setEmailLoading(false);
+    }
+  }, [emailEnabled]);
 
   const handleMarkRead = useCallback((id: number) => {
     markRead(id);
@@ -135,6 +315,13 @@ export default function NotificationsPage() {
             </button>
           )}
         </div>
+
+        {/* ── Notification settings ── */}
+        <NotificationSettings
+          emailEnabled={emailEnabled}
+          onEmailToggle={handleEmailToggle}
+          emailLoading={emailLoading}
+        />
 
         {/* ── Skeleton ── */}
         {!isLoaded && (

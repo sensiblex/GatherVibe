@@ -1,3 +1,5 @@
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -10,8 +12,14 @@ from notification_helpers import (
     mark_all_as_read,
     get_unread_count,
 )
+from models.push_subscription import PushSubscription
 
 router = APIRouter(tags=["notifications"])
+
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
+
+
+# ─── Pydantic schemas ────────────────────────────────────────────────────────
 
 
 class NotificationOut(BaseModel):
@@ -29,6 +37,23 @@ class NotificationOut(BaseModel):
 
 class MarkReadBody(BaseModel):
     notification_id: int
+
+
+class PushSubscribeBody(BaseModel):
+    endpoint: str
+    p256dh: str
+    auth: str
+
+
+class PushUnsubscribeBody(BaseModel):
+    endpoint: str
+
+
+class NotificationSettingsBody(BaseModel):
+    email_notifications: bool
+
+
+# ─── In-app notification endpoints ──────────────────────────────────────────
 
 
 @router.get("/notifications", response_model=list[NotificationOut])
@@ -74,3 +99,110 @@ def read_all_notifications(
     count = mark_all_as_read(db, current_user.id)
     db.commit()
     return {"ok": True, "marked": count}
+
+
+# ─── Web Push endpoints ──────────────────────────────────────────────────────
+
+
+@router.get("/notifications/vapid-public-key")
+def get_vapid_public_key():
+    """Return the VAPID public key for the frontend to create push subscriptions.
+    No authentication required."""
+    return {"public_key": VAPID_PUBLIC_KEY}
+
+
+@router.post("/notifications/push/subscribe", status_code=201)
+def subscribe_push(
+    body: PushSubscribeBody,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Save or refresh a Web Push subscription for the authenticated user."""
+    current_user = get_current_user_from_token(token, db)
+
+    existing = (
+        db.query(PushSubscription)
+        .filter(
+            PushSubscription.user_id == current_user.id,
+            PushSubscription.endpoint == body.endpoint,
+        )
+        .first()
+    )
+
+    if existing:
+        # Refresh keys in case the browser rotated them
+        existing.p256dh = body.p256dh
+        existing.auth = body.auth
+    else:
+        db.add(
+            PushSubscription(
+                user_id=current_user.id,
+                endpoint=body.endpoint,
+                p256dh=body.p256dh,
+                auth=body.auth,
+            )
+        )
+
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/notifications/push/subscribe", status_code=200)
+def unsubscribe_push(
+    body: PushUnsubscribeBody,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Remove a Web Push subscription for the authenticated user."""
+    current_user = get_current_user_from_token(token, db)
+
+    deleted = (
+        db.query(PushSubscription)
+        .filter(
+            PushSubscription.user_id == current_user.id,
+            PushSubscription.endpoint == body.endpoint,
+        )
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Подписка не найдена")
+    return {"ok": True}
+
+
+# ─── Push test ──────────────────────────────────────────────────────────────
+
+
+@router.post("/notifications/push/test", status_code=200)
+def test_push(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Send a test Web Push notification to the authenticated user."""
+    import push_helpers
+    current_user = get_current_user_from_token(token, db)
+    push_helpers.send_push_to_user(
+        db, current_user.id,
+        "🔔 Тестовое уведомление",
+        "Push-уведомления работают! GatherVibe подключён.",
+        {"type": "test"},
+    )
+    db.commit()
+    return {"ok": True}
+
+
+# ─── Notification settings ───────────────────────────────────────────────────
+
+
+@router.patch("/notifications/settings")
+def update_notification_settings(
+    body: NotificationSettingsBody,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Toggle email_notifications preference for the authenticated user."""
+    current_user = get_current_user_from_token(token, db)
+    current_user.email_notifications = body.email_notifications
+    db.commit()
+    return {"ok": True, "email_notifications": current_user.email_notifications}

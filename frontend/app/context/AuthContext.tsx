@@ -6,6 +6,7 @@ interface AuthUser {
   id: number;
   username: string;
   email: string;
+  email_notifications?: boolean;
 }
 
 interface AuthContextValue {
@@ -46,8 +47,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (t) {
       try {
         const p = JSON.parse(atob(t.split('.')[1]));
+        const emailNotifRaw = localStorage.getItem('email_notifications');
         setToken(t);
-        setUser({ id: p.id ?? p.user_id, username: p.username, email: p.sub });
+        setUser({
+          id: p.id ?? p.user_id,
+          username: p.username,
+          email: p.sub,
+          email_notifications: emailNotifRaw !== null ? emailNotifRaw === 'true' : undefined,
+        });
         // Восстанавливаем cookie для middleware (server-side route protection)
         setProxyCookie(t);
       } catch {
@@ -77,6 +84,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('token', t);
     localStorage.setItem('username', u.username);
     localStorage.setItem('email', u.email);
+    if (u.email_notifications !== undefined) {
+      localStorage.setItem('email_notifications', String(u.email_notifications));
+    }
     // Эту cookie читает proxy.ts для SSR-защиты маршрутов
     setProxyCookie(t);
     setToken(t);
@@ -90,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('user_id');
     localStorage.removeItem('username');
     localStorage.removeItem('email');
+    localStorage.removeItem('email_notifications');
     clearProxyCookie();
     setToken(null);
     setUser(null);

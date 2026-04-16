@@ -21,6 +21,7 @@ import models.review
 import models.notification
 import models.kudago_event
 import models.party_coordination
+import models.push_subscription
 
 models.user.Base.metadata.create_all(bind=engine)
 models.event.Base.metadata.create_all(bind=engine)
@@ -29,6 +30,7 @@ models.party.Base.metadata.create_all(bind=engine)
 models.chat_message.Base.metadata.create_all(bind=engine)
 models.review.Base.metadata.create_all(bind=engine)
 models.party_coordination.Base.metadata.create_all(bind=engine)
+models.push_subscription.Base.metadata.create_all(bind=engine)
 
 
 def _run_column_migrations():
@@ -68,6 +70,7 @@ from routers.parties import MemberStatus  # noqa: E402
 import kudago_cache  # noqa: E402
 
 CACHE_SYNC_INTERVAL = 3600  # секунды между синками (1 час)
+REMINDER_LOOP_INTERVAL = 900  # 15 минут
 
 
 async def _cache_sync_loop():
@@ -82,6 +85,123 @@ async def _cache_sync_loop():
         await asyncio.sleep(CACHE_SYNC_INTERVAL)
 
 
+async def _reminder_loop():
+    """Фоновая задача: каждые 15 минут проверяет события и рассылает email-напоминания."""
+    import time
+    from email_helpers import send_event_reminder_email, _hours_label
+    from models.party import EventParty, PartyMember
+    from models.user import User
+    from models.notification import Notification
+    from notification_helpers import create_notification
+
+    # Окно ±7 минут вокруг порогового момента (24 ч или 1 ч до события)
+    WINDOW = 420  # секунд
+
+    while True:
+        await asyncio.sleep(REMINDER_LOOP_INTERVAL)
+        try:
+            now_ts = int(time.time())
+            thresholds = [
+                (24 * 3600, "email_reminder_24h"),
+                (1 * 3600, "email_reminder_1h"),
+            ]
+            db = SessionLocal()
+            try:
+                for delta_secs, notif_type in thresholds:
+                    target_low = now_ts + delta_secs - WINDOW
+                    target_high = now_ts + delta_secs + WINDOW
+
+                    parties = (
+                        db.query(EventParty)
+                        .filter(
+                            EventParty.event_date_ts.isnot(None),
+                            EventParty.event_date_ts >= target_low,
+                            EventParty.event_date_ts <= target_high,
+                        )
+                        .all()
+                    )
+
+                    for party in parties:
+                        # Собираем accepted-участников + creator
+                        accepted_rows = (
+                            db.query(PartyMember)
+                            .filter(
+                                PartyMember.party_id == party.id,
+                                PartyMember.status == "accepted",
+                            )
+                            .all()
+                        )
+                        recipient_ids = {m.user_id for m in accepted_rows}
+                        recipient_ids.add(party.creator_id)
+
+                        # Список username-ов всех принятых (для письма)
+                        member_users = (
+                            db.query(User)
+                            .filter(User.id.in_(recipient_ids))
+                            .all()
+                        )
+                        member_usernames = [u.username for u in member_users]
+                        # Build lookup dict to avoid N+1 queries per recipient
+                        user_by_id = {u.id: u for u in member_users}
+                        event_date = datetime.utcfromtimestamp(party.event_date_ts)
+                        hours_before = delta_secs // 3600
+
+                        for uid in recipient_ids:
+                            # Dedup: use trailing comma to avoid substring false positives (e.g. 1 vs 10)
+                            dedup_fragment = f'%"party_id": {party.id},%'
+                            already_sent = (
+                                db.query(Notification)
+                                .filter(
+                                    Notification.user_id == uid,
+                                    Notification.type == notif_type,
+                                    Notification.data.like(dedup_fragment),
+                                )
+                                .first()
+                            )
+                            if already_sent:
+                                continue
+
+                            user = user_by_id.get(uid)
+                            if not user:
+                                continue
+
+                            # Commit dedup record BEFORE sending email to prevent duplicates on crash
+                            create_notification(
+                                db,
+                                uid,
+                                notif_type,
+                                f"Событие «{party.event_title or party.title}» через {_hours_label(hours_before)}",
+                                f"Компания «{party.title}» встречается {event_date.strftime('%d.%m в %H:%M')}",
+                                {"party_id": party.id},
+                            )
+                            db.commit()
+
+                            if user.email_notifications:
+                                loop = asyncio.get_event_loop()
+                                await loop.run_in_executor(
+                                    None,
+                                    lambda u=user, pt=party, ed=event_date, hb=hours_before: (
+                                        send_event_reminder_email(
+                                            to_email=u.email,
+                                            username=u.username,
+                                            event_title=pt.event_title or pt.title,
+                                            event_date=ed,
+                                            party_title=pt.title,
+                                            party_id=pt.id,
+                                            members=member_usernames,
+                                            hours_before=hb,
+                                        )
+                                    ),
+                                )
+            except Exception as exc:
+                logger.error("Reminder loop inner error: %s", exc)
+                db.rollback()
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.error("Reminder loop error: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     loop = asyncio.get_event_loop()
@@ -94,9 +214,11 @@ async def lifespan(app: FastAPI):
             print(f"[KudaGo] kzn sync FAILED: {exc}", flush=True)
     else:
         print("[KudaGo] kzn cache already populated, skipping startup sync", flush=True)
-    task = asyncio.create_task(_cache_sync_loop())
+    cache_task = asyncio.create_task(_cache_sync_loop())
+    reminder_task = asyncio.create_task(_reminder_loop())
     yield
-    task.cancel()
+    cache_task.cancel()
+    reminder_task.cancel()
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────

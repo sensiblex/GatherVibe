@@ -17,22 +17,28 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.alter_column('event_parties', 'event_date_ts',
-                    existing_type=sa.Integer(),
-                    type_=sa.BigInteger(),
-                    existing_nullable=True)
-    op.alter_column('event_attendees', 'event_date_ts',
-                    existing_type=sa.Integer(),
-                    type_=sa.BigInteger(),
-                    existing_nullable=True)
+    with op.batch_alter_table('event_parties', schema=None) as batch_op:
+        batch_op.alter_column('event_date_ts',
+                              existing_type=sa.Integer(),
+                              type_=sa.BigInteger(),
+                              existing_nullable=True)
+
+    with op.batch_alter_table('event_attendees', schema=None) as batch_op:
+        batch_op.alter_column('event_date_ts',
+                              existing_type=sa.Integer(),
+                              type_=sa.BigInteger(),
+                              existing_nullable=True)
 
 
 def downgrade() -> None:
-    op.alter_column('event_attendees', 'event_date_ts',
-                    existing_type=sa.BigInteger(),
-                    type_=sa.Integer(),
-                    existing_nullable=True)
-    op.alter_column('event_parties', 'event_date_ts',
-                    existing_type=sa.BigInteger(),
-                    type_=sa.Integer(),
-                    existing_nullable=True)
+    with op.batch_alter_table('event_attendees', schema=None) as batch_op:
+        batch_op.alter_column('event_date_ts',
+                              existing_type=sa.BigInteger(),
+                              type_=sa.Integer(),
+                              existing_nullable=True)
+
+    with op.batch_alter_table('event_parties', schema=None) as batch_op:
+        batch_op.alter_column('event_date_ts',
+                              existing_type=sa.BigInteger(),
+                              type_=sa.Integer(),
+                              existing_nullable=True)
