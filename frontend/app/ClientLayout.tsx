@@ -5,35 +5,36 @@ import { useRouter, usePathname } from 'next/navigation';
 import { Socket } from 'socket.io-client';
 import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/AuthContext';
+import { NotificationsProvider, useNotifications, NotificationItem } from './context/NotificationsContext';
 import { ToastContainer, toast } from './components/Toast';
 import { getSocket, connectSocket, disconnectSocket } from './lib/socket';
 
-interface RequestStatusPayload {
-  status: 'accepted' | 'rejected';
-  party_id: number;
-  party_title: string;
+const toastTypeMap: Record<string, 'success' | 'error' | 'info'> = {
+  request_status_changed: 'success',
+  kicked_from_party: 'error',
+  new_party_request: 'info',
+  party_closed: 'info',
+};
+
+function getToastType(notifType: string, notifTitle: string): 'success' | 'error' | 'info' {
+  if (notifType === 'request_status_changed' && notifTitle.toLowerCase().includes('отклон')) {
+    return 'error';
+  }
+  return toastTypeMap[notifType] ?? 'info';
 }
 
-interface KickedFromPartyPayload {
-  party_id: number;
-  party_title: string;
-}
-
-/**
- * Глобальный socket-компонент для уведомлений заявителя.
- * Подписывается на комнату user_{id} и показывает toast при изменении
- * статуса заявки (событие request_status_changed).
- */
 function UserNotificationSocket() {
   const { token } = useAuth();
+  const { addNotification } = useNotifications();
   const socketRef = useRef<Socket | null>(null);
   const router = useRouter();
   const pathname = usePathname();
-  // Refs to avoid recreating socket on router/pathname changes
   const routerRef = useRef(router);
   const pathnameRef = useRef(pathname);
+  const addNotificationRef = useRef(addNotification);
   useEffect(() => { routerRef.current = router; }, [router]);
   useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
+  useEffect(() => { addNotificationRef.current = addNotification; }, [addNotification]);
 
   useEffect(() => {
     if (!token) {
@@ -46,43 +47,42 @@ function UserNotificationSocket() {
     socketRef.current = socket;
 
     const onConnect = () => {
-      socket.emit('subscribe_user_notifications', { token });
+      socket.emit('subscribe_notifications', { token });
     };
 
-    // Если уже подключены — сразу подписываемся
     if (socket.connected) onConnect();
     socket.on('connect', onConnect);
 
-    const onStatusChanged = (data: RequestStatusPayload) => {
-      if (data.status === 'accepted') {
-        toast(`Вас приняли в компанию "${data.party_title}"!`, 'success');
-      } else {
-        toast(`Заявка в компанию "${data.party_title}" отклонена`, 'error');
+    const onNewNotification = (data: NotificationItem) => {
+      addNotificationRef.current(data);
+
+      let parsedData: Record<string, unknown> = {};
+      try { parsedData = data.data ? JSON.parse(data.data) : {}; } catch { /* ignore parse errors */ }
+
+      const partyId = parsedData.party_id as number | undefined;
+      const toastType = getToastType(data.type, data.title);
+
+      toast(
+        data.title,
+        toastType,
+        partyId
+          ? { label: 'Смотреть', onClick: () => routerRef.current.push(`/parties/${partyId}`) }
+          : undefined,
+      );
+
+      // Редирект при кике, если пользователь находится на странице этой пати
+      if (data.type === 'kicked_from_party' && partyId) {
+        if (pathnameRef.current === `/parties/${partyId}`) {
+          routerRef.current.push('/my-events');
+        }
       }
-      window.dispatchEvent(new CustomEvent('notification:new'));
     };
 
-    const onKicked = (data: KickedFromPartyPayload) => {
-      toast(`Вы были исключены из компании "${data.party_title}"`, 'error');
-      window.dispatchEvent(new CustomEvent('notification:new'));
-      if (pathnameRef.current === `/parties/${data.party_id}`) {
-        routerRef.current.push('/my-events');
-      }
-    };
-
-    const onNewRequest = () => {
-      window.dispatchEvent(new CustomEvent('notification:new'));
-    };
-
-    socket.on('request_status_changed', onStatusChanged);
-    socket.on('kicked_from_party', onKicked);
-    socket.on('new_party_request', onNewRequest);
+    socket.on('new_notification', onNewNotification);
 
     return () => {
       socket.off('connect', onConnect);
-      socket.off('request_status_changed', onStatusChanged);
-      socket.off('kicked_from_party', onKicked);
-      socket.off('new_party_request', onNewRequest);
+      socket.off('new_notification', onNewNotification);
       socketRef.current = null;
     };
   }, [token]);
@@ -90,16 +90,22 @@ function UserNotificationSocket() {
   return null;
 }
 
-export default function ClientLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+function InnerLayout({ children }: { children: React.ReactNode }) {
   return (
-    <AuthProvider>
+    <>
       <UserNotificationSocket />
       {children}
       <ToastContainer />
+    </>
+  );
+}
+
+export default function ClientLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <AuthProvider>
+      <NotificationsProvider>
+        <InnerLayout>{children}</InnerLayout>
+      </NotificationsProvider>
     </AuthProvider>
   );
 }

@@ -121,8 +121,9 @@ def _build_party_out(party: EventParty, db: Session) -> PartyOut:
     )
 
 
-def _check_and_close_party(party: EventParty, db: Session) -> None:
-    """Checks party capacity. Must be called AFTER db.flush() with member already accepted."""
+def _check_and_close_party(party: EventParty, db: Session) -> bool:
+    """Checks party capacity. Must be called AFTER db.flush() with member already accepted.
+    Returns True if the party was just closed."""
     accepted_total = (
         db.query(PartyMember).filter(
             PartyMember.party_id == party.id,
@@ -136,6 +137,34 @@ def _check_and_close_party(party: EventParty, db: Session) -> None:
 
     if accepted_total >= party.max_members:
         party.is_open = False
+        return True
+    return False
+
+
+async def _notify_party_closed(party: EventParty, db: Session, exclude_user_ids: set) -> None:
+    """Sends party_closed notifications to all accepted members, excluding specified user IDs."""
+    members = db.query(PartyMember).filter(
+        PartyMember.party_id == party.id,
+        PartyMember.status == MemberStatus.accepted,
+    ).all()
+    for m in members:
+        if m.user_id in exclude_user_ids:
+            continue
+        notif = create_notification(
+            db, m.user_id, "party_closed",
+            "Компания закрыта",
+            f"Компания «{party.title}» набрала участников и больше не принимает заявки",
+            {"party_id": party.id},
+        )
+        await sio.emit("new_notification", {
+            "id": notif.id,
+            "type": notif.type,
+            "title": notif.title,
+            "body": notif.body,
+            "data": notif.data,
+            "is_read": False,
+            "created_at": notif.created_at.isoformat(),
+        }, room=f"user_{m.user_id}")
 
 
 # ─── Routes ─────────────────────────────────────────────────────────────────
@@ -356,7 +385,7 @@ async def approve_request(
         raise HTTPException(status_code=403, detail="Только создатель может принимать участников")
     member.status = MemberStatus.accepted
     db.flush()
-    _check_and_close_party(party, db)
+    party_closed = _check_and_close_party(party, db)
     notif = create_notification(
         db, member.user_id, "request_status_changed",
         "Заявка принята",
@@ -364,12 +393,23 @@ async def approve_request(
         {"party_id": party.id, "status": "accepted"},
     )
     db.commit()
+    await sio.emit("new_notification", {
+        "id": notif.id,
+        "type": notif.type,
+        "title": notif.title,
+        "body": notif.body,
+        "data": notif.data,
+        "is_read": False,
+        "created_at": notif.created_at.isoformat(),
+    }, room=f"user_{member.user_id}")
     await sio.emit(
         "request_status_changed",
         {"status": "accepted", "party_id": party.id, "party_title": party.title,
          "notification_id": notif.id},
         room=f"user_{member.user_id}",
     )
+    if party_closed:
+        await _notify_party_closed(party, db, exclude_user_ids={party.creator_id, member.user_id})
     return _build_party_out(party, db)
 
 
@@ -396,6 +436,15 @@ async def reject_request(
         {"party_id": party.id, "status": "rejected"},
     )
     db.commit()
+    await sio.emit("new_notification", {
+        "id": notif.id,
+        "type": notif.type,
+        "title": notif.title,
+        "body": notif.body,
+        "data": notif.data,
+        "is_read": False,
+        "created_at": notif.created_at.isoformat(),
+    }, room=f"user_{member.user_id}")
     await sio.emit(
         "request_status_changed",
         {"status": "rejected", "party_id": party.id, "party_title": party.title,
@@ -557,12 +606,21 @@ async def join_party(
                 {"party_id": party.id, "user_id": user.id, "username": user.username},
             )
             db.commit()
+            await sio.emit("new_notification", {
+                "id": notif.id,
+                "type": notif.type,
+                "title": notif.title,
+                "body": notif.body,
+                "data": notif.data,
+                "is_read": False,
+                "created_at": notif.created_at.isoformat(),
+            }, room=f"user_{party.creator_id}")
             await sio.emit(
                 "new_party_request",
                 {"party_id": party.id, "party_title": party.title,
                  "user_id": user.id, "username": user.username,
                  "notification_id": notif.id},
-                room=f"creator_{party.creator_id}",
+                room=f"user_{party.creator_id}",
             )
             return _build_party_out(party, db)
         elif existing.status == MemberStatus.left:
@@ -575,12 +633,21 @@ async def join_party(
                 {"party_id": party.id, "user_id": user.id, "username": user.username},
             )
             db.commit()
+            await sio.emit("new_notification", {
+                "id": notif.id,
+                "type": notif.type,
+                "title": notif.title,
+                "body": notif.body,
+                "data": notif.data,
+                "is_read": False,
+                "created_at": notif.created_at.isoformat(),
+            }, room=f"user_{party.creator_id}")
             await sio.emit(
                 "new_party_request",
                 {"party_id": party.id, "party_title": party.title,
                  "user_id": user.id, "username": user.username,
                  "notification_id": notif.id},
-                room=f"creator_{party.creator_id}",
+                room=f"user_{party.creator_id}",
             )
             return _build_party_out(party, db)
         elif existing.status in [MemberStatus.pending, MemberStatus.accepted]:
@@ -594,12 +661,21 @@ async def join_party(
         {"party_id": party.id, "user_id": user.id, "username": user.username},
     )
     db.commit()
+    await sio.emit("new_notification", {
+        "id": notif.id,
+        "type": notif.type,
+        "title": notif.title,
+        "body": notif.body,
+        "data": notif.data,
+        "is_read": False,
+        "created_at": notif.created_at.isoformat(),
+    }, room=f"user_{party.creator_id}")
     await sio.emit(
         "new_party_request",
         {"party_id": party.id, "party_title": party.title,
          "user_id": user.id, "username": user.username,
          "notification_id": notif.id},
-        room=f"creator_{party.creator_id}",
+        room=f"user_{party.creator_id}",
     )
     return _build_party_out(party, db)
 
@@ -669,6 +745,15 @@ async def kick_member(
         {"party_id": party.id},
     )
     db.commit()
+    await sio.emit("new_notification", {
+        "id": notif.id,
+        "type": notif.type,
+        "title": notif.title,
+        "body": notif.body,
+        "data": notif.data,
+        "is_read": False,
+        "created_at": notif.created_at.isoformat(),
+    }, room=f"user_{user_id}")
     await sio.emit(
         "kicked_from_party",
         {"party_id": party.id, "party_title": party.title,
@@ -698,7 +783,7 @@ async def accept_member(
         raise HTTPException(status_code=404, detail="Заявка не найдена")
     m.status = MemberStatus.accepted
     db.flush()
-    _check_and_close_party(party, db)
+    party_closed = _check_and_close_party(party, db)
     notif = create_notification(
         db, m.user_id, "request_status_changed",
         "Заявка принята",
@@ -706,12 +791,23 @@ async def accept_member(
         {"party_id": party.id, "status": "accepted"},
     )
     db.commit()
+    await sio.emit("new_notification", {
+        "id": notif.id,
+        "type": notif.type,
+        "title": notif.title,
+        "body": notif.body,
+        "data": notif.data,
+        "is_read": False,
+        "created_at": notif.created_at.isoformat(),
+    }, room=f"user_{m.user_id}")
     await sio.emit(
         "request_status_changed",
         {"status": "accepted", "party_id": party.id, "party_title": party.title,
          "notification_id": notif.id},
         room=f"user_{m.user_id}",
     )
+    if party_closed:
+        await _notify_party_closed(party, db, exclude_user_ids={party.creator_id, m.user_id})
     return _build_party_out(party, db)
 
 
@@ -741,6 +837,15 @@ async def reject_member(
         {"party_id": party.id, "status": "rejected"},
     )
     db.commit()
+    await sio.emit("new_notification", {
+        "id": notif.id,
+        "type": notif.type,
+        "title": notif.title,
+        "body": notif.body,
+        "data": notif.data,
+        "is_read": False,
+        "created_at": notif.created_at.isoformat(),
+    }, room=f"user_{m.user_id}")
     await sio.emit(
         "request_status_changed",
         {"status": "rejected", "party_id": party.id, "party_title": party.title,
@@ -751,7 +856,7 @@ async def reject_member(
 
 
 @router.post("/parties/{party_id}/close", response_model=PartyOut)
-def close_party(
+async def close_party(
     party_id: int,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -762,6 +867,9 @@ def close_party(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может закрыть компанию")
+    if not party.is_open:
+        return _build_party_out(party, db)
     party.is_open = False
     db.commit()
+    await _notify_party_closed(party, db, exclude_user_ids={party.creator_id})
     return _build_party_out(party, db)

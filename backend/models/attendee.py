@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.sql import func
 from datetime import datetime
 from database import Base
@@ -23,7 +23,7 @@ class EventAttendee(Base):
 
     # Кешируем метаданные KudaGo-события при регистрации
     event_title     = Column(String, nullable=True)
-    event_date_ts   = Column(Integer, nullable=True)   # Unix-timestamp начала события
+    event_date_ts   = Column(BigInteger, nullable=True)   # Unix-timestamp начала события
     event_city      = Column(String, nullable=True)
     event_image_url = Column(String, nullable=True)
     event_category  = Column(String, nullable=True)

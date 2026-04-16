@@ -1,3 +1,4 @@
+from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, ForeignKey
 from sqlalchemy.sql import func
 from database import Base
@@ -13,4 +14,4 @@ class Notification(Base):
     body = Column(Text, nullable=True)
     data = Column(Text, nullable=True)      # JSON string
     is_read = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow, server_default=func.now())

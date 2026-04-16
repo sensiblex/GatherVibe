@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '../context/AuthContext';
@@ -299,34 +299,12 @@ export default function EventParty({ eventId }: { eventId: string }) {
   const { token } = useAuth();
   const [parties, setParties] = useState<Party[]>([]);
   const [loading, setLoading] = useState(true);
-  const prevPartiesRef = useRef<Party[]>([]);
 
   const fetchParties = useCallback(async () => {
     try {
       const res = await apiFetch(`/parties/${eventId}`);
       if (!res.ok) return;
       const data: Party[] = await res.json();
-
-      if (token) {
-        try {
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          const myId: number = payload.id ?? payload.user_id;
-          data.forEach(newParty => {
-            const oldParty = prevPartiesRef.current.find(p => p.id === newParty.id);
-            if (!oldParty) return;
-            const oldMe = oldParty.members.find(m => m.user_id === myId);
-            const newMe = newParty.members.find(m => m.user_id === myId);
-            if (oldMe?.status === 'pending' && newMe?.status === 'accepted') {
-              toast(`🎉 Вас приняли в компанию «${newParty.title}»!`, 'success');
-            }
-            if (oldMe?.status === 'pending' && !newMe) {
-              toast(`Заявка в «${newParty.title}» отклонена`, 'error');
-            }
-          });
-        } catch {}
-      }
-
-      prevPartiesRef.current = data;
       setParties(data);
     } catch {}
   }, [eventId, token]);

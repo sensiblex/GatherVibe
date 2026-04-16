@@ -1,20 +1,10 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
-import { apiFetch } from '../lib/apiFetch';
-
-interface NotificationItem {
-  id: number;
-  type: string;
-  title: string;
-  body: string | null;
-  data: string | null;
-  is_read: boolean;
-  created_at: string;
-}
+import { useNotifications } from '../context/NotificationsContext';
 
 function typeIcon(type: string) {
   switch (type) {
@@ -39,6 +29,12 @@ function typeIcon(type: string) {
         <line x1="22" y1="11" x2="16" y2="11"/>
       </svg>
     );
+    case 'party_closed': return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+    );
     default: return (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
@@ -54,72 +50,44 @@ function typeAccentColor(type: string, isRead: boolean): { bg: string; color: st
     case 'request_status_changed': return { bg: 'var(--success-hl)', color: 'var(--success)' };
     case 'kicked_from_party':      return { bg: 'var(--error-hl)',   color: 'var(--error)' };
     case 'new_party_request':      return { bg: 'var(--primary-hl)', color: 'var(--primary)' };
+    case 'party_closed':           return { bg: 'var(--surface-2)',  color: 'var(--text-muted)' };
     default:                        return { bg: 'var(--primary-hl)', color: 'var(--primary)' };
   }
 }
 
+function ArrowIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+      <path d="M5 12h14M12 5l7 7-7 7"/>
+    </svg>
+  );
+}
+
 export default function NotificationsPage() {
-  const { token, user, isLoading: authLoading } = useAuth();
+  const { user } = useAuth();
+  const { notifications, unreadCount, markRead, markAllRead, isLoaded } = useNotifications();
   const router = useRouter();
-  const [items, setItems]       = useState<NotificationItem[]>([]);
-  const [loading, setLoading]   = useState(true);
-  const [error, setError]       = useState<string | null>(null);
-  const [marking, setMarking]   = useState<number | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
 
-  const load = useCallback(async () => {
-    if (authLoading) return;
-    if (!token) { router.push('/login'); return; }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await apiFetch('/notifications?limit=100');
-      if (!res.ok) throw new Error(`${res.status}`);
-      const data: NotificationItem[] = await res.json();
-      setItems(data);
-    } catch {
-      setError('Не удалось загрузить уведомления. Попробуйте позже.');
-    } finally {
-      setLoading(false);
-    }
-  }, [token, authLoading, router]);
+  const handleMarkRead = useCallback((id: number) => {
+    markRead(id);
+  }, [markRead]);
 
-  useEffect(() => { load(); }, [load]);
-
-  const markRead = async (id: number) => {
-    if (marking) return;
-    setMarking(id);
-    try {
-      const res = await apiFetch('/notifications/read', {
-        method: 'POST',
-        body: JSON.stringify({ notification_id: id }),
-      });
-      if (res.ok) {
-        setItems(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-        // Notify navbar to decrement badge
-        window.dispatchEvent(new CustomEvent('notification:read'));
-      }
-    } finally {
-      setMarking(null);
-    }
-  };
-
-  const markAllRead = async () => {
+  const handleMarkAllRead = useCallback(async () => {
     setMarkingAll(true);
-    try {
-      const res = await apiFetch('/notifications/read-all', { method: 'POST' });
-      if (res.ok) {
-        setItems(prev => prev.map(n => ({ ...n, is_read: true })));
-        window.dispatchEvent(new CustomEvent('notification:read-all'));
-      }
-    } finally {
-      setMarkingAll(false);
-    }
-  };
+    markAllRead();
+    setMarkingAll(false);
+  }, [markAllRead]);
+
+  const handleNotificationClick = useCallback((id: number, data: string | null) => {
+    handleMarkRead(id);
+    let parsed: Record<string, unknown> = {};
+    try { parsed = data ? JSON.parse(data) : {}; } catch { /* ignore parse errors */ }
+    const partyId = parsed.party_id as number | undefined;
+    if (partyId) router.push(`/parties/${partyId}`);
+  }, [handleMarkRead, router]);
 
   if (!user) return null;
-
-  const unread = items.filter(n => !n.is_read).length;
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
@@ -145,20 +113,20 @@ export default function NotificationsPage() {
                 Уведомления
               </h1>
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                {loading
+                {!isLoaded
                   ? 'Загрузка...'
-                  : items.length === 0
+                  : notifications.length === 0
                     ? 'Уведомлений нет'
-                    : unread > 0
-                      ? `${unread} непрочитанных`
+                    : unreadCount > 0
+                      ? `${unreadCount} непрочитанных`
                       : 'Всё прочитано'}
               </p>
             </div>
           </div>
 
-          {unread > 0 && !loading && (
+          {unreadCount > 0 && isLoaded && (
             <button
-              onClick={markAllRead}
+              onClick={handleMarkAllRead}
               disabled={markingAll}
               className="text-sm px-4 py-2 rounded-xl font-medium transition"
               style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
@@ -168,19 +136,8 @@ export default function NotificationsPage() {
           )}
         </div>
 
-        {/* ── Error ── */}
-        {error && (
-          <div
-            className="rounded-2xl p-4 mb-6 text-sm"
-            style={{ background: 'var(--error-hl)', color: 'var(--error)' }}
-          >
-            {error}
-            <button onClick={load} className="ml-3 underline font-medium">Повторить</button>
-          </div>
-        )}
-
         {/* ── Skeleton ── */}
-        {loading && (
+        {!isLoaded && (
           <div className="space-y-3">
             {[1, 2, 3, 4].map(i => (
               <div
@@ -201,7 +158,7 @@ export default function NotificationsPage() {
         )}
 
         {/* ── Empty ── */}
-        {!loading && !error && items.length === 0 && (
+        {isLoaded && notifications.length === 0 && (
           <div className="text-center py-24">
             <div
               className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center"
@@ -221,22 +178,26 @@ export default function NotificationsPage() {
         )}
 
         {/* ── Notification list ── */}
-        {!loading && !error && items.length > 0 && (
+        {isLoaded && notifications.length > 0 && (
           <div className="space-y-2">
-            {items.map(n => {
+            {notifications.map(n => {
               const { bg, color } = typeAccentColor(n.type, n.is_read);
+              let parsed: Record<string, unknown> = {};
+              try { parsed = n.data ? JSON.parse(n.data) : {}; } catch { /* ignore parse errors */ }
+              const partyId = parsed.party_id as number | undefined;
+              const isClickable = !!partyId;
+
               return (
                 <div
                   key={n.id}
-                  onClick={() => !n.is_read && markRead(n.id)}
+                  onClick={() => isClickable && handleNotificationClick(n.id, n.data)}
                   className="rounded-2xl p-4 flex gap-3 transition-all"
                   style={{
-                    background: n.is_read ? 'var(--surface)' : 'var(--surface)',
+                    background: 'var(--surface)',
                     border: n.is_read
                       ? '1px solid var(--border)'
                       : '1px solid color-mix(in srgb, ' + color + ' 40%, transparent)',
-                    cursor: n.is_read ? 'default' : 'pointer',
-                    opacity: marking === n.id ? 0.6 : 1,
+                    cursor: isClickable ? 'pointer' : 'default',
                   }}
                 >
                   {/* Icon */}
@@ -279,12 +240,10 @@ export default function NotificationsPage() {
                     </p>
                   </div>
 
-                  {/* Mark-read hint */}
-                  {!n.is_read && (
-                    <div className="shrink-0 self-center">
-                      <span className="text-xs" style={{ color: 'var(--text-faint)' }}>
-                        Нажмите
-                      </span>
+                  {/* Arrow if clickable */}
+                  {isClickable && (
+                    <div className="shrink-0 self-center" style={{ color: 'var(--text-faint)' }}>
+                      <ArrowIcon />
                     </div>
                   )}
                 </div>

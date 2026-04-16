@@ -360,29 +360,11 @@ async def subscribe_notifications(sid, data: dict):
         user = get_user_from_socket_token(token, db)
     except ValueError as e:
         await sio.emit('error', {'message': str(e)}, room=sid)
-        db.close()
         return
-    user_id = user.id
-    if user_id:
-        await sio.enter_room(sid, f'creator_{user_id}')
-        print(f"[notifications] {sid} subscribed to creator_{user_id}")
-    db.close()
-
-
-@sio.on('subscribe_user_notifications')
-async def subscribe_user_notifications(sid, data: dict):
-    token = data.get('token')
-    if not token:
-        return
-    db = SessionLocal()
-    try:
-        user = get_user_from_socket_token(token, db)
-        await sio.enter_room(sid, f'user_{user.id}')
-        print(f"[notifications] {sid} subscribed to user_{user.id}")
-    except ValueError:
-        pass
     finally:
         db.close()
+    await sio.enter_room(sid, f'user_{user.id}')
+    print(f"[notifications] {sid} subscribed to user_{user.id}")
 
 
 # ── ASGI app (entry point for uvicorn) ───────────────────────────────────────

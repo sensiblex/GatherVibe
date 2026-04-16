@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.sql import func
 from database import Base
 
@@ -16,7 +16,7 @@ class EventParty(Base):
     is_open = Column(Boolean, default=True)  # False = closed for new requests
     city = Column(String(100), nullable=True, index=True)
     event_title = Column(String(200), nullable=True)
-    event_date_ts = Column(Integer, nullable=True)
+    event_date_ts = Column(BigInteger, nullable=True)
     event_image_url = Column(String(500), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

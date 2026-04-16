@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
-import { useEffect, useState, useCallback } from 'react';
+import { useNotifications } from '../context/NotificationsContext';
+import { useEffect, useState } from 'react';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -49,31 +50,15 @@ function ThemeToggle() {
 
 export default function Navbar() {
   const { user, logout, token } = useAuth();
+  const { unreadCount } = useNotifications();
   const pathname = usePathname();
   const isActive = (href: string) => pathname === href;
-  const [unreadCount, setUnreadCount] = useState(0);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
-  const fetchUnread = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await fetch(`${API_BASE}/notifications/unread-count`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (typeof data.count === 'number') setUnreadCount(data.count);
-      }
-    } catch {}
-  }, [token]);
-
-  // Загружаем аватар пользователя один раз при авторизации
   useEffect(() => {
     if (!token) { setAvatarUrl(null); return; }
-    // Сначала читаем из localStorage (быстро, без запроса)
     const cached = localStorage.getItem('avatar_url');
     if (cached) setAvatarUrl(cached);
-    // Затем синхронизируем с сервером
     fetch(`${API_BASE}/users/me`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
@@ -85,7 +70,6 @@ export default function Navbar() {
       .catch(() => {});
   }, [token]);
 
-  // Обновляем аватар когда пользователь меняет его на странице профиля
   useEffect(() => {
     const onAvatarUpdated = () => {
       const url = localStorage.getItem('avatar_url');
@@ -93,27 +77,6 @@ export default function Navbar() {
     };
     window.addEventListener('avatar:updated', onAvatarUpdated);
     return () => window.removeEventListener('avatar:updated', onAvatarUpdated);
-  }, []);
-
-  useEffect(() => {
-    fetchUnread();
-    const id = setInterval(fetchUnread, 30_000);
-    return () => clearInterval(id);
-  }, [fetchUnread]);
-
-  // Sync badge with mark-read and new-notification events
-  useEffect(() => {
-    const onNew     = () => setUnreadCount(c => c + 1);
-    const onRead    = () => setUnreadCount(c => Math.max(0, c - 1));
-    const onReadAll = () => setUnreadCount(0);
-    window.addEventListener('notification:new',      onNew);
-    window.addEventListener('notification:read',     onRead);
-    window.addEventListener('notification:read-all', onReadAll);
-    return () => {
-      window.removeEventListener('notification:new',      onNew);
-      window.removeEventListener('notification:read',     onRead);
-      window.removeEventListener('notification:read-all', onReadAll);
-    };
   }, []);
 
   return (
@@ -182,7 +145,6 @@ export default function Navbar() {
 
           {user ? (
             <>
-              {/* ── Bell → /notifications ── */}
               <Link
                 href="/notifications"
                 className="relative w-9 h-9 flex items-center justify-center rounded-xl transition"
@@ -206,7 +168,6 @@ export default function Navbar() {
                 <span className="font-semibold" style={{ color: 'var(--text)' }}>{user.username}</span>!
               </span>
 
-              {/* ── Профиль с аватаром ── */}
               <Link
                 href="/profile"
                 className="flex items-center gap-1.5 text-sm font-medium px-2 py-1.5 rounded-xl transition"
