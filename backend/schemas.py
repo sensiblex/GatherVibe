@@ -219,12 +219,18 @@ class MeetingPlanUpdate(BaseModel):
     meet_time: Optional[datetime] = None
     meet_location: Optional[str] = Field(None, max_length=300)
     note: Optional[str] = Field(None, max_length=300)
+    meet_lat: Optional[float] = Field(None, ge=-90.0, le=90.0)
+    meet_lon: Optional[float] = Field(None, ge=-180.0, le=180.0)
+    meet_landmark: Optional[str] = Field(None, max_length=200)
 
 
 class MeetingPlanResponse(BaseModel):
     meet_time: Optional[datetime] = None
     meet_location: Optional[str] = None
     note: Optional[str] = None
+    meet_lat: Optional[float] = None
+    meet_lon: Optional[float] = None
+    meet_landmark: Optional[str] = None
     updated_by_username: Optional[str] = None
     updated_at: Optional[datetime] = None
 
@@ -233,5 +239,8 @@ class MeetingPlanHistoryItem(BaseModel):
     meet_time: Optional[datetime] = None
     meet_location: Optional[str] = None
     note: Optional[str] = None
+    meet_lat: Optional[float] = None
+    meet_lon: Optional[float] = None
+    meet_landmark: Optional[str] = None
     changed_by_username: str
     changed_at: datetime

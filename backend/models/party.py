@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Index, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Column, Float, Index, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.sql import func
 from database import Base
 
@@ -44,6 +44,9 @@ class PartyMeetingPlan(Base):
     meet_time     = Column(DateTime(timezone=True), nullable=True)
     meet_location = Column(Text, nullable=True)
     note          = Column(Text, nullable=True)
+    meet_lat      = Column(Float, nullable=True)
+    meet_lon      = Column(Float, nullable=True)
+    meet_landmark = Column(Text, nullable=True)
     updated_by    = Column(Integer, ForeignKey("users.id"), nullable=False)
     updated_at    = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -56,6 +59,9 @@ class PartyMeetingPlanHistory(Base):
     meet_time     = Column(DateTime(timezone=True), nullable=True)
     meet_location = Column(Text, nullable=True)
     note          = Column(Text, nullable=True)
+    meet_lat      = Column(Float, nullable=True)
+    meet_lon      = Column(Float, nullable=True)
+    meet_landmark = Column(Text, nullable=True)
     changed_by    = Column(Integer, ForeignKey("users.id"), nullable=False)
     changed_at    = Column(DateTime(timezone=True), server_default=func.now())
 

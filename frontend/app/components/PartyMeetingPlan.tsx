@@ -1,9 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { Socket } from 'socket.io-client';
 import { apiFetch } from '../lib/apiFetch';
 import { toast } from './Toast';
+
+const PartyMeetingMap = dynamic(() => import('./PartyMeetingMap'), { ssr: false });
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -11,6 +14,9 @@ interface MeetingPlan {
   meet_time: string | null;
   meet_location: string | null;
   note: string | null;
+  meet_lat: number | null;
+  meet_lon: number | null;
+  meet_landmark: string | null;
   updated_by_username: string | null;
   updated_at: string | null;
 }
@@ -19,6 +25,9 @@ interface HistoryItem {
   meet_time: string | null;
   meet_location: string | null;
   note: string | null;
+  meet_lat: number | null;
+  meet_lon: number | null;
+  meet_landmark: string | null;
   changed_by_username: string;
   changed_at: string;
 }
@@ -28,6 +37,9 @@ interface PlanUpdatedPayload {
   meet_time: string | null;
   meet_location: string | null;
   note: string | null;
+  meet_lat: number | null;
+  meet_lon: number | null;
+  meet_landmark: string | null;
   updated_by: string;
   updated_at: string;
 }
@@ -103,6 +115,9 @@ export default function PartyMeetingPlan({ partyId, isCreator, socket }: PartyMe
         meet_time: payload.meet_time,
         meet_location: payload.meet_location,
         note: payload.note,
+        meet_lat: payload.meet_lat,
+        meet_lon: payload.meet_lon,
+        meet_landmark: payload.meet_landmark,
         updated_by_username: payload.updated_by,
         updated_at: payload.updated_at,
       });
@@ -135,6 +150,10 @@ export default function PartyMeetingPlan({ partyId, isCreator, socket }: PartyMe
           meet_time: datetimeLocalToIso(form.meet_time),
           meet_location: form.meet_location.trim() || null,
           note: form.note.trim() || null,
+          // preserve existing map coords
+          meet_lat: plan?.meet_lat ?? null,
+          meet_lon: plan?.meet_lon ?? null,
+          meet_landmark: plan?.meet_landmark ?? null,
         }),
       });
       if (res.ok) {
@@ -150,6 +169,37 @@ export default function PartyMeetingPlan({ partyId, isCreator, socket }: PartyMe
       toast('Ошибка сети', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleMapSave = async (lat: number, lon: number, landmark: string) => {
+    try {
+      const res = await apiFetch(`${API_BASE}/parties/${partyId}/plan`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          meet_time: plan?.meet_time ?? null,
+          meet_location: plan?.meet_location ?? null,
+          note: plan?.note ?? null,
+          meet_lat: lat,
+          meet_lon: lon,
+          meet_landmark: landmark || null,
+        }),
+      });
+      if (res.ok) {
+        const data: MeetingPlan = await res.json();
+        setPlan(data);
+        toast('Точка встречи сохранена', 'success');
+      } else {
+        const d = await res.json();
+        toast(d?.detail ?? 'Ошибка сохранения', 'error');
+        throw new Error(d?.detail ?? 'save failed');
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message !== 'save failed') {
+        toast('Ошибка сети', 'error');
+      }
+      throw err;
     }
   };
 
@@ -321,6 +371,26 @@ export default function PartyMeetingPlan({ partyId, isCreator, socket }: PartyMe
                 Отмена
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Meeting point map */}
+        {!editing && (plan || isCreator) && (
+          <div
+            className="rounded-xl p-3 flex flex-col gap-2"
+            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+          >
+            <p className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+              🗺️ Точка встречи
+            </p>
+            <PartyMeetingMap
+              partyId={partyId}
+              isCreator={isCreator}
+              lat={plan?.meet_lat ?? null}
+              lon={plan?.meet_lon ?? null}
+              landmark={plan?.meet_landmark ?? null}
+              onSave={handleMapSave}
+            />
           </div>
         )}
 

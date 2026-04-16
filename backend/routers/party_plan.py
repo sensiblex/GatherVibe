@@ -48,6 +48,9 @@ def get_party_plan(
         meet_time=plan.meet_time,
         meet_location=plan.meet_location,
         note=plan.note,
+        meet_lat=plan.meet_lat,
+        meet_lon=plan.meet_lon,
+        meet_landmark=plan.meet_landmark,
         updated_by_username=updater.username if updater else None,
         updated_at=plan.updated_at,
     )
@@ -82,6 +85,9 @@ async def update_party_plan(
             meet_time=existing.meet_time,
             meet_location=existing.meet_location,
             note=existing.note,
+            meet_lat=existing.meet_lat,
+            meet_lon=existing.meet_lon,
+            meet_landmark=existing.meet_landmark,
             changed_by=existing.updated_by,
             changed_at=datetime.utcnow(),
         )
@@ -89,6 +95,9 @@ async def update_party_plan(
         existing.meet_time = body.meet_time
         existing.meet_location = body.meet_location
         existing.note = body.note
+        existing.meet_lat = body.meet_lat
+        existing.meet_lon = body.meet_lon
+        existing.meet_landmark = body.meet_landmark
         existing.updated_by = current_user.id
         existing.updated_at = datetime.utcnow()
         plan = existing
@@ -98,6 +107,9 @@ async def update_party_plan(
             meet_time=body.meet_time,
             meet_location=body.meet_location,
             note=body.note,
+            meet_lat=body.meet_lat,
+            meet_lon=body.meet_lon,
+            meet_landmark=body.meet_landmark,
             updated_by=current_user.id,
             updated_at=datetime.utcnow(),
         )
@@ -110,11 +122,12 @@ async def update_party_plan(
     time_part = (
         plan.meet_time.strftime("%d.%m.%Y %H:%M") if plan.meet_time else "время не указано"
     )
+    landmark_part = f" ({plan.meet_landmark})" if plan.meet_landmark else ""
     system_msg = ChatMessage(
         room=f"party_{party_id}",
         user_id="0",
         username="system",
-        message=f"📍 План встречи обновлён: {location_part} в {time_part}",
+        message=f"📍 Точка встречи обновлена: {location_part}{landmark_part} в {time_part}",
         is_system=True,
         event_type="plan_updated",
         timestamp=datetime.utcnow(),
@@ -130,6 +143,9 @@ async def update_party_plan(
             "meet_time": plan.meet_time.isoformat() if plan.meet_time else None,
             "meet_location": plan.meet_location,
             "note": plan.note,
+            "meet_lat": plan.meet_lat,
+            "meet_lon": plan.meet_lon,
+            "meet_landmark": plan.meet_landmark,
             "updated_by": current_user.username,
             "updated_at": plan.updated_at.isoformat(),
         },
@@ -155,6 +171,9 @@ async def update_party_plan(
         meet_time=plan.meet_time,
         meet_location=plan.meet_location,
         note=plan.note,
+        meet_lat=plan.meet_lat,
+        meet_lon=plan.meet_lon,
+        meet_landmark=plan.meet_landmark,
         updated_by_username=current_user.username,
         updated_at=plan.updated_at,
     )
@@ -185,6 +204,9 @@ def get_party_plan_history(
             meet_time=row.meet_time,
             meet_location=row.meet_location,
             note=row.note,
+            meet_lat=row.meet_lat,
+            meet_lon=row.meet_lon,
+            meet_landmark=row.meet_landmark,
             changed_by_username=users[row.changed_by].username if row.changed_by in users else "unknown",
             changed_at=row.changed_at,
         )
