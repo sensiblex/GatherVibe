@@ -383,6 +383,26 @@ def kudago_locations():
 # ─── Attendees ───────────────────────────────────────────────────────────────
 
 
+@router.get("/attendees/batch-counts")
+def batch_attendee_counts(
+    ids: str = Query(..., description="Comma-separated event IDs"),
+    db: Session = Depends(get_db),
+):
+    """Return attendee counts for multiple events at once."""
+    id_list = [i.strip() for i in ids.split(",") if i.strip()]
+    if not id_list:
+        return {}
+    from sqlalchemy import func as sf
+    rows = (
+        db.query(EventAttendee.event_id, sf.count(EventAttendee.id).label("cnt"))
+        .filter(EventAttendee.event_id.in_(id_list))
+        .group_by(EventAttendee.event_id)
+        .all()
+    )
+    counts = {row.event_id: row.cnt for row in rows}
+    return {eid: counts.get(eid, 0) for eid in id_list}
+
+
 @router.post("/attendees/{event_id}", response_model=AttendeeOut)
 def join_event(
     event_id: str,
