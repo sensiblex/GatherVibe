@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Column, Index, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.sql import func
 from database import Base
 
@@ -34,3 +34,31 @@ class PartyMember(Base):
     message = Column(String(100), nullable=True)  # optional short message when joining
 
     __table_args__ = (UniqueConstraint("party_id", "user_id", name="uq_party_user"),)
+
+
+class PartyMeetingPlan(Base):
+    __tablename__ = "party_meeting_plans"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    party_id      = Column(Integer, ForeignKey("event_parties.id", ondelete="CASCADE"), nullable=False, unique=True)
+    meet_time     = Column(DateTime(timezone=True), nullable=True)
+    meet_location = Column(Text, nullable=True)
+    note          = Column(Text, nullable=True)
+    updated_by    = Column(Integer, ForeignKey("users.id"), nullable=False)
+    updated_at    = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class PartyMeetingPlanHistory(Base):
+    __tablename__ = "party_meeting_plan_history"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    party_id      = Column(Integer, ForeignKey("event_parties.id", ondelete="CASCADE"), nullable=False)
+    meet_time     = Column(DateTime(timezone=True), nullable=True)
+    meet_location = Column(Text, nullable=True)
+    note          = Column(Text, nullable=True)
+    changed_by    = Column(Integer, ForeignKey("users.id"), nullable=False)
+    changed_at    = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_party_meeting_plan_history_party_changed", "party_id", "changed_at"),
+    )

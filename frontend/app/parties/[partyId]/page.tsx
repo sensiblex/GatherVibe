@@ -9,6 +9,7 @@ import PartyChat from '../../components/PartyChat';
 import PinnedBlock from '../../components/PartyCoordination/PinnedBlock';
 import AttendanceBar from '../../components/PartyCoordination/AttendanceBar';
 import ActivePoll from '../../components/PartyCoordination/ActivePoll';
+import PartyMeetingPlan from '../../components/PartyMeetingPlan';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from '../../components/Toast';
 import { apiFetch } from '../../lib/apiFetch';
@@ -620,6 +621,11 @@ export default function PartyDetailPage() {
             {/* Coordination layer */}
             {isAcceptedMember && user && (
               <div className="space-y-4">
+                <PartyMeetingPlan
+                  partyId={party.id}
+                  isCreator={isCreator}
+                  socket={socketRef.current}
+                />
                 <PinnedBlock
                   partyId={party.id}
                   isCreator={isCreator}

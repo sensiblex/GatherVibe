@@ -210,3 +210,28 @@ class PartySearchResponse(BaseModel):
     ) -> "PartySearchResponse":
         pages = math.ceil(total / per_page) if total > 0 else 0
         return cls(items=items, total=total, page=page, per_page=per_page, pages=pages)
+
+
+# ─── Meeting Plan ─────────────────────────────────────────────────────────────
+
+
+class MeetingPlanUpdate(BaseModel):
+    meet_time: Optional[datetime] = None
+    meet_location: Optional[str] = Field(None, max_length=300)
+    note: Optional[str] = Field(None, max_length=300)
+
+
+class MeetingPlanResponse(BaseModel):
+    meet_time: Optional[datetime] = None
+    meet_location: Optional[str] = None
+    note: Optional[str] = None
+    updated_by_username: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+
+class MeetingPlanHistoryItem(BaseModel):
+    meet_time: Optional[datetime] = None
+    meet_location: Optional[str] = None
+    note: Optional[str] = None
+    changed_by_username: str
+    changed_at: datetime

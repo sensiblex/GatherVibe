@@ -15,6 +15,13 @@ from database import Base  # noqa: F401
 import models.user  # noqa: F401
 import models.event  # noqa: F401
 import models.attendee  # noqa: F401
+import models.party  # noqa: F401
+import models.chat_message  # noqa: F401
+import models.review  # noqa: F401
+import models.notification  # noqa: F401
+import models.kudago_event  # noqa: F401
+import models.party_coordination  # noqa: F401
+import models.push_subscription  # noqa: F401
 
 # this is the Alembic Config object
 config = context.config

@@ -34,17 +34,19 @@ models.push_subscription.Base.metadata.create_all(bind=engine)
 
 
 def _run_column_migrations():
-    """Add new columns to existing tables (idempotent via IF NOT EXISTS)."""
-    from sqlalchemy import text
+    """Add new columns to existing tables (idempotent — silently skips if column exists)."""
+    from sqlalchemy import text, inspect as sa_inspect
+    insp = sa_inspect(engine)
+    existing = {c["name"] for c in insp.get_columns("chat_messages")}
     with engine.connect() as conn:
-        conn.execute(text(
-            "ALTER TABLE chat_messages "
-            "ADD COLUMN IF NOT EXISTS is_system BOOLEAN NOT NULL DEFAULT FALSE"
-        ))
-        conn.execute(text(
-            "ALTER TABLE chat_messages "
-            "ADD COLUMN IF NOT EXISTS event_type VARCHAR(50)"
-        ))
+        if "is_system" not in existing:
+            conn.execute(text(
+                "ALTER TABLE chat_messages ADD COLUMN is_system BOOLEAN NOT NULL DEFAULT FALSE"
+            ))
+        if "event_type" not in existing:
+            conn.execute(text(
+                "ALTER TABLE chat_messages ADD COLUMN event_type VARCHAR(50)"
+            ))
         conn.commit()
 
 
@@ -241,11 +243,13 @@ app.add_middleware(
 
 # ── Routers ───────────────────────────────────────────────────────────────────
 from routers import auth, users, events, parties, reviews, notifications, party_coordination  # noqa: E402
+from routers.party_plan import router as party_plan_router  # noqa: E402
 
 # Order matters: specific /users/me/* routes before wildcard /users/{user_id}
 app.include_router(auth.router)
 app.include_router(parties.router)          # has /users/me/parties — must precede users
 app.include_router(party_coordination.router)
+app.include_router(party_plan_router)
 app.include_router(reviews.router)          # has /users/me/reviewable — must precede users
 app.include_router(users.router)            # has /users/{user_id} — must be last of users/*
 app.include_router(events.router)
