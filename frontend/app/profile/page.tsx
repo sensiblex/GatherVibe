@@ -691,193 +691,137 @@ export default function ProfilePage() {
       {passOpen && <ChangePasswordModal onClose={() => setPassOpen(false)} />}
       {privacyOpen && <PrivacyModal onClose={() => setPrivacyOpen(false)} />}
 
-      <main className="container mx-auto px-4 py-10 max-w-4xl">
+      <section className="profile-section" style={{ borderTop: 'none' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px', marginBottom: 48 }}>
+          <div className="t-label" style={{ marginBottom: 8 }}>Профиль</div>
+          <h1 className="t-display">Ваш аккаунт</h1>
+        </div>
 
-        {/* ── Avatar + name card ── */}
-        <div className="rounded-3xl p-8 mb-6"
-          style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
-          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
-            {/* Avatar */}
-            <div className="relative shrink-0">
-              {user?.avatar_url ? (
-                <img src={user.avatar_url} alt={user.username}
-                  className="w-24 h-24 rounded-full object-cover shadow-lg" />
-              ) : (
-                <div className="w-24 h-24 rounded-full flex items-center justify-center text-3xl font-black shadow-lg"
-                  style={{ background: 'linear-gradient(135deg, var(--primary) 0%, #a855f7 100%)', color: '#fff' }}>
-                  {initials}
-                </div>
-              )}
-              {user?.is_active && (
-                <span className="absolute bottom-1 right-1 w-4 h-4 rounded-full border-2"
-                  style={{ background: 'var(--success)', borderColor: 'var(--surface)' }} />
-              )}
-              <button onClick={() => fileInputRef.current?.click()} disabled={avatarLoading}
-                className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full flex items-center justify-center shadow-lg transition hover:opacity-90 disabled:opacity-60"
-                style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', color: '#fff' }}
-                title="Загрузить фото">
-                {avatarLoading ? (
-                  <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                  </svg>
-                ) : (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                    <circle cx="12" cy="13" r="4"/>
-                  </svg>
-                )}
-              </button>
-              <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
-                onChange={handleAvatarUpload} />
-            </div>
+      <div className="profile-grid">
+      <main>
 
-            {/* Info */}
-            <div className="flex-1 text-center sm:text-left">
-              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3">
-                <h1 className="text-2xl font-black" style={{ color: 'var(--text)' }}>{user?.username}</h1>
-                <button onClick={() => setEditOpen(true)}
-                  className="text-xs px-3 py-1.5 rounded-full font-semibold transition hover:opacity-90 shadow-sm"
-                  style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', color: '#fff' }}>
-                  ✏️ Редактировать
-                </button>
-              </div>
-              <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>{user?.email}</p>
-              {avatarError && (
-                <p className="text-xs mt-1" style={{ color: 'var(--error)' }}>{avatarError}</p>
+        {/* ── Profile head ── */}
+        <div className="profile-head">
+          <div style={{ position: 'relative' }}>
+            {user?.avatar_url ? (
+              <img src={user.avatar_url} alt={user.username}
+                style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover' }} />
+            ) : (
+              <div className="av av-xl">{initials}</div>
+            )}
+            {user?.is_active && (
+              <div className="online" style={{ position: 'absolute', bottom: 3, right: 3, width: 13, height: 13, borderWidth: 2.5, borderStyle: 'solid', borderColor: 'var(--bg)' }} />
+            )}
+            <button onClick={() => fileInputRef.current?.click()} disabled={avatarLoading}
+              className="icon-btn"
+              style={{ position: 'absolute', bottom: -6, right: -6, width: 30, height: 30, borderRadius: '50%', background: 'var(--ink)', color: '#fff', border: 'none' }}
+              title="Загрузить фото">
+              {avatarLoading ? '…' : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                  <circle cx="12" cy="13" r="4"/>
+                </svg>
               )}
-              <div className="flex flex-wrap justify-center sm:justify-start gap-2 mt-4">
-                {user?.city && (
-                  <span className="flex items-center gap-1.5 text-sm px-3 py-1 rounded-full"
-                    style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-                    📍 {user.city}
-                  </span>
-                )}
-                <span className="flex items-center gap-1.5 text-sm px-3 py-1 rounded-full font-medium"
-                  style={{
-                    background: user?.is_active ? 'var(--success-hl)' : 'var(--error-hl)',
-                    color: user?.is_active ? 'var(--success)' : 'var(--error)',
-                    border: `1px solid ${user?.is_active ? 'var(--success-hl)' : 'var(--error-hl)'}`,
-                  }}>
-                  {user?.is_active ? '✓ Активен' : 'Заблокирован'}
-                </span>
-                <span className="text-sm px-3 py-1 rounded-full font-mono"
-                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text-faint)' }}>
-                  ID: {user?.id}
-                </span>
-              </div>
-              {user?.bio && (
-                <p className="text-sm mt-3 max-w-md leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                  {user.bio}
-                </p>
-              )}
-              {interestIds.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-3">
-                  {interestIds.map(id => (
-                    <span key={id} className="text-xs px-2.5 py-1 rounded-full font-medium"
-                      style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}>
-                      {getInterestLabel(id)}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Logout */}
-            <button onClick={handleLogout}
-              className="shrink-0 text-sm px-4 py-2 rounded-xl font-medium transition"
-              style={{ background: 'var(--error-hl)', color: 'var(--error)', border: '1px solid var(--error-hl)' }}>
-              Выйти
             </button>
+            <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="profile-name">{user?.username}</div>
+            {user?.city && (
+              <div className="profile-loc">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+                </svg>
+                {user.city}
+              </div>
+            )}
+            <p className="t-sm" style={{ marginBottom: 10 }}>{user?.email}</p>
+            {avatarError && <p className="t-xs" style={{ color: 'var(--match)' }}>{avatarError}</p>}
+            {interestIds.length > 0 && (
+              <div className="tags-wrap">
+                {interestIds.map(id => (
+                  <span key={id} className="tag">{getInterestLabel(id)}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+            <button onClick={() => setEditOpen(true)} className="btn btn-ink btn-sm">Редактировать</button>
+            <button onClick={handleLogout} className="btn btn-ghost btn-sm" style={{ color: 'var(--match)' }}>Выйти</button>
           </div>
         </div>
 
         {/* ── Stats ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="stats-row">
           {stats === null ? (
             [1, 2, 3].map(i => (
-              <div key={i} className="rounded-2xl p-6 animate-pulse"
-                style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
-                <div className="w-8 h-8 rounded-full mx-auto mb-2" style={{ background: 'var(--surface-2)' }} />
-                <div className="h-8 rounded w-1/3 mx-auto mb-1" style={{ background: 'var(--surface-2)' }} />
-                <div className="h-3 rounded w-2/3 mx-auto" style={{ background: 'var(--surface-2)' }} />
-              </div>
+              <div key={i} className="stat-box skel" style={{ height: 92 }} />
             ))
           ) : (
             STATS.map(s => (
-              <div key={s.label} className="rounded-2xl p-6 text-center"
-                style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
-                <span className="text-3xl">{s.emoji}</span>
-                <p className="text-3xl font-black mt-2" style={{ color: 'var(--text)' }}>{s.value}</p>
-                <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>{s.label}</p>
+              <div key={s.label} className="stat-box">
+                <div className="stat-num">{s.value}</div>
+                <div className="stat-label">{s.label}</div>
               </div>
             ))
           )}
         </div>
 
         {/* ── Tabs ── */}
-        <div className="flex gap-2 mb-2 flex-wrap">
+        <div className="tab-row" role="tablist">
           {(['info', 'parties', 'events'] as const).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
-              className="px-4 py-2 rounded-xl text-sm font-semibold transition"
-              style={{
-                background: activeTab === tab ? 'var(--primary)' : 'var(--surface)',
-                color: activeTab === tab ? 'var(--text-inverse)' : 'var(--text-muted)',
-                border: '1px solid var(--border)',
-              }}>
-              {tab === 'info' ? '👤 Профиль' : tab === 'parties' ? '👥 Мои компании' : '🎭 Мои события'}
+              className={`tab${activeTab === tab ? ' active' : ''}`} role="tab"
+              aria-selected={activeTab === tab}>
+              {tab === 'info' ? 'Профиль' : tab === 'parties' ? 'Мои компании' : 'Мои события'}
             </button>
           ))}
         </div>
 
         {activeTab !== 'info' && (
-          <div className="rounded-3xl p-6 mb-6"
-            style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+          <div className="p-card">
             {activeTab === 'parties' && user && <MyPartiesTab userId={user.id} />}
             {activeTab === 'events' && <MyEventsTab />}
           </div>
         )}
 
-        {/* ── Reviews (info tab only) ── */}
-        {activeTab === 'info' && user && (
-          <div className="mb-6">
+        {activeTab === 'info' && (
+          <p className="t-sm" style={{ textAlign: 'center', marginTop: 32 }}>
+            Хочешь посмотреть события?{' '}
+            <Link href="/events" style={{ color: 'var(--ink)', fontWeight: 600 }}>Перейти →</Link>
+          </p>
+        )}
+      </main>
+
+      {/* ── Sidebar ── */}
+      <aside>
+        <div className="p-card">
+          <div className="p-card-title">О себе</div>
+          <p className="t-sm" style={{ lineHeight: 1.62 }}>
+            {user?.bio || 'Пока не рассказал о себе. Нажмите «Редактировать», чтобы добавить описание.'}
+          </p>
+        </div>
+
+        {user && (
+          <div className="p-card">
+            <div className="p-card-title">Отзывы</div>
             <UserReviewsBlock userId={user.id} viewerUserId={user.id} maxReviews={3} />
           </div>
         )}
 
-        {/* ── Settings (info tab only) ── */}
-        {activeTab === 'info' && (
-          <>
-            <div className="rounded-3xl p-6"
-              style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
-              <h2 className="text-base font-bold mb-4" style={{ color: 'var(--text)' }}>Настройки</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <button onClick={() => setEditOpen(true)}
-                  className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition hover:opacity-90"
-                  style={{ background: 'var(--accent, #4f46e5)', color: '#fff' }}>
-                  ✏️ Редактировать профиль
-                </button>
-                <button onClick={() => setPassOpen(true)}
-                  className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition hover:opacity-80"
-                  style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
-                  🔒 Сменить пароль
-                </button>
-                <button onClick={() => setPrivacyOpen(true)}
-                  className="flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition hover:opacity-80"
-                  style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
-                  🔐 Приватность
-                </button>
-              </div>
-            </div>
-            <p className="text-center text-sm mt-8" style={{ color: 'var(--text-muted)' }}>
-              Хочешь посмотреть события?{' '}
-              <Link href="/events" className="font-medium transition" style={{ color: 'var(--primary)' }}>
-                Перейти →
-              </Link>
-            </p>
-          </>
-        )}
-      </main>
+        <div className="p-card">
+          <div className="p-card-title">Настройки</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button onClick={() => setEditOpen(true)} className="btn btn-ink btn-sm">Редактировать профиль</button>
+            <button onClick={() => setPassOpen(true)} className="btn btn-ghost btn-sm">Сменить пароль</button>
+            <button onClick={() => setPrivacyOpen(true)} className="btn btn-ghost btn-sm">Приватность</button>
+          </div>
+        </div>
+      </aside>
+      </div>
+      </section>
     </div>
   );
 }

@@ -9,12 +9,11 @@ import { useEffect, useState } from 'react';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 function ThemeToggle() {
-  const [dark, setDark] = useState(false);
+  const [dark, setDark] = useState(true);
 
   useEffect(() => {
     const stored = localStorage.getItem('gv-theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const isDark = stored ? stored === 'dark' : prefersDark;
+    const isDark = stored ? stored === 'dark' : true;
     setDark(isDark);
     document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
   }, []);
@@ -28,20 +27,24 @@ function ThemeToggle() {
   };
 
   return (
-    <button
-      onClick={toggle}
-      aria-label={dark ? 'Светлая тема' : 'Тёмная тема'}
-      className="relative w-9 h-9 flex items-center justify-center rounded-xl transition"
-      style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
-    >
+    <button id="themeBtn" onClick={toggle} aria-label="Переключить тему">
       {dark ? (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="12" cy="12" r="5"/>
-          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
         </svg>
       ) : (
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="5" />
+          <g strokeLinecap="round">
+            <line x1="12" y1="1" x2="12" y2="3" />
+            <line x1="12" y1="21" x2="12" y2="23" />
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+            <line x1="1" y1="12" x2="3" y2="12" />
+            <line x1="21" y1="12" x2="23" y2="12" />
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+          </g>
         </svg>
       )}
     </button>
@@ -52,8 +55,15 @@ export default function Navbar() {
   const { user, logout, token } = useAuth();
   const { unreadCount } = useNotifications();
   const pathname = usePathname();
-  const isActive = (href: string) => pathname === href;
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 12);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   useEffect(() => {
     if (!token) { setAvatarUrl(null); return; }
@@ -79,145 +89,74 @@ export default function Navbar() {
     return () => window.removeEventListener('avatar:updated', onAvatarUpdated);
   }, []);
 
+  const isActive = (href: string) => pathname === href;
+  const isPartiesActive = pathname.startsWith('/parties');
+
   return (
-    <nav
-      className="sticky top-0 z-50 backdrop-blur-lg border-b transition"
-      style={{
-        background: 'color-mix(in srgb, var(--surface) 88%, transparent)',
-        borderColor: 'var(--divider)',
-        boxShadow: 'var(--shadow-sm)',
-      }}
-    >
-      <div className="container mx-auto px-4 py-3 flex items-center justify-between gap-4">
+    <>
+      <ThemeToggle />
+      <nav className={`navbar${scrolled ? ' scrolled' : ''}`}>
+        <div className="navbar-inner">
 
-        {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 shrink-0">
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-label="GatherVibe">
-            <circle cx="14" cy="14" r="13" fill="var(--primary)" opacity="0.15"/>
-            <circle cx="10" cy="13" r="4" fill="var(--primary)"/>
-            <circle cx="18" cy="13" r="4" fill="var(--primary)" opacity="0.6"/>
-            <path d="M6 20c0-2.21 1.79-4 4-4h8c2.21 0 4 1.79 4 4" stroke="var(--primary)" strokeWidth="1.8" strokeLinecap="round" fill="none"/>
-          </svg>
-          <span className="text-lg font-black gradient-text">GatherVibe</span>
-        </Link>
-
-        {/* Nav links */}
-        <div className="hidden sm:flex items-center gap-1">
-          <Link
-            href="/events"
-            className="px-4 py-2 rounded-xl text-sm font-medium transition"
-            style={{
-              background: isActive('/events') ? 'var(--primary-hl)' : 'transparent',
-              color: isActive('/events') ? 'var(--primary)' : 'var(--text-muted)',
-            }}
-          >
-            События
+          <Link href="/" className="logo">
+            <svg width="22" height="16" viewBox="0 0 22 16" fill="none" aria-hidden="true">
+              <circle cx="6"  cy="8" r="6" fill="var(--ink)" />
+              <circle cx="16" cy="8" r="6" fill="var(--ink)" opacity=".38" />
+            </svg>
+            GatherVibe
           </Link>
-          {user && (
-            <Link
-              href="/parties"
-              className="px-4 py-2 rounded-xl text-sm font-medium transition"
-              style={{
-                background: pathname.startsWith('/parties') ? 'var(--primary-hl)' : 'transparent',
-                color: pathname.startsWith('/parties') ? 'var(--primary)' : 'var(--text-muted)',
-              }}
-            >
-              Компании
-            </Link>
-          )}
-          {user && (
-            <Link
-              href="/my-events"
-              className="px-4 py-2 rounded-xl text-sm font-medium transition"
-              style={{
-                background: isActive('/my-events') ? 'var(--primary-hl)' : 'transparent',
-                color: isActive('/my-events') ? 'var(--primary)' : 'var(--text-muted)',
-              }}
-            >
-              Мои события
-            </Link>
-          )}
+
+          <div className="nav-links">
+            <Link href="/events" className={`nav-link${isActive('/events') ? ' active' : ''}`}>События</Link>
+            {user && (
+              <Link href="/parties" className={`nav-link${isPartiesActive ? ' active' : ''}`}>Компании</Link>
+            )}
+            {user && (
+              <Link href="/my-events" className={`nav-link${isActive('/my-events') ? ' active' : ''}`}>Мои события</Link>
+            )}
+          </div>
+
+          <div className="nav-right">
+            {user ? (
+              <>
+                <div className="notif-wrap">
+                  <Link href="/notifications" className="icon-btn" aria-label="Уведомления">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+                    </svg>
+                  </Link>
+                  {unreadCount > 0 && <div className="notif-dot" />}
+                </div>
+
+                <Link href="/profile" aria-label={user.username} style={{ display: 'inline-flex' }}>
+                  {avatarUrl ? (
+                    <img
+                      src={avatarUrl}
+                      alt={user.username}
+                      style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <div className="av av-sm" style={{ width: 32, height: 32, fontSize: '.8125rem' }}>
+                      {user.username.slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                </Link>
+
+                <button onClick={logout} className="btn btn-ghost btn-sm" style={{ color: 'var(--match)' }}>
+                  Выйти
+                </button>
+              </>
+            ) : (
+              <>
+                <Link href="/login" className="nav-link">Войти</Link>
+                <Link href="/register" className="btn btn-ink btn-sm">Регистрация</Link>
+              </>
+            )}
+          </div>
+
         </div>
-
-        {/* Right */}
-        <div className="flex items-center gap-2">
-          <ThemeToggle />
-
-          {user ? (
-            <>
-              <Link
-                href="/notifications"
-                className="relative w-9 h-9 flex items-center justify-center rounded-xl transition"
-                style={{
-                  background: isActive('/notifications') ? 'var(--primary-hl)' : 'var(--surface-2)',
-                  color: isActive('/notifications') ? 'var(--primary)' : 'var(--text-muted)',
-                }}
-                title="Уведомления"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                </svg>
-                {unreadCount > 0 && (
-                  <span className="gv-badge">{unreadCount > 9 ? '9+' : unreadCount}</span>
-                )}
-              </Link>
-
-              <span className="hidden sm:block text-sm" style={{ color: 'var(--text-muted)' }}>
-                Привет,{' '}
-                <span className="font-semibold" style={{ color: 'var(--text)' }}>{user.username}</span>!
-              </span>
-
-              <Link
-                href="/profile"
-                className="flex items-center gap-1.5 text-sm font-medium px-2 py-1.5 rounded-xl transition"
-                style={{
-                  color: isActive('/profile') ? 'var(--text-inverse)' : 'var(--primary)',
-                  background: isActive('/profile') ? 'var(--primary)' : 'var(--primary-hl)',
-                }}
-              >
-                {avatarUrl ? (
-                  <img
-                    src={avatarUrl}
-                    alt={user.username}
-                    className="w-6 h-6 rounded-full object-cover shrink-0"
-                  />
-                ) : (
-                  <span
-                    className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black shrink-0"
-                    style={{
-                      background: isActive('/profile')
-                        ? 'rgba(255,255,255,0.25)'
-                        : 'linear-gradient(135deg, var(--primary), #a855f7)',
-                      color: '#fff',
-                    }}
-                  >
-                    {user.username.slice(0, 1).toUpperCase()}
-                  </span>
-                )}
-                Профиль
-              </Link>
-
-              <button
-                onClick={logout}
-                className="text-sm px-3 py-1.5 rounded-xl font-medium transition"
-                style={{ color: 'var(--error)', background: 'var(--error-hl)' }}
-              >
-                Выйти
-              </button>
-            </>
-          ) : (
-            <>
-              <Link href="/login" className="text-sm font-medium transition" style={{ color: 'var(--text-muted)' }}>
-                Войти
-              </Link>
-              <Link href="/register" className="gv-btn-primary text-sm px-4 py-2">
-                Регистрация
-              </Link>
-            </>
-          )}
-        </div>
-      </div>
-    </nav>
+      </nav>
+    </>
   );
 }

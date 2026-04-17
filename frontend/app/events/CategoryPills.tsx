@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface Category { slug: string; name: string; }
 
@@ -22,6 +22,13 @@ export default function CategoryPills({ categories, selected, onSelect }: Catego
     setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 8);
   }
 
+  useEffect(() => {
+    updateArrows();
+    const onResize = () => updateArrows();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [categories]);
+
   function scrollBy(px: number) {
     scrollRef.current?.scrollBy({ left: px, behavior: 'smooth' });
   }
@@ -29,13 +36,17 @@ export default function CategoryPills({ categories, selected, onSelect }: Catego
   const all: Category[] = [{ slug: '', name: 'Все' }, ...categories];
 
   return (
-    <div className="relative flex items-center gap-1">
+    <div
+      className="relative flex items-center gap-1"
+      style={{ flex: 1, minWidth: 0, maxWidth: '100%' }}
+    >
       {/* Left fade + arrow */}
       {canScrollLeft && (
         <button
           onClick={() => scrollBy(-200)}
           className="absolute left-0 z-10 flex items-center justify-center w-8 h-8 rounded-full transition hover:scale-110"
           style={{ background: 'var(--surface)', boxShadow: 'var(--shadow-md)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+          aria-label="Прокрутить влево"
         >‹</button>
       )}
 
@@ -43,8 +54,16 @@ export default function CategoryPills({ categories, selected, onSelect }: Catego
       <div
         ref={scrollRef}
         onScroll={updateArrows}
-        className="flex items-center gap-2 overflow-x-auto"
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', paddingLeft: canScrollLeft ? 36 : 0, paddingRight: canScrollRight ? 36 : 0 }}
+        className="flex items-center gap-2 overflow-x-auto cat-pills-scroll"
+        style={{
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none',
+          paddingLeft: canScrollLeft ? 36 : 0,
+          paddingRight: canScrollRight ? 36 : 0,
+          flex: 1,
+          minWidth: 0,
+          scrollBehavior: 'smooth',
+        }}
       >
         {all.map(cat => {
           const isActive = cat.slug === selected;

@@ -207,189 +207,119 @@ export default function EventsPage() {
     return s;
   }, [sortedEvents]);
 
-  const inputStyle = {
-    background: 'var(--surface-2)',
-    border: '1px solid var(--border)',
-    borderRadius: '0.75rem',
-    color: 'var(--text)',
-    fontSize: '0.875rem',
-    padding: '0.625rem 1rem',
-    outline: 'none',
-    transition: 'border-color 160ms, box-shadow 160ms',
-  } as React.CSSProperties;
-
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
+    <div style={{ background: 'var(--bg)', minHeight: '100vh' }}>
       <Navbar />
 
-      {/* ── Filter bar ── */}
-      <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--divider)' }}>
-        <div className="container mx-auto px-4 py-6">
-          {/* Header */}
-          <div className="flex items-start justify-between gap-4 mb-5">
-            <div>
-              <h1 className="text-3xl font-black" style={{ color: 'var(--text)' }}>
-                События в Казани
-              </h1>
-              {total !== null && !loading && (
-                <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
-                  {total.toLocaleString('ru-RU')} мероприятий
-                </p>
-              )}
-            </div>
+      <section className="events-section" style={{ borderTop: 'none' }}>
+
+        {/* Header */}
+        <div className="events-head">
+          <div>
+            <div className="t-label" style={{ marginBottom: 8 }}>Афиша</div>
+            <h1 className="t-display">События в Казани</h1>
+            {total !== null && !loading && (
+              <p className="t-sm" style={{ marginTop: 8 }}>
+                {total.toLocaleString('ru-RU')} мероприятий
+              </p>
+            )}
           </div>
-
-          {/* Category pills row */}
-          {categories.length > 0 && (
-            <div className="mb-4">
-              <CategoryPills
-                categories={categories}
-                selected={category}
-                onSelect={setCategory}
-              />
-            </div>
-          )}
-
-          {/* Filters row */}
-          <div className="flex flex-wrap gap-3 items-center">
-            {/* Search */}
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
-              <svg
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
-                style={{ color: 'var(--text-faint)' }}
-                fill="none" stroke="currentColor" viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                value={searchInput}
-                onChange={e => onSearchChange(e.target.value)}
-                placeholder="Поиск событий..."
-                style={{ ...inputStyle, paddingLeft: '2.25rem', width: '100%' }}
-                onFocus={e => {
-                  e.currentTarget.style.borderColor = 'var(--primary)';
-                  e.currentTarget.style.boxShadow = '0 0 0 3px var(--primary-ring)';
-                }}
-                onBlur={e => {
-                  e.currentTarget.style.borderColor = 'var(--border)';
-                  e.currentTarget.style.boxShadow = 'none';
-                }}
-              />
-            </div>
-
-            {/* Free toggle */}
-            <button
-              onClick={() => setIsFree(v => !v)}
-              className="px-4 py-2.5 rounded-xl text-sm font-medium transition"
-              style={{
-                background: isFree ? 'var(--success)' : 'var(--surface-2)',
-                color: isFree ? '#fff' : 'var(--text-muted)',
-                border: '1px solid var(--border)',
-              }}
-            >
-              Бесплатно
-            </button>
-
-            {/* Date from */}
-            <div className="flex items-center gap-1.5">
-              <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>
-                С
-              </label>
-              <input
-                type="date"
-                value={dateFrom}
-                min={todayStr}
-                suppressHydrationWarning
-                onChange={e => {
-                  setDateFrom(e.target.value);
-                  if (dateTo && e.target.value > dateTo) setDateTo(e.target.value);
-                }}
-                style={{ ...inputStyle, cursor: 'pointer' }}
-                onFocus={e => { e.currentTarget.style.borderColor = 'var(--primary)'; }}
-                onBlur={e  => { e.currentTarget.style.borderColor = 'var(--border)'; }}
-              />
-            </div>
-
-            {/* Date to */}
-            <div className="flex items-center gap-1.5">
-              <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>
-                По
-              </label>
-              <input
-                type="date"
-                value={dateTo}
-                min={dateFrom || todayStr}
-                suppressHydrationWarning
-                onChange={e => setDateTo(e.target.value)}
-                style={{ ...inputStyle, cursor: 'pointer' }}
-                onFocus={e => { e.currentTarget.style.borderColor = 'var(--primary)'; }}
-                onBlur={e  => { e.currentTarget.style.borderColor = 'var(--border)'; }}
-              />
-            </div>
-
-            {/* Sort */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            {hasActive && (
+              <button onClick={clearFilters} className="btn btn-ghost btn-sm">
+                Сбросить ×
+              </button>
+            )}
             <select
               value={sortBy}
               onChange={e => setSortBy(e.target.value as 'date' | 'price')}
-              style={inputStyle}
-              onFocus={e => { e.currentTarget.style.borderColor = 'var(--primary)'; }}
-              onBlur={e  => { e.currentTarget.style.borderColor = 'var(--border)'; }}
+              className="input"
+              style={{ width: 'auto', padding: '.5rem 1.125rem', fontSize: '.8125rem' }}
             >
               <option value="date">По дате</option>
               <option value="price">По цене</option>
             </select>
+          </div>
+        </div>
 
-            {/* Clear */}
-            {hasActive && (
-              <button
-                onClick={clearFilters}
-                className="px-4 py-2.5 rounded-xl text-sm transition"
-                style={{
-                  background: 'var(--surface-2)',
-                  color: 'var(--text-muted)',
-                  border: '1px solid var(--border)',
-                }}
-              >
-                Сбросить ×
-              </button>
-            )}
+        {/* Search */}
+        <div className="events-search-row">
+          <div className="input-wrap" style={{ flex: 1 }}>
+            <svg className="input-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+            </svg>
+            <input
+              type="search"
+              value={searchInput}
+              onChange={e => onSearchChange(e.target.value)}
+              placeholder="Поиск по событиям, площадкам, исполнителям…"
+              className="input input-padl"
+            />
+          </div>
+          <button
+            onClick={() => setIsFree(v => !v)}
+            className={isFree ? 'btn btn-ink' : 'btn btn-ghost'}
+          >
+            Бесплатно
+          </button>
+        </div>
+
+        {/* Filters: date range + categories */}
+        <div className="events-controls">
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              type="date"
+              value={dateFrom}
+              min={todayStr}
+              suppressHydrationWarning
+              onChange={e => {
+                setDateFrom(e.target.value);
+                if (dateTo && e.target.value > dateTo) setDateTo(e.target.value);
+              }}
+              className="input"
+              style={{ width: 'auto', padding: '.5rem 1rem', fontSize: '.8125rem' }}
+            />
+            <span className="t-xs" style={{ color: 'var(--text-dim)' }}>—</span>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom || todayStr}
+              suppressHydrationWarning
+              onChange={e => setDateTo(e.target.value)}
+              className="input"
+              style={{ width: 'auto', padding: '.5rem 1rem', fontSize: '.8125rem' }}
+            />
           </div>
 
-          {/* Active date range badge */}
           {(dateFrom || dateTo) && (
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
-              <span
-                className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full"
-                style={{
-                  background: 'var(--primary-hl)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--primary)',
-                }}
-              >
-                {dateFrom && dateTo && dateFrom === dateTo
-                  ? displayDate(dateFrom, { day: 'numeric', month: 'long' })
-                  : [
-                      dateFrom && `с ${displayDate(dateFrom, { day: 'numeric', month: 'short' })}`,
-                      dateTo   && `по ${displayDate(dateTo, { day: 'numeric', month: 'short' })}`,
-                    ].filter(Boolean).join(' ')
-                }
-                <button
-                  onClick={() => { setDateFrom(''); setDateTo(''); }}
-                  className="ml-1 transition"
-                  style={{ color: 'var(--text-faint)' }}
-                >
-                  ×
-                </button>
-              </span>
-            </div>
+            <span className="badge badge-ink" style={{ gap: 6 }}>
+              {dateFrom && dateTo && dateFrom === dateTo
+                ? displayDate(dateFrom, { day: 'numeric', month: 'long' })
+                : [
+                    dateFrom && `с ${displayDate(dateFrom, { day: 'numeric', month: 'short' })}`,
+                    dateTo   && `по ${displayDate(dateTo, { day: 'numeric', month: 'short' })}`,
+                  ].filter(Boolean).join(' ')}
+              <button
+                onClick={() => { setDateFrom(''); setDateTo(''); }}
+                style={{ marginLeft: 4, background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, lineHeight: 1 }}
+              >×</button>
+            </span>
           )}
+
         </div>
-      </div>
+
+        {categories.length > 0 && (
+          <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px 40px', width: '100%', overflow: 'hidden' }}>
+            <CategoryPills
+              categories={categories}
+              selected={category}
+              onSelect={setCategory}
+            />
+          </div>
+        )}
 
       {/* ── Main content ── */}
-      <main className="container mx-auto px-4 py-8">
+      <main className="events-body">
 
         {/* ── Error state ── */}
         {error && (
@@ -512,6 +442,8 @@ export default function EventsPage() {
         )}
 
       </main>
+
+      </section>
 
       {/* ── Event detail drawer ── */}
       {selectedEvent && (
