@@ -230,6 +230,44 @@ def update_me(
     if body.avatar_url is not None:
         user.avatar_url = body.avatar_url
 
+    # Matching fields
+    matching_touched = False
+    if body.birth_date is not None:
+        user.birth_date = body.birth_date
+    if body.latitude is not None:
+        user.latitude = body.latitude
+    if body.longitude is not None:
+        user.longitude = body.longitude
+    if body.geo_precision is not None:
+        user.geo_precision = body.geo_precision
+    if body.show_age is not None:
+        user.show_age = body.show_age
+    if body.is_discoverable_on_events is not None:
+        user.is_discoverable_on_events = body.is_discoverable_on_events
+    if body.preferred_categories is not None:
+        user.preferred_categories = body.preferred_categories
+        matching_touched = True
+    if body.preferred_days is not None:
+        user.preferred_days = body.preferred_days
+    if body.preferred_time is not None:
+        user.preferred_time = body.preferred_time
+    if body.budget_max is not None:
+        user.budget_max = body.budget_max
+
+    # Refresh embedding if any field feeding into compose_user_text changed
+    if body.interests is not None or body.bio is not None or body.city is not None or matching_touched:
+        try:
+            from services import embeddings
+            from routers.recommendations import (
+                invalidate_user_cache, invalidate_user_event_cache,
+            )
+            embeddings.refresh_user_embedding(db, user)
+            invalidate_user_cache(user.id)
+            invalidate_user_event_cache(user.id)
+        except Exception:
+            # Embedding refresh is best-effort — don't fail the PATCH
+            pass
+
     db.commit()
     db.refresh(user)
 
@@ -242,4 +280,14 @@ def update_me(
         "interests": user.interests,
         "avatar_url": user.avatar_url,
         "is_active": user.is_active,
+        "birth_date": user.birth_date.isoformat() if user.birth_date else None,
+        "latitude": user.latitude,
+        "longitude": user.longitude,
+        "geo_precision": user.geo_precision,
+        "show_age": user.show_age,
+        "is_discoverable_on_events": user.is_discoverable_on_events,
+        "preferred_categories": user.preferred_categories,
+        "preferred_days": user.preferred_days,
+        "preferred_time": user.preferred_time,
+        "budget_max": user.budget_max,
     }

@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Dict, List, Literal, Optional
-from datetime import datetime
+from datetime import date, datetime
 import math
 
 
@@ -34,6 +34,16 @@ class UserResponse(BaseModel):
     bio: Optional[str] = None
     avatar_url: Optional[str] = None
     is_active: bool
+    birth_date: Optional[date] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    geo_precision: Optional[str] = None
+    show_age: Optional[bool] = True
+    is_discoverable_on_events: Optional[bool] = False
+    preferred_categories: Optional[str] = None
+    preferred_days: Optional[str] = None
+    preferred_time: Optional[str] = None
+    budget_max: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -47,6 +57,18 @@ class UserUpdate(BaseModel):
     old_password: Optional[str] = None
     new_password: Optional[str] = None
     avatar_url: Optional[str] = None
+
+    # Matching profile
+    birth_date: Optional[date] = None
+    latitude: Optional[float] = Field(default=None, ge=-90.0, le=90.0)
+    longitude: Optional[float] = Field(default=None, ge=-180.0, le=180.0)
+    geo_precision: Optional[Literal["city", "district", "exact"]] = None
+    show_age: Optional[bool] = None
+    is_discoverable_on_events: Optional[bool] = None
+    preferred_categories: Optional[str] = Field(default=None, max_length=500)
+    preferred_days: Optional[Literal["weekends", "weekdays", "any"]] = None
+    preferred_time: Optional[Literal["morning", "evening", "any"]] = None
+    budget_max: Optional[int] = Field(default=None, ge=0, le=1_000_000)
 
 
 ALLOWED_REVIEW_TAGS: List[str] = [

@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import Navbar from './components/Navbar';
 import RecommendedPartiesSection from './components/RecommendedPartiesSection';
+import RecommendedEventsSection from './components/RecommendedEventsSection';
+import RecommendedPeopleSection from './components/RecommendedPeopleSection';
 import { useAuth } from './context/AuthContext';
 
 const STEPS = [
@@ -92,7 +94,9 @@ export default function Home() {
       </header>
 
       {/* ─── РЕКОМЕНДАЦИИ ─── */}
+      {user && <RecommendedEventsSection />}
       {user && <RecommendedPartiesSection />}
+      {user && <RecommendedPeopleSection />}
 
       {/* ─── STEPS ─── */}
       <section className="steps-section">

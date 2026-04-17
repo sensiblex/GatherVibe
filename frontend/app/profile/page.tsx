@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { apiFetch } from '../lib/apiFetch';
 import Navbar from '../components/Navbar';
 import UserReviewsBlock from '../components/UserReviewsBlock';
+import MatchingProfileSection from '../components/MatchingProfileSection';
 import { INTERESTS_LIST, getInterestLabel } from '../lib/interests';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -810,6 +811,8 @@ export default function ProfilePage() {
             <UserReviewsBlock userId={user.id} viewerUserId={user.id} maxReviews={3} />
           </div>
         )}
+
+        {user && <MatchingProfileSection />}
 
         <div className="p-card">
           <div className="p-card-title">Настройки</div>

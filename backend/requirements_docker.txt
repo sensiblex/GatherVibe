@@ -24,3 +24,5 @@ psycopg2-binary==2.9.9
 python-multipart==0.0.20
 resend==2.28.1
 pywebpush==1.14.1
+sentence-transformers==3.3.1
+numpy==2.1.3

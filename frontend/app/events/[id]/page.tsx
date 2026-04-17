@@ -7,6 +7,7 @@ import Navbar from '../../components/Navbar';
 import EventAttendees from '../../components/EventAttendees';
 import EventChat from '../../components/EventChat';
 import EventParty from '../../components/EventParty';
+import EventPeersSection from '../../components/EventPeersSection';
 import { apiFetch } from '../../lib/apiFetch';
 import { useAuth } from '../../context/AuthContext';
 import dynamic from 'next/dynamic';
@@ -561,6 +562,7 @@ export default function EventDetailPage() {
             {!user && <UnauthBanner />}
 
             <EventAttendees eventId={chatEventId} eventMeta={eventMeta} />
+            <EventPeersSection eventId={chatEventId} />
             <EventParty eventId={chatEventId} />
             <EventChat
               eventId={chatEventId}

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Float, Integer, String, Boolean, Text
+from sqlalchemy import Column, Date, DateTime, Float, Integer, String, Boolean, Text
 from database import Base
 
 class User(Base):
@@ -20,3 +20,16 @@ class User(Base):
     is_verified        = Column(Boolean, default=False, nullable=False)
     verification_token = Column(String(64), nullable=True, index=True)
     email_notifications = Column(Boolean, default=True, nullable=False, server_default='true')
+
+    # Matching fields (migration b1d3a7f94e21)
+    birth_date = Column(Date, nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    geo_precision = Column(String(10), nullable=True)  # 'city' | 'district' | 'exact'
+    show_age = Column(Boolean, default=True, nullable=False, server_default='true')
+    is_discoverable_on_events = Column(Boolean, default=False, nullable=False, server_default='false')
+    preferred_categories = Column(Text, nullable=True)  # CSV KudaGo categories
+    preferred_days = Column(String(20), nullable=True)  # 'weekends' | 'weekdays' | 'any'
+    preferred_time = Column(String(20), nullable=True)  # 'morning' | 'evening' | 'any'
+    budget_max = Column(Integer, nullable=True)
+    embedding_updated_at = Column(DateTime(timezone=True), nullable=True)

@@ -7,5 +7,7 @@ from .review import PartyReview, ReviewReport
 from .notification import Notification
 from .kudago_event import KudaGoEvent
 from .push_subscription import PushSubscription
+from .embedding import EntityEmbedding
+from .recommendation_impression import RecommendationImpression
 
-__all__ = ["User", "Event", "EventAttendee", "EventParty", "PartyMember", "ChatMessage", "PartyReview", "ReviewReport", "Notification", "KudaGoEvent", "PushSubscription"]
+__all__ = ["User", "Event", "EventAttendee", "EventParty", "PartyMember", "ChatMessage", "PartyReview", "ReviewReport", "Notification", "KudaGoEvent", "PushSubscription", "EntityEmbedding", "RecommendationImpression"]
