@@ -135,11 +135,20 @@ def get_my_events(
             raw = kudago_api.get_event_by_id(int(event_id))
             dates = raw.get("dates") or []
             date_ts: Optional[int] = None
-            for d in dates:
-                ts = d.get("start")
-                if ts:
-                    date_ts = int(ts)
-                    break
+            future = sorted(
+                [d for d in dates if d.get("start") and int(d["start"]) >= now_ts],
+                key=lambda d: int(d["start"]),
+            )
+            if future:
+                date_ts = int(future[0]["start"])
+            else:
+                past_sorted = sorted(
+                    [d for d in dates if d.get("start")],
+                    key=lambda d: int(d["start"]),
+                    reverse=True,
+                )
+                if past_sorted:
+                    date_ts = int(past_sorted[0]["start"])
             images = raw.get("images") or []
             image_url = images[0].get("image") if images else None
             cats = raw.get("categories") or []

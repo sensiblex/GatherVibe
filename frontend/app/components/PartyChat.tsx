@@ -56,7 +56,7 @@ export default function PartyChat({
       .then(r => r.ok ? r.json() : { messages: [] })
       .then((data: { messages: Message[] } | Message[]) => {
         const raw = Array.isArray(data) ? data : (data.messages ?? []);
-        const history = raw.map((m: Record<string, unknown>) => ({
+        const history = (raw as unknown as Array<Record<string, unknown>>).map((m) => ({
           ...m,
           messageId: (m.id ?? m.messageId) as number | undefined,
           isSystem: (m.isSystem ?? m.is_system ?? false) as boolean,
@@ -66,7 +66,7 @@ export default function PartyChat({
           fileName: (m.fileName ?? m.file_name ?? null) as string | null,
           reactions: (m.reactions ?? {}) as Record<string, string[]>,
         }));
-        setMessages(history);
+        setMessages(history as Message[]);
         setHistoryLoaded(true);
       })
       .catch(() => setHistoryLoaded(true));

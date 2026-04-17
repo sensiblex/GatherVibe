@@ -10,6 +10,17 @@ import EventParty from '../../components/EventParty';
 import { apiFetch } from '../../lib/apiFetch';
 import { useAuth } from '../../context/AuthContext';
 import dynamic from 'next/dynamic';
+import {
+  type ScheduleEntry,
+  type UnifiedEvent,
+  stripHtml,
+  formatKudagoDate,
+  normaliseKudago,
+  getFilteredDates,
+  formatShortDate,
+  formatAge,
+  safeEventTimestamp,
+} from './event-utils';
 
 const EventMap = dynamic(() => import('../../components/EventMap'), { ssr: false });
 
@@ -33,51 +44,6 @@ const WEEKDAY_SHORT: Record<number, string> = {
   1: 'Пн', 2: 'Вт', 3: 'Ср', 4: 'Чт', 5: 'Пт', 6: 'Сб', 0: 'Вс',
 };
 
-interface ScheduleEntry {
-  weekday: number;
-  from: string;
-  to: string;
-}
-
-interface UnifiedEvent {
-  id: string;
-  source: 'local' | 'kudago';
-  title: string;
-  description: string | null;
-  body_text?: string | null;
-  location: string | null;
-  city: string | null;
-  date_time: string | null;
-  start_date?: string | null;
-  start_time?: string | null;
-  all_dates?: Array<{
-    start: string | null;
-    end: string | null;
-    start_time: string | null;
-    end_time: string | null;
-    is_continuous: boolean;
-    is_endless: boolean;
-    is_startless?: boolean;
-    use_place_schedule?: boolean;
-  }>;
-  is_permanent?: boolean;
-  place_schedules?: ScheduleEntry[];
-  category: string | null;
-  categories?: string[];
-  image_url: string | null;
-  is_free?: boolean;
-  price?: string;
-  age_restriction?: string | null;
-  place_title?: string;
-  place_address?: string;
-  place_phone?: string;
-  place_subway?: string;
-  site_url?: string;
-  participants?: Array<{ role: string; name: string; image_url: string | null }>;
-  lat?: number | null;
-  lon?: number | null;
-  location_slug?: string | null;
-}
 
 function formatIsoDate(iso: string): string {
   return new Date(iso).toLocaleString('ru-RU', {
@@ -86,50 +52,10 @@ function formatIsoDate(iso: string): string {
   });
 }
 
-function formatKudagoDate(event: UnifiedEvent): string {
-  if (event.is_permanent) return 'Постоянная экспозиция';
-  if (event.start_date) {
-    const d = event.start_date;
-    const t = event.start_time ? ` в ${event.start_time}` : '';
-    const [y, m, day] = d.split('-').map(Number);
-    const months = ['', 'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
-    return `${day} ${months[m] ?? ''} ${y}${t}`;
-  }
-  return 'Дата уточняется';
-}
 
 function getDisplayDate(event: UnifiedEvent): string {
   if (event.source === 'local' && event.date_time) return formatIsoDate(event.date_time);
   return formatKudagoDate(event);
-}
-
-function getFilteredDates(allDates: UnifiedEvent['all_dates']): UnifiedEvent['all_dates'] {
-  if (!allDates || allDates.length === 0) return [];
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth();
-  const currentDate = now.getDate();
-  const maxFutureDate = new Date(currentYear + 1, currentMonth, currentDate);
-  const seen = new Set<string>();
-  const filtered: typeof allDates = [];
-  for (const d of allDates) {
-    if (!d.start) continue;
-    const dateYear = parseInt(d.start.split('-')[0], 10);
-    if (isNaN(dateYear) || dateYear < 2020 || dateYear > currentYear + 5) continue;
-    const eventDate = new Date(d.start);
-    if (eventDate < now) continue;
-    if (eventDate > maxFutureDate) continue;
-    const key = `${d.start}-${d.start_time || ''}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    filtered.push(d);
-  }
-  filtered.sort((a, b) => {
-    if (!a.start || !b.start) return 0;
-    return new Date(a.start).getTime() - new Date(b.start).getTime();
-  });
-  return filtered;
 }
 
 function normaliseLocal(data: Record<string, unknown>): UnifiedEvent {
@@ -146,61 +72,10 @@ function normaliseLocal(data: Record<string, unknown>): UnifiedEvent {
   };
 }
 
-const KUDAGO_CITY_NAMES: Record<string, string> = {
-  msk: 'Москва', spb: 'Санкт-Петербург', kzn: 'Казань', nsk: 'Новосибирск',
-  ekt: 'Екатеринбург', nny: 'Нижний Новгород', vbg: 'Выборг', krd: 'Краснодар',
-  sochi: 'Сочи', ufa: 'Уфа', smr: 'Самара', kev: 'Киев',
-};
-
-function normaliseKudago(data: Record<string, unknown>): UnifiedEvent {
-  const imgs = (data.images as Array<{ url: string }>) ?? [];
-  const cats = (data.categories as string[]) ?? [];
-  const allDates = (data.all_dates as UnifiedEvent['all_dates']) ?? [];
-  const isPermanent = Boolean(data.is_permanent) ||
-    allDates.some(d => d.is_endless || d.is_startless || d.use_place_schedule);
-  const placeSchedules: ScheduleEntry[] = [];
-  const locationSlug = (data.location as string) || null;
-  const city = locationSlug ? (KUDAGO_CITY_NAMES[locationSlug] ?? null) : null;
-
-  return {
-    id: String(data.kudago_id ?? data.id ?? ''),
-    source: 'kudago',
-    title: String(data.title ?? ''),
-    description: (data.description as string) || null,
-    body_text: (data.body_text as string) || null,
-    location: (data.place_address as string) || null,
-    city,
-    date_time: null,
-    start_date: (data.start_date as string) ?? null,
-    start_time: (data.start_time as string) ?? null,
-    all_dates: allDates,
-    is_permanent: isPermanent,
-    place_schedules: placeSchedules,
-    category: cats[0] ?? null,
-    categories: cats,
-    image_url: imgs[0]?.url ?? (data.cover_url as string) ?? null,
-    is_free: Boolean(data.is_free),
-    price: (data.price as string) || '',
-    age_restriction: (data.age_restriction as string) ?? null,
-    place_title: (data.place_title as string) || '',
-    place_address: (data.place_address as string) || '',
-    place_phone: (data.place_phone as string) || '',
-    place_subway: (data.place_subway as string) || '',
-    site_url: (data.site_url as string) || '',
-    participants: (data.participants as UnifiedEvent['participants']) ?? [],
-    lat: (data.lat as number) ?? null,
-    lon: (data.lon as number) ?? null,
-    location_slug: locationSlug,
-  };
-}
 
 function isVirtualAddress(addr: string): boolean {
   const keywords = ['онлайн', 'online', 'tbd', 'уточняется', 'zoom', 'discord'];
   return keywords.some(k => addr.toLowerCase().includes(k));
-}
-
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 function PermanentSchedule({ schedules }: { schedules?: ScheduleEntry[] }) {
@@ -353,6 +228,26 @@ export default function EventDetailPage() {
     if (!eventId) return;
     setStatus('loading');
 
+    const isNumericId = /^\d+$/.test(eventId);
+
+    const fetchKudago = async () => {
+      const kg = await apiFetch(`${API_BASE}/kudago/events/${eventId}`);
+      if (kg.ok) {
+        const data = await kg.json();
+        setEvent(normaliseKudago(data));
+        setStatus('ok');
+      } else if (kg.status === 404) {
+        setStatus('notfound');
+      } else {
+        setStatus('error');
+      }
+    };
+
+    if (!isNumericId) {
+      fetchKudago().catch(() => setStatus('error'));
+      return;
+    }
+
     apiFetch(`${API_BASE}/events/${eventId}`)
       .then(async (res) => {
         if (res.ok) {
@@ -365,16 +260,7 @@ export default function EventDetailPage() {
           setStatus('error');
           return;
         }
-        const kg = await apiFetch(`${API_BASE}/kudago/events/${eventId}`);
-        if (kg.ok) {
-          const data = await kg.json();
-          setEvent(normaliseKudago(data));
-          setStatus('ok');
-        } else if (kg.status === 404) {
-          setStatus('notfound');
-        } else {
-          setStatus('error');
-        }
+        await fetchKudago();
       })
       .catch(() => setStatus('error'));
   }, [eventId]);
@@ -401,9 +287,7 @@ export default function EventDetailPage() {
     date_ts:   event.date_time
       ? Math.floor(new Date(event.date_time).getTime() / 1000)
       : event.start_date
-        ? Math.floor(new Date(
-            event.start_date + (event.start_time ? `T${event.start_time}:00` : 'T00:00:00')
-          ).getTime() / 1000)
+        ? safeEventTimestamp(event.start_date, event.start_time)
         : null,
     city:      event.city,
     image_url: event.image_url,
@@ -510,7 +394,7 @@ export default function EventDetailPage() {
                       className="text-xs px-3 py-1 rounded-full font-semibold"
                       style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
                     >
-                      {event.age_restriction && typeof event.age_restriction === 'string' && event.age_restriction.endsWith('+') ? event.age_restriction : `${event.age_restriction}+`}
+                      {formatAge(event.age_restriction)}
                     </span>
                   )}
                 </div>
@@ -622,7 +506,7 @@ export default function EventDetailPage() {
                               className="text-xs px-3 py-1 rounded-full"
                               style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
                             >
-                              {d.start} {d.start_time ? `в ${d.start_time}` : ''}
+                              {formatShortDate(d.start, d.start_time)}
                             </span>
                           )
                         ))}
