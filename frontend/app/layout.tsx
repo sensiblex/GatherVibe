@@ -1,11 +1,7 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
 import 'leaflet/dist/leaflet.css';
 import './globals.css';
 import ClientLayout from './ClientLayout';
-
-const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
-const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'GatherVibe',
@@ -18,8 +14,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ru">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+    <html lang="ru" data-theme="dark">
+      <head>
+        <link rel="preconnect" href="https://api.fontshare.com" crossOrigin="anonymous" />
+        <link
+          href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700,500,400&f[]=satoshi@700,500,400&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body>
         <ClientLayout>{children}</ClientLayout>
       </body>
     </html>
