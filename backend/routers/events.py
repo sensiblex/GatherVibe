@@ -322,9 +322,41 @@ def kudago_get_events(
     page_size: int = Query(default=20, ge=1, le=100),
     actual_since: Optional[int] = Query(default=None),
     actual_until: Optional[int] = Query(default=None),
+    max_age: Optional[int] = Query(default=None, ge=0, le=21),
+    tags: Optional[str] = Query(default=None),
+    place_search: Optional[str] = Query(default=None),
+    lat: Optional[float] = Query(default=None, ge=-90, le=90),
+    lon: Optional[float] = Query(default=None, ge=-180, le=180),
+    radius_m: Optional[int] = Query(default=None, ge=100, le=50000),
+    order_by: Optional[str] = Query(default=None, pattern="^(date|popularity|newest|ending_soon|most_discussed|alphabetical|nearest)$"),
+    from_hour: Optional[int] = Query(default=None, ge=0, le=24),
+    to_hour: Optional[int] = Query(default=None, ge=0, le=24),
+    weekdays: Optional[str] = Query(default=None),
+    hide_started: Optional[bool] = Query(default=None),
+    has_party: Optional[bool] = Query(default=None),
+    min_attendees: Optional[int] = Query(default=None, ge=0, le=10000),
+    has_free_spots: Optional[bool] = Query(default=None),
+    time_of_day: Optional[str] = Query(default=None, pattern="^(morning|day|evening|night)$"),
+    only_permanent: Optional[bool] = Query(default=None),
+    exclude_permanent: Optional[bool] = Query(default=None),
+    has_cover: Optional[bool] = Query(default=None),
+    starting_within_hours: Optional[int] = Query(default=None, ge=1, le=24),
+    is_short: Optional[bool] = Query(default=None),
+    is_long: Optional[bool] = Query(default=None),
+    has_schedules: Optional[bool] = Query(default=None),
+    only_verified_place: Optional[bool] = Query(default=None),
     db: Session = Depends(get_db),
 ):
     """Возвращает события из локального кэша. Фоллбэк на KudaGo API только для browsing без поиска."""
+    # Защита от неизвестных локаций: KudaGo поддерживает только 5 городов в API,
+    # а наш кэш — 3. Для остальных возвращаем пустой результат, а не 502.
+    VALID_LOCATIONS = {"msk", "spb", "ekb", "kzn", "nnv"}
+    if location not in VALID_LOCATIONS:
+        return {
+            "count": 0, "next": None, "previous": None,
+            "page": page, "page_size": page_size,
+            "results": [], "from_cache": False,
+        }
     cache_has_location = kudago_cache.location_has_cache(db, location)
 
     if cache_has_location:
@@ -338,11 +370,64 @@ def kudago_get_events(
                 search=search,
                 page=page,
                 page_size=page_size,
+                actual_since=actual_since,
+                actual_until=actual_until,
+                max_age=max_age,
+                tags=tags,
+                place_search=place_search,
+                lat=lat,
+                lon=lon,
+                radius_m=radius_m,
+                order_by=order_by,
+                has_party=has_party,
+                min_attendees=min_attendees,
+                has_free_spots=has_free_spots,
+                time_of_day=time_of_day,
+                only_permanent=only_permanent,
+                exclude_permanent=exclude_permanent,
+                has_cover=has_cover,
+                starting_within_hours=starting_within_hours,
+                is_short=is_short,
+                is_long=is_long,
+                has_schedules=has_schedules,
+                only_verified_place=only_verified_place,
+                from_hour=from_hour,
+                to_hour=to_hour,
+                weekdays=weekdays,
+                hide_started=hide_started,
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Ошибка кэша: {str(e)}")
 
-    # Кэш пустой — фоллбэк на KudaGo API
+    # Кэш пустой — фоллбэк на KudaGo API. Но KudaGo не поддерживает
+    # социальные/качественные/гео фильтры, поэтому если они заданы — возвращаем пусто,
+    # иначе пользователь увидит данные, которые фильтр «не применил».
+    cache_only_filter_active = any([
+        has_party is True, has_free_spots is True,
+        (min_attendees is not None and min_attendees > 0),
+        bool(tags),
+        bool(place_search and place_search.strip()),
+        lat is not None and lon is not None and radius_m,
+        time_of_day,
+        only_permanent is True, exclude_permanent is True,
+        has_cover is not None,
+        (max_age is not None),
+        order_by in ("popularity", "newest", "ending_soon", "most_discussed", "alphabetical", "nearest"),
+        from_hour is not None or to_hour is not None,
+        bool(weekdays and str(weekdays).strip()),
+        hide_started is True,
+        starting_within_hours is not None,
+        is_short is True, is_long is True,
+        has_schedules is True,
+        only_verified_place is True,
+    ])
+    if cache_only_filter_active:
+        return {
+            "count": 0, "next": None, "previous": None,
+            "page": page, "page_size": page_size,
+            "results": [], "from_cache": False,
+        }
+
     try:
         now_ts = int(time.time())
         effective_since = max(actual_since, now_ts) if actual_since else now_ts

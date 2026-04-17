@@ -15,9 +15,13 @@ class KudaGoEvent(Base):
     short_title = Column(String(500))
     description = Column(Text)
     categories = Column(Text)       # JSON array as string
+    tags = Column(Text)             # JSON array as string
     price = Column(String(200))
     is_free = Column(Boolean, default=False)
     age_restriction = Column(Integer, nullable=True)
+    favorites_count = Column(Integer, default=0, index=True)
+    comments_count = Column(Integer, default=0, index=True)
+    publication_ts = Column(Integer, nullable=True, index=True)  # unix seconds
 
     cover_url = Column(String(1000))
     images = Column(Text)           # JSON array as string
@@ -29,6 +33,12 @@ class KudaGoEvent(Base):
     is_permanent = Column(Boolean, default=False)
     # Earliest future timestamp (unix) for sorting/filtering
     start_ts = Column(Integer, nullable=True, index=True)
+    # End of nearest future date (unix) — used for duration and live-window filters.
+    end_ts = Column(Integer, nullable=True)
+    # True if any date in dates[] has non-empty schedules[] (recurring event).
+    has_schedules = Column(Boolean, default=False)
+    # True if place.is_stub=false (verified venue); None when event has no place.
+    place_is_stub = Column(Boolean, nullable=True)
 
     place_title = Column(String(500))
     place_address = Column(String(500))

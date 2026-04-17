@@ -6,11 +6,12 @@ interface Category { slug: string; name: string; }
 
 interface CategoryPillsProps {
   categories: Category[];
-  selected: string;
-  onSelect: (slug: string) => void;
+  selected: string[];
+  /** slug='' toggles to «Все» (empty selection). Otherwise toggles the given slug. */
+  onToggle: (slug: string) => void;
 }
 
-export default function CategoryPills({ categories, selected, onSelect }: CategoryPillsProps) {
+export default function CategoryPills({ categories, selected, onToggle }: CategoryPillsProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft]   = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
@@ -66,11 +67,11 @@ export default function CategoryPills({ categories, selected, onSelect }: Catego
         }}
       >
         {all.map(cat => {
-          const isActive = cat.slug === selected;
+          const isActive = cat.slug === '' ? selected.length === 0 : selected.includes(cat.slug);
           return (
             <button
               key={cat.slug}
-              onClick={() => onSelect(cat.slug)}
+              onClick={() => onToggle(cat.slug)}
               className="whitespace-nowrap text-sm font-semibold transition"
               style={{
                 padding: '0.5rem 1.125rem',

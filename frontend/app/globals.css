@@ -1186,3 +1186,67 @@ footer.gv-footer { border-top: 1px solid var(--rule); padding: 40px 0; }
 [data-theme="dark"] .leaflet-tile-container {
   filter: invert(1) hue-rotate(180deg) brightness(0.85);
 }
+
+/* ── Dual-range TimeRangeSlider ─────────────────────────────────────────── */
+/* Two stacked <input type="range"> on the same track. The inputs themselves
+   are transparent (fills drawn by parent), but the thumbs must stay
+   interactive and visible. */
+.gv-time-range-input {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;   /* track is non-interactive; thumb opts back in */
+  outline: none;
+}
+
+/* WebKit thumb */
+.gv-time-range-input::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 6px;
+  border-radius: 3px;
+}
+.gv-time-range-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid var(--surface);
+  box-shadow: 0 2px 6px var(--primary-ring);
+  cursor: grab;
+  margin-top: -6px;   /* centre on 6px track */
+  transition: transform 120ms ease;
+}
+.gv-time-range-input::-webkit-slider-thumb:hover,
+.gv-time-range-input::-webkit-slider-thumb:active {
+  transform: scale(1.15);
+  cursor: grabbing;
+}
+
+/* Firefox thumb */
+.gv-time-range-input::-moz-range-track {
+  background: transparent;
+  height: 6px;
+  border: none;
+}
+.gv-time-range-input::-moz-range-thumb {
+  pointer-events: auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid var(--surface);
+  box-shadow: 0 2px 6px var(--primary-ring);
+  cursor: grab;
+  transition: transform 120ms ease;
+}
+.gv-time-range-input::-moz-range-thumb:hover,
+.gv-time-range-input::-moz-range-thumb:active {
+  transform: scale(1.15);
+  cursor: grabbing;
+}

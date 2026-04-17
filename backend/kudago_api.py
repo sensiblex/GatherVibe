@@ -26,7 +26,7 @@ def get_events(
         "location": location,
         "page": page,
         "page_size": page_size,
-        "fields": "id,title,short_title,description,body_text,categories,tags,price,is_free,age_restriction,images,dates,place,site_url",
+        "fields": "id,title,short_title,description,body_text,categories,tags,price,is_free,age_restriction,images,dates,place,site_url,favorites_count,comments_count,publication_date",
         "expand": "images,place,dates",
         "order_by": "date",
         # Always filter to show only upcoming / ongoing events
@@ -58,7 +58,7 @@ def search(
         "location": location,
         "page": page,
         "page_size": page_size,
-        "fields": "id,title,short_title,description,body_text,categories,tags,price,is_free,age_restriction,images,dates,place,site_url",
+        "fields": "id,title,short_title,description,body_text,categories,tags,price,is_free,age_restriction,images,dates,place,site_url,favorites_count,comments_count,publication_date",
         "expand": "images,place,dates",
         "actual_since": actual_since if actual_since else now_ts,
     }
@@ -210,6 +210,19 @@ def parse_events(raw: dict, skip_date_filter: bool = False) -> list:
 
         cats = e.get("categories") or []
         cat_list = [_safe_str(c) for c in cats if _safe_str(c)]
+        raw_tags = e.get("tags") or []
+        tag_list = [_safe_str(t) for t in raw_tags if _safe_str(t)]
+
+        # Derived timing fields for filtering.
+        _raw_dates = e.get("dates") or []
+        has_sched = any(bool(d.get("schedules")) for d in _raw_dates)
+        nearest_end_ts = None
+        if not is_permanent:
+            future_ends = [d.get("end") for d in _raw_dates
+                           if d.get("start") and d.get("start") >= now_ts and d.get("end")]
+            if future_ends:
+                nearest_end_ts = min(future_ends)
+        place_is_stub_v = place.get("is_stub") if isinstance(place, dict) and place else None
 
         out.append({
             "kudago_id": e.get("id"),
@@ -217,6 +230,13 @@ def parse_events(raw: dict, skip_date_filter: bool = False) -> list:
             "short_title": e.get("short_title", ""),
             "description": e.get("description", ""),
             "categories": cat_list,
+            "tags": tag_list,
+            "favorites_count": e.get("favorites_count") or 0,
+            "comments_count": e.get("comments_count") or 0,
+            "publication_ts": e.get("publication_date"),
+            "has_schedules": has_sched,
+            "end_ts": nearest_end_ts,
+            "place_is_stub": place_is_stub_v,
             "price": e.get("price", ""),
             "is_free": e.get("is_free", False),
             "age_restriction": e.get("age_restriction"),

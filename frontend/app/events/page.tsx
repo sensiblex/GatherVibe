@@ -10,6 +10,35 @@ import DateStrip from './DateStrip';
 import MasonryEventCard from './MasonryEventCard';
 import FeaturedCard from './FeaturedCard';
 import CategoryPills from './CategoryPills';
+import CityFilter from './CityFilter';
+import PriceToggle from './PriceToggle';
+import AgeFilter from './AgeFilter';
+import GeoFilter from './GeoFilter';
+import TagPills from './TagPills';
+import PlaceSearchInput from './PlaceSearchInput';
+import QuickDateChips from './QuickDateChips';
+import TimeOfDayFilter from './TimeOfDayFilter';
+import SocialFilters from './SocialFilters';
+import QualityFilters from './QualityFilters';
+import TimingFilters from './TimingFilters';
+import TimeRangeSlider from './TimeRangeSlider';
+import WeekdayPicker from './WeekdayPicker';
+import {
+  buildKudaGoQuery,
+  toggleCategory,
+  isValidCity,
+  quickDateRange,
+  SORT_OPTIONS,
+  KUDAGO_CITIES,
+  type CitySlug,
+  type PriceMode,
+  type SortMode,
+  type GeoPoint,
+  type TimeOfDay,
+  type PermanenceMode,
+  type QuickDate,
+} from './event-filters';
+import { localIsoDate as _localIsoDate } from './utils';
 import { apiFetch } from '../lib/apiFetch';
 import { localIsoDate, localStartTs, localEndTs, displayDate } from './utils';
 
@@ -52,13 +81,34 @@ export default function EventsPage() {
   const [categories, setCategories] = useState<Category[]>([]);
 
   // Filters
+  const [city, setCity]               = useState<CitySlug>('kzn');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch]           = useState('');
-  const [category, setCategory]       = useState('');
-  const [isFree, setIsFree]           = useState(false);
+  const [selectedCats, setSelectedCats] = useState<string[]>([]);
+  const [priceMode, setPriceMode]     = useState<PriceMode>('all');
   const [dateFrom, setDateFrom]       = useState('');
   const [dateTo, setDateTo]           = useState('');
-  const [sortBy, setSortBy]           = useState<'date' | 'price'>('date');
+  const [sortBy, setSortBy]           = useState<SortMode>('date');
+  const [maxAge, setMaxAge]           = useState<number | null>(null);
+  const [tags, setTags]               = useState<string[]>([]);
+  const [placeSearchInput, setPlaceSearchInput] = useState('');
+  const [placeSearch, setPlaceSearch] = useState('');
+  const [geo, setGeo]                 = useState<GeoPoint | null>(null);
+  const [quickDate, setQuickDate]     = useState<QuickDate | null>(null);
+  const [timeOfDay, setTimeOfDay]     = useState<TimeOfDay | null>(null);
+  const [permanence, setPermanence]   = useState<PermanenceMode>('all');
+  const [hasCover, setHasCover]       = useState(false);
+  const [hasParty, setHasParty]       = useState(false);
+  const [hasFreeSpots, setHasFreeSpots] = useState(false);
+  const [minAttendees, setMinAttendees] = useState<number | null>(null);
+  const [startingWithinHours, setStartingWithinHours] = useState<number | null>(null);
+  const [durationMode, setDurationMode] = useState<'short' | 'long' | null>(null);
+  const [hasSchedules, setHasSchedules]   = useState(false);
+  const [onlyVerifiedPlace, setOnlyVerifiedPlace] = useState(false);
+  const [fromHour, setFromHour] = useState<number | null>(null);
+  const [toHour,   setToHour]   = useState<number | null>(null);
+  const [weekdays, setWeekdays] = useState<number[]>([]);
+  const [hideStarted, setHideStarted] = useState(false);
 
   // Calendar & drawer state
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -79,13 +129,25 @@ export default function EventsPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const p = new URLSearchParams(window.location.search);
+    const cityParam = p.get('city');
+    if (cityParam && isValidCity(cityParam)) setCity(cityParam);
     const q = p.get('search') || '';
     if (q) { setSearchInput(q); setSearch(q); }
-    if (p.get('category'))  setCategory(p.get('category')!);
-    if (p.get('is_free') === 'true') setIsFree(true);
+    const cats = p.get('categories');
+    if (cats) setSelectedCats(cats.split(',').filter(Boolean));
+    const priceParam = p.get('price');
+    if (priceParam === 'free' || priceParam === 'paid') setPriceMode(priceParam);
     if (p.get('date_from')) setDateFrom(p.get('date_from')!);
     if (p.get('date_to'))   setDateTo(p.get('date_to')!);
-    if (p.get('sort_by') === 'price') setSortBy('price');
+    if (p.get('sort_by') === 'popularity') setSortBy('popularity');
+    const ma = p.get('max_age');
+    if (ma !== null && ma !== '') setMaxAge(parseInt(ma, 10));
+    const tagsParam = p.get('tags');
+    if (tagsParam) setTags(tagsParam.split(',').filter(Boolean));
+    const ps = p.get('place_search');
+    if (ps) { setPlaceSearchInput(ps); setPlaceSearch(ps); }
+    const lat = p.get('lat'), lon = p.get('lon'), rad = p.get('radius_m');
+    if (lat && lon && rad) setGeo({ lat: parseFloat(lat), lon: parseFloat(lon), radiusM: parseInt(rad, 10) });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -101,38 +163,81 @@ export default function EventsPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const p = new URLSearchParams();
-    if (search)   p.set('search',    search);
-    if (category) p.set('category',  category);
-    if (isFree)   p.set('is_free',   'true');
-    if (dateFrom) p.set('date_from', dateFrom);
-    if (dateTo)   p.set('date_to',   dateTo);
+    if (city !== 'kzn') p.set('city', city);
+    if (search)   p.set('search',     search);
+    if (selectedCats.length) p.set('categories', selectedCats.join(','));
+    if (priceMode !== 'all') p.set('price', priceMode);
+    if (dateFrom) p.set('date_from',  dateFrom);
+    if (dateTo)   p.set('date_to',    dateTo);
     if (sortBy !== 'date') p.set('sort_by', sortBy);
+    if (maxAge !== null) p.set('max_age', String(maxAge));
+    if (tags.length) p.set('tags', tags.join(','));
+    if (placeSearch) p.set('place_search', placeSearch);
+    if (geo) {
+      p.set('lat', String(geo.lat));
+      p.set('lon', String(geo.lon));
+      p.set('radius_m', String(geo.radiusM));
+    }
     const qs = p.toString();
     router.replace(qs ? `/events?${qs}` : '/events', { scroll: false });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, category, isFree, dateFrom, dateTo, sortBy]);
+  }, [city, search, selectedCats, priceMode, dateFrom, dateTo, sortBy, maxAge, tags, placeSearch, geo]);
 
   // Load events from API
   const load = useCallback(async (
-    s: string, cat: string, free: boolean, from: string, to: string,
+    loc: CitySlug, s: string, cats: string[], price: PriceMode, from: string, to: string,
+    age: number | null, ts: string[], ps: string, gp: GeoPoint | null, sort: SortMode,
+    qd: QuickDate | null, tod: TimeOfDay | null, perm: PermanenceMode,
+    hc: boolean, hp: boolean, hfs: boolean, mna: number | null,
+    swh: number | null, dm: 'short' | 'long' | null, hs: boolean, ovp: boolean,
+    fh: number | null, th: number | null,
+    wds: number[], hst: boolean,
   ) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({
-        location: 'kzn',
-        page: '1',
-        page_size: String(PAGE_SIZE),
-      });
-      if (s.trim()) params.set('search', s.trim());
-      if (cat)      params.set('categories', cat);
-      if (free)     params.set('is_free', 'true');
-      if (from)     params.set('actual_since', String(localStartTs(from)));
-      if (to)       params.set('actual_until', String(localEndTs(to)));
+      // Quick-date preset overrides manual date range.
+      let sinceTs: number | undefined = from ? localStartTs(from) : undefined;
+      let untilTs: number | undefined = to   ? localEndTs(to)     : undefined;
+      if (qd) {
+        const r = quickDateRange(qd);
+        sinceTs = r.since;
+        untilTs = r.until;
+      }
 
-      const res = await apiFetch(`/kudago/events?${params}`);
+      const qs = buildKudaGoQuery({
+        location: loc,
+        search: s,
+        categories: cats,
+        priceMode: price,
+        actualSince: sinceTs,
+        actualUntil: untilTs,
+        maxAge: age,
+        tags: ts,
+        placeSearch: ps,
+        geo: gp,
+        sort,
+        timeOfDay: tod,
+        permanence: perm,
+        hasCover: hc,
+        hasParty: hp,
+        hasFreeSpots: hfs,
+        minAttendees: mna,
+        startingWithinHours: swh,
+        durationMode: dm,
+        hasSchedules: hs,
+        onlyVerifiedPlace: ovp,
+        fromHour: fh,
+        toHour: th,
+        weekdays: wds,
+        hideStarted: hst,
+        page: 1,
+        pageSize: PAGE_SIZE,
+      });
+
+      const res = await apiFetch(`/kudago/events?${qs}`);
       if (!res.ok) throw new Error(`Ошибка ${res.status}`);
       const data = await res.json();
       const incoming: KudaGoEvent[] = data.results || [];
@@ -157,8 +262,30 @@ export default function EventsPage() {
 
   useEffect(() => {
     loadingRef.current = false;
-    load(search, category, isFree, dateFrom, dateTo);
-  }, [search, category, isFree, dateFrom, dateTo, load]);
+    load(
+      city, search, selectedCats, priceMode, dateFrom, dateTo,
+      maxAge, tags, placeSearch, geo, sortBy,
+      quickDate, timeOfDay, permanence, hasCover, hasParty, hasFreeSpots, minAttendees,
+      startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace,
+      fromHour, toHour,
+      weekdays, hideStarted,
+    );
+  }, [
+    city, search, selectedCats, priceMode, dateFrom, dateTo,
+    maxAge, tags, placeSearch, geo, sortBy,
+    quickDate, timeOfDay, permanence, hasCover, hasParty, hasFreeSpots, minAttendees,
+    startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace,
+    fromHour, toHour, weekdays, hideStarted,
+    load,
+  ]);
+
+  // Debounced place search
+  const onPlaceSearchChange = (v: string) => {
+    setPlaceSearchInput(v);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!v.trim()) setPlaceSearch('');
+    else debounceRef.current = setTimeout(() => setPlaceSearch(v.trim()), 500);
+  };
 
   // Debounced search
   const onSearchChange = (val: string) => {
@@ -172,22 +299,31 @@ export default function EventsPage() {
   };
 
   const clearFilters = () => {
-    setSearchInput(''); setSearch(''); setCategory('');
-    setIsFree(false); setDateFrom(''); setDateTo('');
+    setSearchInput(''); setSearch(''); setSelectedCats([]);
+    setPriceMode('all'); setDateFrom(''); setDateTo('');
     setSortBy('date'); setSelectedDate(null);
+    setMaxAge(null); setTags([]);
+    setPlaceSearchInput(''); setPlaceSearch(''); setGeo(null);
+    setQuickDate(null); setTimeOfDay(null); setPermanence('all');
+    setHasCover(false); setHasParty(false); setHasFreeSpots(false); setMinAttendees(null);
+    setStartingWithinHours(null); setDurationMode(null);
+    setHasSchedules(false); setOnlyVerifiedPlace(false);
+    setFromHour(null); setToHour(null);
+    setWeekdays([]); setHideStarted(false);
   };
 
-  const hasActive = !!(search || category || isFree || dateFrom || dateTo || sortBy !== 'date');
+  const hasActive = !!(
+    search || selectedCats.length || priceMode !== 'all' || dateFrom || dateTo ||
+    sortBy !== 'date' || maxAge !== null || tags.length || placeSearch || geo ||
+    quickDate || timeOfDay || permanence !== 'all' ||
+    hasCover || hasParty || hasFreeSpots || minAttendees ||
+    startingWithinHours || durationMode || hasSchedules || onlyVerifiedPlace ||
+    fromHour !== null || toHour !== null ||
+    weekdays.length > 0 || hideStarted
+  );
 
-  // Client-side sort
-  const sortedEvents = useMemo(() => {
-    if (sortBy !== 'price') return events;
-    return [...events].sort((a, b) => {
-      const pa = a.is_free ? 0 : parseInt((a.price || '').match(/\d+/)?.[0] ?? '0', 10);
-      const pb = b.is_free ? 0 : parseInt((b.price || '').match(/\d+/)?.[0] ?? '0', 10);
-      return pa - pb;
-    });
-  }, [events, sortBy]);
+  // Backend already handles sorting via order_by; keep a noop memo for downstream code.
+  const sortedEvents = events;
 
   // Events filtered by selected calendar date
   // Permanent events (is_permanent=true or start_date=null) always show
@@ -217,14 +353,17 @@ export default function EventsPage() {
         <div className="events-head">
           <div>
             <div className="t-label" style={{ marginBottom: 8 }}>Афиша</div>
-            <h1 className="t-display">События в Казани</h1>
+            <h1 className="t-display">
+              События в {KUDAGO_CITIES.find(c => c.slug === city)?.locative ?? ''}
+            </h1>
             {total !== null && !loading && (
               <p className="t-sm" style={{ marginTop: 8 }}>
                 {total.toLocaleString('ru-RU')} мероприятий
               </p>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <CityFilter value={city} onChange={setCity} />
             {hasActive && (
               <button onClick={clearFilters} className="btn btn-ghost btn-sm">
                 Сбросить ×
@@ -232,12 +371,20 @@ export default function EventsPage() {
             )}
             <select
               value={sortBy}
-              onChange={e => setSortBy(e.target.value as 'date' | 'price')}
+              onChange={e => setSortBy(e.target.value as SortMode)}
               className="input"
               style={{ width: 'auto', padding: '.5rem 1.125rem', fontSize: '.8125rem' }}
+              aria-label="Сортировка"
             >
-              <option value="date">По дате</option>
-              <option value="price">По цене</option>
+              {SORT_OPTIONS.map(o => (
+                <option
+                  key={o.value}
+                  value={o.value}
+                  disabled={o.value === 'nearest' && !geo}
+                >
+                  {o.label}{o.value === 'nearest' && !geo ? ' (нужна геолокация)' : ''}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -256,12 +403,7 @@ export default function EventsPage() {
               className="input input-padl"
             />
           </div>
-          <button
-            onClick={() => setIsFree(v => !v)}
-            className={isFree ? 'btn btn-ink' : 'btn btn-ghost'}
-          >
-            Бесплатно
-          </button>
+          <PriceToggle value={priceMode} onChange={setPriceMode} />
         </div>
 
         {/* Filters: date range + categories */}
@@ -306,14 +448,99 @@ export default function EventsPage() {
             </span>
           )}
 
+          <AgeFilter value={maxAge} onChange={setMaxAge} />
+          <PlaceSearchInput value={placeSearchInput} onChange={onPlaceSearchChange} />
+          <GeoFilter value={geo} onChange={setGeo} />
+        </div>
+
+        <div
+          style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px 8px', width: '100%', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}
+        >
+          <QuickDateChips active={quickDate} onSelect={setQuickDate} />
+          <TimeOfDayFilter value={timeOfDay} onChange={setTimeOfDay} />
+        </div>
+
+        <div
+          style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px 8px', width: '100%' }}
+        >
+          <SocialFilters
+            hasParty={hasParty}
+            hasFreeSpots={hasFreeSpots}
+            minAttendees={minAttendees}
+            onChange={(patch) => {
+              if (patch.hasParty !== undefined) setHasParty(patch.hasParty);
+              if (patch.hasFreeSpots !== undefined) setHasFreeSpots(patch.hasFreeSpots);
+              if (patch.minAttendees !== undefined) setMinAttendees(patch.minAttendees);
+            }}
+          />
+        </div>
+
+        <div
+          style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px 8px', width: '100%' }}
+        >
+          <QualityFilters
+            permanence={permanence}
+            hasCover={hasCover}
+            onChange={(patch) => {
+              if (patch.permanence !== undefined) setPermanence(patch.permanence);
+              if (patch.hasCover !== undefined) setHasCover(patch.hasCover);
+            }}
+          />
+        </div>
+
+        <div
+          style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px 8px', width: '100%' }}
+        >
+          <TimingFilters
+            startingWithinHours={startingWithinHours}
+            durationMode={durationMode}
+            hasSchedules={hasSchedules}
+            onlyVerifiedPlace={onlyVerifiedPlace}
+            onChange={(patch) => {
+              if (patch.startingWithinHours !== undefined) setStartingWithinHours(patch.startingWithinHours);
+              if (patch.durationMode !== undefined) setDurationMode(patch.durationMode);
+              if (patch.hasSchedules !== undefined) setHasSchedules(patch.hasSchedules);
+              if (patch.onlyVerifiedPlace !== undefined) setOnlyVerifiedPlace(patch.onlyVerifiedPlace);
+            }}
+          />
+        </div>
+
+        <div
+          style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px 8px', width: '100%', display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}
+        >
+          <TimeRangeSlider from={fromHour} to={toHour} onChange={(f, t) => { setFromHour(f); setToHour(t); }} />
+          <WeekdayPicker selected={weekdays} onChange={setWeekdays} />
+          <button
+            aria-pressed={hideStarted}
+            onClick={() => setHideStarted(v => !v)}
+            style={{
+              padding: '0.4rem 0.9rem',
+              borderRadius: 'var(--r-full)',
+              fontSize: '.8125rem',
+              background: hideStarted ? 'var(--primary)' : 'var(--surface-2)',
+              color: hideStarted ? 'var(--text-inverse)' : 'var(--text-muted)',
+              border: `1px solid ${hideStarted ? 'var(--primary)' : 'var(--border)'}`,
+              cursor: 'pointer',
+              fontWeight: 600,
+              boxShadow: hideStarted ? '0 2px 8px var(--primary-ring)' : 'none',
+            }}
+          >
+            ⏭ Ещё не начались
+          </button>
+        </div>
+
+        <div
+          style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px 16px', width: '100%' }}
+        >
+          <TagPills selected={tags} onChange={setTags} />
         </div>
 
         {categories.length > 0 && (
           <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px 40px', width: '100%', overflow: 'hidden' }}>
             <CategoryPills
               categories={categories}
-              selected={category}
-              onSelect={setCategory}
+              selected={selectedCats}
+              onToggle={(slug) => setSelectedCats(cur => toggleCategory(cur, slug))}
             />
           </div>
         )}
@@ -328,7 +555,14 @@ export default function EventsPage() {
             <p className="text-lg" style={{ color: 'var(--text)' }}>Не удалось загрузить события</p>
             <p className="text-sm" style={{ color: 'var(--error)' }}>{error}</p>
             <button
-              onClick={() => load(search, category, isFree, dateFrom, dateTo)}
+              onClick={() => load(
+                city, search, selectedCats, priceMode, dateFrom, dateTo,
+                maxAge, tags, placeSearch, geo, sortBy,
+                quickDate, timeOfDay, permanence, hasCover, hasParty, hasFreeSpots, minAttendees,
+                startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace,
+                fromHour, toHour,
+                weekdays, hideStarted,
+              )}
               className="gv-btn-primary"
             >
               Попробовать снова
