@@ -7,11 +7,22 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from deps import get_db, get_current_user_from_token, oauth2_scheme
+from utils.sanitize import sanitize_text
+
+
+def _san(cls, v):
+    return sanitize_text(v)
+
+
+def _san_list(cls, v):
+    if v is None:
+        return None
+    return [sanitize_text(x) for x in v if x is not None]
 from models.chat_message import ChatMessage
 from models.party import EventParty, PartyMember
 from models.party_coordination import (
@@ -127,6 +138,9 @@ class PollCreateBody(BaseModel):
     question: str = Field(..., min_length=3, max_length=200)
     options: List[str] = Field(..., min_length=2, max_length=10)
 
+    _san_q = field_validator("question", mode="before")(_san)
+    _san_o = field_validator("options", mode="before")(_san_list)
+
 
 class VoteBody(BaseModel):
     option_id: int
@@ -144,8 +158,14 @@ class PinnedBlockOut(BaseModel):
         from_attributes = True
 
 
+class PinnedBlockEnvelope(BaseModel):
+    pinned: Optional[PinnedBlockOut] = None
+
+
 class PinnedBlockBody(BaseModel):
     content: str = Field(..., min_length=1, max_length=1000)
+
+    _san = field_validator("content", mode="before")(_san)
 
 
 class AttendanceStatusBody(BaseModel):
@@ -354,7 +374,7 @@ async def close_poll(
 # ─── Pinned block endpoints ───────────────────────────────────────────────────
 
 
-@router.get("/parties/{party_id}/pinned", response_model=PinnedBlockOut)
+@router.get("/parties/{party_id}/pinned", response_model=PinnedBlockEnvelope)
 def get_pinned(
     party_id: int,
     token: str = Depends(oauth2_scheme),
@@ -364,9 +384,7 @@ def get_pinned(
     _check_party_access(party_id, user.id, db)
 
     pinned = db.query(PartyPinnedBlock).filter(PartyPinnedBlock.party_id == party_id).first()
-    if not pinned:
-        raise HTTPException(status_code=404, detail="no_pinned")
-    return pinned
+    return PinnedBlockEnvelope(pinned=pinned)
 
 
 @router.put("/parties/{party_id}/pinned", response_model=PinnedBlockOut)

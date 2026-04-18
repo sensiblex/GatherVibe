@@ -5,9 +5,17 @@ from typing import Literal, Optional, List
 from datetime import datetime
 from enum import Enum
 
+import asyncio
+import json
 import kudago_api
-from pydantic import BaseModel, Field
+import kudago_api_async
+from pydantic import BaseModel, Field, field_validator
 from deps import get_db, get_current_user_from_token, oauth2_scheme
+from utils.sanitize import sanitize_text
+
+
+def _san(cls, v):
+    return sanitize_text(v)
 from schemas import PartySearchItem, PartySearchResponse
 from sio_instance import sio
 from models.user import User
@@ -37,24 +45,34 @@ class PartyCreateBody(BaseModel):
     description: Optional[str] = None
     max_members: int = 4
 
+    _san = field_validator("title", "description", mode="before")(_san)
+
 
 class PartyUpdateBody(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     max_members: Optional[int] = None
 
+    _san = field_validator("title", "description", mode="before")(_san)
+
 
 class PartyKickBody(BaseModel):
     reason: Optional[str] = None
+
+    _san = field_validator("reason", mode="before")(_san)
 
 
 class PartyJoinBody(BaseModel):
     message: Optional[str] = Field(None, max_length=100)
 
+    _san = field_validator("message", mode="before")(_san)
+
 
 class PartyInviteBody(BaseModel):
     user_id: int
     message: Optional[str] = Field(None, max_length=200)
+
+    _san = field_validator("message", mode="before")(_san)
 
 
 class PartyInviteOut(BaseModel):
@@ -498,7 +516,7 @@ async def reject_request(
 
 
 @router.post("/parties/event/{event_id}", response_model=PartyOut)
-def create_party(
+async def create_party(
     event_id: str,
     body: PartyCreateBody,
     token: str = Depends(oauth2_scheme),
@@ -521,19 +539,38 @@ def create_party(
     event_title: Optional[str] = None
     event_date_ts: Optional[int] = None
     event_image_url: Optional[str] = None
+
+    # First try local cache — fast and avoids external network call.
+    from models.kudago_event import KudaGoEvent as KE
     try:
-        raw = kudago_api.get_event_by_id(int(event_id))
-        event_title = raw.get("title")
-        dates = raw.get("dates") or []
-        for d in dates:
-            ts = d.get("start")
-            if ts:
-                event_date_ts = int(ts)
-                break
-        images = raw.get("images") or []
-        event_image_url = images[0].get("image") if images else None
-    except Exception:
-        pass
+        eid_int = int(event_id)
+    except (TypeError, ValueError):
+        eid_int = None
+
+    cached = (
+        db.query(KE).filter(KE.kudago_id == eid_int).first() if eid_int else None
+    )
+    if cached:
+        event_title = cached.title
+        event_date_ts = cached.start_ts
+        event_image_url = cached.cover_url
+    elif eid_int is not None:
+        # Fall back to async KudaGo API with a short timeout so party creation
+        # never blocks on slow external calls.
+        try:
+            raw = await asyncio.wait_for(
+                kudago_api_async.get_event_by_id(eid_int), timeout=3.0
+            )
+            event_title = raw.get("title")
+            for d in (raw.get("dates") or []):
+                ts = d.get("start")
+                if ts:
+                    event_date_ts = int(ts)
+                    break
+            images = raw.get("images") or []
+            event_image_url = images[0].get("image") if images else None
+        except (asyncio.TimeoutError, Exception):
+            pass
 
     party = EventParty(
         event_id=event_id,

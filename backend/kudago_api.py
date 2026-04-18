@@ -6,7 +6,7 @@ BASE_URL = "https://kudago.com/public-api/v1.4"
 
 
 def _get(path: str, params: dict) -> dict:
-    with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=10) as client:
         r = client.get(f"{BASE_URL}/{path}/", params=params)
         r.raise_for_status()
         return r.json()
@@ -74,7 +74,7 @@ def get_event_by_id(event_id: int) -> dict:
         "fields": "id,title,short_title,description,body_text,categories,tags,price,is_free,age_restriction,images,dates,place,site_url,participants",
         "expand": "images,place,dates,participants",
     }
-    with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=10) as client:
         r = client.get(f"{BASE_URL}/events/{event_id}/", params=params)
         r.raise_for_status()
         return r.json()
@@ -89,7 +89,7 @@ def get_events_today(location: str = "kzn") -> dict:
 
 
 def get_event_categories() -> list:
-    with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=10) as client:
         r = client.get(f"{BASE_URL}/event-categories/")
         r.raise_for_status()
         data = r.json()
@@ -99,7 +99,7 @@ def get_event_categories() -> list:
 
 
 def get_locations() -> list:
-    with httpx.Client(timeout=30) as client:
+    with httpx.Client(timeout=10) as client:
         r = client.get(f"{BASE_URL}/locations/")
         r.raise_for_status()
         data = r.json()

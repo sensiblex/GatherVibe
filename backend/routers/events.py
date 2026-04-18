@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime
@@ -456,20 +456,31 @@ def kudago_get_events(
         raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
 
 
-@router.post("/kudago/sync")
+@router.post("/kudago/sync", status_code=202)
 def kudago_sync(
+    background_tasks: BackgroundTasks,
     locations: Optional[str] = Query(default=None, description="Через запятую: msk,spb,kzn"),
+    wait: bool = Query(default=False, description="Если true — ждать завершения и вернуть статистику"),
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Принудительная синхронизация кэша событий из KudaGo API."""
+    """Принудительная синхронизация кэша событий из KudaGo API.
+
+    По умолчанию запускает задачу в фоне и возвращает 202. При wait=true
+    выполняется синхронно и возвращает статистику — для ручных отладок.
+    """
     get_current_user_from_token(token, db)
     loc_list = [l.strip() for l in locations.split(",")] if locations else kudago_cache.DEFAULT_LOCATIONS
-    try:
-        stats = kudago_cache.sync_all(loc_list)
-        return {"synced": stats}
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Ошибка синхронизации: {str(e)}")
+
+    if wait:
+        try:
+            stats = kudago_cache.sync_all(loc_list)
+            return {"status": "ok", "synced": stats}
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Ошибка синхронизации: {str(e)}")
+
+    background_tasks.add_task(kudago_cache.sync_all, loc_list)
+    return {"status": "accepted", "locations": loc_list}
 
 
 @router.get("/kudago/debug")

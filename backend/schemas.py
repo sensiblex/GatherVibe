@@ -1,7 +1,19 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Dict, List, Literal, Optional
 from datetime import date, datetime
 import math
+
+from utils.sanitize import sanitize_text
+
+
+def _sanitize_optional(cls, v):
+    return sanitize_text(v)
+
+
+def _sanitize_list(cls, v):
+    if v is None:
+        return None
+    return [sanitize_text(x) for x in v if x is not None]
 
 
 class UserCreate(BaseModel):
@@ -10,6 +22,8 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     city: Optional[str] = Field(default=None, max_length=100)
     interests: Optional[str] = Field(default=None, max_length=500)
+
+    _sanitize = field_validator("username", "city", "interests", mode="before")(_sanitize_optional)
 
 
 class UserLogin(BaseModel):
@@ -70,6 +84,11 @@ class UserUpdate(BaseModel):
     preferred_time: Optional[Literal["morning", "evening", "any"]] = None
     budget_max: Optional[int] = Field(default=None, ge=0, le=1_000_000)
 
+    _sanitize = field_validator(
+        "username", "city", "bio", "interests", "preferred_categories",
+        mode="before",
+    )(_sanitize_optional)
+
 
 ALLOWED_REVIEW_TAGS: List[str] = [
     "Пунктуальный",
@@ -89,6 +108,8 @@ class ReviewCreate(BaseModel):
     rating: int  # 1-5
     text: Optional[str] = None
     tags: Optional[List[str]] = None  # max 3 from ALLOWED_REVIEW_TAGS
+
+    _sanitize_text = field_validator("text", mode="before")(_sanitize_optional)
 
 
 class ReviewOut(BaseModel):
@@ -110,6 +131,8 @@ class ReviewUpdate(BaseModel):
     rating: Optional[int] = None
     text: Optional[str] = None
     tags: Optional[List[str]] = None
+
+    _sanitize_text = field_validator("text", mode="before")(_sanitize_optional)
 
 
 class ReviewSummary(BaseModel):
@@ -133,6 +156,8 @@ class ReviewableUser(BaseModel):
 
 class ReviewReport(BaseModel):
     reason: Optional[str] = None
+
+    _sanitize = field_validator("reason", mode="before")(_sanitize_optional)
 
 
 class EventBase(BaseModel):
@@ -244,6 +269,8 @@ class MeetingPlanUpdate(BaseModel):
     meet_lat: Optional[float] = Field(None, ge=-90.0, le=90.0)
     meet_lon: Optional[float] = Field(None, ge=-180.0, le=180.0)
     meet_landmark: Optional[str] = Field(None, max_length=200)
+
+    _sanitize = field_validator("meet_location", "note", "meet_landmark", mode="before")(_sanitize_optional)
 
 
 class MeetingPlanResponse(BaseModel):

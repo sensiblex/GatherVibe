@@ -4,7 +4,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     SECRET_KEY: str = "changeme"
-    DATABASE_URL: str = "sqlite:///./gathervibe.db"
+    DATABASE_URL: str
     RESEND_API_KEY: str = ""
     FRONTEND_URL: str = "http://localhost:3000"
     # Dev-режим: все письма летят на этот адрес вместо реального получателя

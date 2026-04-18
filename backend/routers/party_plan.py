@@ -41,7 +41,7 @@ def get_party_plan(
 
     plan = db.query(PartyMeetingPlan).filter(PartyMeetingPlan.party_id == party_id).first()
     if not plan:
-        raise HTTPException(status_code=404, detail="План встречи ещё не создан")
+        return MeetingPlanResponse()
 
     updater = db.query(User).filter(User.id == plan.updated_by).first()
     return MeetingPlanResponse(
