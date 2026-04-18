@@ -63,6 +63,15 @@ def _run_column_migrations():
             conn.execute(text(
                 "ALTER TABLE chat_messages ADD COLUMN file_name VARCHAR(255)"
             ))
+        party_members_cols = {c["name"] for c in insp.get_columns("party_members")}
+        if "invited_by_user_id" not in party_members_cols:
+            conn.execute(text(
+                "ALTER TABLE party_members ADD COLUMN invited_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL"
+            ))
+        if "invite_message" not in party_members_cols:
+            conn.execute(text(
+                "ALTER TABLE party_members ADD COLUMN invite_message VARCHAR(200)"
+            ))
         conn.commit()
 
 
@@ -221,6 +230,40 @@ async def _reminder_loop():
             logger.error("Reminder loop error: %s", exc)
 
 
+async def _invite_expiry_loop():
+    """Фоновая задача: каждые 15 минут помечает приглашения declined за 24h до события."""
+    from routers.parties import expire_pending_invites
+
+    while True:
+        await asyncio.sleep(REMINDER_LOOP_INTERVAL)
+        try:
+            db = SessionLocal()
+            try:
+                expired_ids = expire_pending_invites(db)
+                if expired_ids:
+                    db.commit()
+                    logger.info("Expired %d party invites near event start", len(expired_ids))
+                    for mid in expired_ids:
+                        m = db.query(PartyMember).filter(PartyMember.id == mid).first()
+                        if not m or m.invited_by_user_id is None:
+                            continue
+                        try:
+                            await sio.emit(
+                                "party_invite_expired",
+                                {"invite_id": mid, "party_id": m.party_id},
+                                room=f"user_{m.invited_by_user_id}",
+                            )
+                        except Exception:
+                            pass
+            except Exception as exc:
+                logger.error("Invite expiry inner error: %s", exc)
+                db.rollback()
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.error("Invite expiry loop error: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import os as _os_lifespan
@@ -239,9 +282,11 @@ async def lifespan(app: FastAPI):
         print("[KudaGo] kzn cache already populated, skipping startup sync", flush=True)
     cache_task = asyncio.create_task(_cache_sync_loop())
     reminder_task = asyncio.create_task(_reminder_loop())
+    invite_expiry_task = asyncio.create_task(_invite_expiry_loop())
     yield
     cache_task.cancel()
     reminder_task.cancel()
+    invite_expiry_task.cancel()
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationsContext';
 import { useEffect, useState } from 'react';
+import NavbarInvitesDropdown from './NavbarInvitesDropdown';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -119,6 +120,7 @@ export default function Navbar() {
           <div className="nav-right">
             {user ? (
               <>
+                <NavbarInvitesDropdown />
                 <div className="notif-wrap">
                   <Link href="/notifications" className="icon-btn" aria-label="Уведомления">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

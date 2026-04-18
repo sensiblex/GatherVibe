@@ -3,6 +3,7 @@
 import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '../components/Navbar';
+import PartyInvitesInbox from '../components/PartyInvitesInbox';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationsContext';
 import { usePushNotifications } from '../hooks/usePushNotifications';
@@ -33,6 +34,20 @@ function typeIcon(type: string) {
         <line x1="22" y1="11" x2="16" y2="11"/>
       </svg>
     );
+    case 'party_invite_received': return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="20 12 20 22 4 22 4 12"/>
+        <rect x="2" y="7" width="20" height="5"/>
+        <line x1="12" y1="22" x2="12" y2="7"/>
+        <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/>
+        <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>
+      </svg>
+    );
+    case 'party_invite_response': return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="22 4 12 14.01 9 11.01"/>
+      </svg>
+    );
     case 'party_closed': return (
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
@@ -54,6 +69,8 @@ function typeAccentColor(type: string, isRead: boolean): { bg: string; color: st
     case 'request_status_changed': return { bg: 'var(--success-hl)', color: 'var(--success)' };
     case 'kicked_from_party':      return { bg: 'var(--error-hl)',   color: 'var(--error)' };
     case 'new_party_request':      return { bg: 'var(--primary-hl)', color: 'var(--primary)' };
+    case 'party_invite_received':  return { bg: 'var(--primary-hl)', color: 'var(--primary)' };
+    case 'party_invite_response':  return { bg: 'var(--success-hl)', color: 'var(--success)' };
     case 'party_closed':           return { bg: 'var(--surface-2)',  color: 'var(--text-muted)' };
     default:                        return { bg: 'var(--primary-hl)', color: 'var(--primary)' };
   }
@@ -315,6 +332,9 @@ export default function NotificationsPage() {
             </button>
           )}
         </div>
+
+        {/* ── Party invites inbox ── */}
+        <PartyInvitesInbox />
 
         {/* ── Notification settings ── */}
         <NotificationSettings

@@ -24,9 +24,10 @@ interface PartyDeletedPayload {
   party_title: string;
 }
 
-type MemberStatus = 'pending' | 'accepted' | 'rejected' | 'left';
+type MemberStatus = 'pending' | 'accepted' | 'rejected' | 'left' | 'invited' | 'declined';
 
 interface PartyMember {
+  id: number;
   user_id: number;
   username: string;
   city: string | null;
@@ -34,6 +35,8 @@ interface PartyMember {
   status: MemberStatus;
   joined_at: string;
   message?: string | null;
+  invited_by_user_id?: number | null;
+  invite_message?: string | null;
 }
 
 interface Party {
@@ -345,6 +348,7 @@ export default function PartyDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const prevPartyRef = useRef<Party | null>(null);
   const socketRef = useRef<Socket | null>(null);
+  const selfLeftRef = useRef(false);
 
   const fetchParty = useCallback(async () => {
     try {
@@ -359,7 +363,13 @@ export default function PartyDetailPage() {
           const newMe = data.members.find(m => m.user_id === uid);
           if (oldMe?.status === 'pending' && newMe?.status === 'accepted') toast('🎉 Вас приняли в компанию!', 'success');
           if (oldMe?.status === 'pending' && !newMe) toast('Ваша заявка отклонена', 'error');
-          if (oldMe?.status === 'accepted' && !newMe) toast('Вы были исключены из компании', 'error');
+          if (oldMe?.status === 'accepted' && !newMe && !selfLeftRef.current) {
+            toast('Вы были исключены из компании', 'error');
+          }
+          // One-shot: reset after each fetch so only the immediate post-leave poll is suppressed
+          if (selfLeftRef.current && oldMe?.status === 'accepted' && !newMe) {
+            selfLeftRef.current = false;
+          }
         } catch {}
       }
       prevPartyRef.current = data;
@@ -402,11 +412,18 @@ export default function PartyDetailPage() {
   const handleLeave = async () => {
     if (!token) return;
     setActionLoading(true);
+    selfLeftRef.current = true;
     try {
       const res = await apiFetch(`${API_BASE}/parties/${partyId}/leave`, { method: 'DELETE' });
       if (res.ok) { toast('Вы покинули компанию', 'info'); setChatOpen(false); fetchParty(); }
-      else { const d = await res.json(); toast(extractErrorMessage(d.detail), 'error'); }
-    } catch {}
+      else {
+        selfLeftRef.current = false;
+        const d = await res.json();
+        toast(extractErrorMessage(d.detail), 'error');
+      }
+    } catch {
+      selfLeftRef.current = false;
+    }
     setActionLoading(false);
   };
 
@@ -428,6 +445,22 @@ export default function PartyDetailPage() {
       const res = await apiFetch(`${API_BASE}/parties/${partyId}/members/${userId}/${action}`, { method: 'POST' });
       if (res.ok) { toast(action === 'accept' ? '✅ Принят' : '❌ Отклонён', action === 'accept' ? 'success' : 'error'); fetchParty(); }
       else { const d = await res.json(); toast(extractErrorMessage(d.detail), 'error'); }
+    } catch {}
+    setActionLoading(false);
+  };
+
+  const handleCancelInvite = async (inviteId: number) => {
+    if (!token) return;
+    setActionLoading(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/parties/${partyId}/invites/${inviteId}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast('Приглашение отозвано', 'info');
+        fetchParty();
+      } else {
+        const d = await res.json().catch(() => ({}));
+        toast(extractErrorMessage(d.detail), 'error');
+      }
     } catch {}
     setActionLoading(false);
   };
@@ -472,6 +505,7 @@ export default function PartyDetailPage() {
   const isAcceptedMember = isCreator || myMembership?.status === 'accepted';
   const acceptedCount = party.members.filter(m => m.status === 'accepted').length;
   const pendingCount = party.members.filter(m => m.status === 'pending').length;
+  const invitedCount = party.members.filter(m => m.status === 'invited').length;
   const isFull = acceptedCount + 1 >= party.max_members;
   // Event ended: 2h after start. After that point, coordination tools are hidden,
   // and the party becomes a "memories mode" — only chat and recap remain.
@@ -485,9 +519,17 @@ export default function PartyDetailPage() {
     pending:  { background: 'var(--warning-hl)',  color: 'var(--warning)',  border: '1px solid color-mix(in oklch, var(--warning) 30%, transparent)' },
     accepted: { background: 'var(--success-hl)',  color: 'var(--success)',  border: '1px solid color-mix(in oklch, var(--success) 30%, transparent)' },
     rejected: { background: 'var(--error-hl)',    color: 'var(--error)',    border: '1px solid color-mix(in oklch, var(--error) 30%, transparent)' },
+    invited:  { background: 'var(--primary-hl)',  color: 'var(--primary)',  border: '1px solid color-mix(in oklch, var(--primary) 30%, transparent)' },
+    declined: { background: 'var(--surface-2)',   color: 'var(--text-muted)', border: '1px solid var(--border)' },
   }[status] ?? {});
 
-  const statusLabel = (status: string) => ({ pending: '⏳ Ожидает', accepted: '✅ Принят', rejected: '❌ Отклонён' }[status] ?? status);
+  const statusLabel = (status: string) => ({
+    pending: '⏳ Ожидает',
+    accepted: '✅ Принят',
+    rejected: '❌ Отклонён',
+    invited: '📬 Приглашён',
+    declined: '🚪 Отказался',
+  }[status] ?? status);
 
   const cardStyle: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' };
   const myRowStyle: React.CSSProperties = { background: 'color-mix(in oklch, var(--primary) 8%, var(--surface))', border: '1px solid color-mix(in oklch, var(--primary) 25%, transparent)' };
@@ -554,11 +596,21 @@ export default function PartyDetailPage() {
             <div className="rounded-2xl p-6" style={cardStyle}>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-bold" style={{ color: 'var(--text)' }}>Участники</h2>
-                {pendingCount > 0 && isCreator && !eventEnded && (
-                  <span className="text-xs px-2 py-1 rounded-full font-semibold"
-                    style={{ background: 'var(--warning-hl)', color: 'var(--warning)', border: '1px solid color-mix(in oklch, var(--warning) 30%, transparent)' }}>
-                    ⏳ {pendingCount} ожидают
-                  </span>
+                {isCreator && !eventEnded && (
+                  <div className="flex gap-2">
+                    {pendingCount > 0 && (
+                      <span className="text-xs px-2 py-1 rounded-full font-semibold"
+                        style={{ background: 'var(--warning-hl)', color: 'var(--warning)', border: '1px solid color-mix(in oklch, var(--warning) 30%, transparent)' }}>
+                        ⏳ {pendingCount} ожидают
+                      </span>
+                    )}
+                    {invitedCount > 0 && (
+                      <span className="text-xs px-2 py-1 rounded-full font-semibold"
+                        style={{ background: 'var(--primary-hl)', color: 'var(--primary)', border: '1px solid color-mix(in oklch, var(--primary) 30%, transparent)' }}>
+                        📬 {invitedCount} приглашено
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="space-y-3">
@@ -581,8 +633,10 @@ export default function PartyDetailPage() {
                 </div>
 
                 {/* Other members */}
-                {party.members.map(member => (
-                  <div key={member.user_id} className="flex flex-col gap-2 p-3 rounded-xl"
+                {party.members
+                  .filter(m => isCreator ? true : m.status === 'accepted' || m.user_id === myId)
+                  .map(member => (
+                  <div key={member.id ?? member.user_id} className="flex flex-col gap-2 p-3 rounded-xl"
                     style={member.user_id === myId ? myRowStyle : normalRowStyle}>
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
@@ -612,6 +666,12 @@ export default function PartyDetailPage() {
                           style={{ background: 'var(--error-hl)', color: 'var(--error)', border: '1px solid color-mix(in oklch, var(--error) 30%, transparent)' }}
                           title="Исключить">🚫 Кик</button>
                       )}
+                      {isCreator && !eventEnded && member.status === 'invited' && (
+                        <button onClick={() => handleCancelInvite(member.id)} disabled={actionLoading}
+                          className="ml-1 text-xs px-2 py-1 rounded-lg transition disabled:opacity-50 hover:opacity-80"
+                          style={{ background: 'var(--error-hl)', color: 'var(--error)', border: '1px solid color-mix(in oklch, var(--error) 30%, transparent)' }}
+                          title="Отозвать приглашение">↩ Отозвать</button>
+                      )}
                     </div>
                     {/* Show join message if present and viewer is creator */}
                     {isCreator && member.status === 'pending' && member.message && (
@@ -620,6 +680,15 @@ export default function PartyDetailPage() {
                         style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
                       >
                         💬 «{member.message}»
+                      </div>
+                    )}
+                    {/* Show invite message if present and viewer is creator */}
+                    {isCreator && member.status === 'invited' && member.invite_message && (
+                      <div
+                        className="ml-12 text-xs px-3 py-2 rounded-xl italic"
+                        style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                      >
+                        📬 «{member.invite_message}»
                       </div>
                     )}
                   </div>

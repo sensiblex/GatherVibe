@@ -28,10 +28,12 @@ class PartyMember(Base):
     id = Column(Integer, primary_key=True, index=True)
     party_id = Column(Integer, ForeignKey("event_parties.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    # pending → creator accepts/rejects; left → member left voluntarily
-    status = Column(String(10), default="pending")  # 'pending' | 'accepted' | 'rejected' | 'left'
+    # pending → user→creator request; invited → creator→user invite; accepted/rejected/left/declined terminal-ish
+    status = Column(String(10), default="pending")  # 'pending' | 'accepted' | 'rejected' | 'left' | 'invited' | 'declined'
     joined_at = Column(DateTime(timezone=True), server_default=func.now())
     message = Column(String(100), nullable=True)  # optional short message when joining
+    invited_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    invite_message = Column(String(200), nullable=True)
 
     __table_args__ = (UniqueConstraint("party_id", "user_id", name="uq_party_user"),)
 

@@ -28,6 +28,8 @@ class MemberStatus(str, Enum):
     accepted = "accepted"
     rejected = "rejected"
     left     = "left"
+    invited  = "invited"
+    declined = "declined"
 
 
 class PartyCreateBody(BaseModel):
@@ -50,6 +52,27 @@ class PartyJoinBody(BaseModel):
     message: Optional[str] = Field(None, max_length=100)
 
 
+class PartyInviteBody(BaseModel):
+    user_id: int
+    message: Optional[str] = Field(None, max_length=200)
+
+
+class PartyInviteOut(BaseModel):
+    id: int
+    party_id: int
+    party_title: str
+    party_event_id: str
+    event_date_ts: Optional[int] = None
+    event_image_url: Optional[str] = None
+    creator_id: int
+    creator_username: str
+    invite_message: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class PendingRequestOut(BaseModel):
     id: int
     user_id: int
@@ -64,6 +87,7 @@ class PendingRequestOut(BaseModel):
 
 
 class PartyMemberOut(BaseModel):
+    id: int
     user_id: int
     username: str
     city: Optional[str]
@@ -71,6 +95,8 @@ class PartyMemberOut(BaseModel):
     status: MemberStatus
     joined_at: datetime
     message: Optional[str] = None
+    invited_by_user_id: Optional[int] = None
+    invite_message: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -103,12 +129,14 @@ def _build_party_out(party: EventParty, db: Session) -> PartyOut:
     members_rows = db.query(PartyMember, User).join(User, PartyMember.user_id == User.id).filter(
         PartyMember.party_id == party.id,
         PartyMember.user_id != party.creator_id,
-        PartyMember.status.in_([MemberStatus.pending, MemberStatus.accepted])
+        PartyMember.status.in_([MemberStatus.pending, MemberStatus.accepted, MemberStatus.invited])
     ).all()
     members = [
-        PartyMemberOut(user_id=u.id, username=u.username, city=u.city,
+        PartyMemberOut(id=m.id, user_id=u.id, username=u.username, city=u.city,
                        interests=u.interests, status=m.status, joined_at=m.joined_at,
-                       message=m.message)
+                       message=m.message,
+                       invited_by_user_id=m.invited_by_user_id,
+                       invite_message=m.invite_message)
         for m, u in members_rows
     ]
     return PartyOut(
@@ -572,11 +600,49 @@ async def delete_party(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может удалить компанию")
+
+    affected = db.query(PartyMember).filter(
+        PartyMember.party_id == party_id,
+        PartyMember.status.in_([
+            MemberStatus.invited, MemberStatus.pending, MemberStatus.accepted,
+        ]),
+        PartyMember.user_id != party.creator_id,
+    ).all()
+
+    notified = []
+    for m in affected:
+        notif = create_notification(
+            db, m.user_id, "party_deleted_for_user",
+            "Компания удалена",
+            f"Компания «{party.title}» удалена создателем",
+            {"party_id": party.id, "previous_status": str(m.status)},
+        )
+        db.flush()
+        notified.append((m.user_id, notif))
+
+    db.commit()
+
     await sio.emit(
         "party_deleted",
         {"party_id": party.id, "party_title": party.title},
         room=f"party_{party.id}",
     )
+    for uid, notif in notified:
+        await sio.emit("new_notification", {
+            "id": notif.id,
+            "type": notif.type,
+            "title": notif.title,
+            "body": notif.body,
+            "data": notif.data,
+            "is_read": False,
+            "created_at": notif.created_at.isoformat(),
+        }, room=f"user_{uid}")
+        await sio.emit(
+            "party_deleted_user",
+            {"party_id": party.id, "party_title": party.title, "notification_id": notif.id},
+            room=f"user_{uid}",
+        )
+
     db.query(PartyMember).filter(PartyMember.party_id == party_id).delete()
     db.delete(party)
     db.commit()
@@ -895,3 +961,308 @@ async def close_party(
     db.commit()
     await _notify_party_closed(party, db, exclude_user_ids={party.creator_id})
     return _build_party_out(party, db)
+
+
+# ─── Invite flow (creator → user) ────────────────────────────────────────────
+
+
+@router.get("/users/me/party-invites", response_model=List[PartyInviteOut])
+def list_my_party_invites(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user_from_token(token, db)
+    rows = (
+        db.query(PartyMember, EventParty, User)
+        .join(EventParty, PartyMember.party_id == EventParty.id)
+        .join(User, EventParty.creator_id == User.id)
+        .filter(
+            PartyMember.user_id == user.id,
+            PartyMember.status == MemberStatus.invited,
+        )
+        .order_by(PartyMember.joined_at.desc())
+        .all()
+    )
+    return [
+        PartyInviteOut(
+            id=m.id,
+            party_id=p.id,
+            party_title=p.title,
+            party_event_id=p.event_id,
+            event_date_ts=p.event_date_ts,
+            event_image_url=p.event_image_url,
+            creator_id=p.creator_id,
+            creator_username=creator.username,
+            invite_message=m.invite_message,
+            created_at=m.joined_at,
+        )
+        for m, p, creator in rows
+    ]
+
+
+@router.post("/parties/{party_id}/invite", response_model=PartyOut)
+async def invite_to_party(
+    party_id: int,
+    body: PartyInviteBody,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_token(token, db)
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if party.creator_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Только создатель может приглашать")
+    if not party.is_open:
+        raise HTTPException(status_code=400, detail="Набор закрыт")
+    if body.user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Нельзя пригласить самого себя")
+
+    target = db.query(User).filter(User.id == body.user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if not target.is_discoverable_on_events:
+        raise HTTPException(status_code=403, detail="Пользователь скрыл себя от поиска по событиям")
+
+    # Capacity check: creator + accepted + invited < max_members
+    used_slots = 1 + db.query(PartyMember).filter(
+        PartyMember.party_id == party_id,
+        PartyMember.status.in_([MemberStatus.accepted, MemberStatus.invited]),
+    ).count()
+    if used_slots >= party.max_members:
+        raise HTTPException(status_code=400, detail="Все слоты в компании заняты")
+
+    existing = db.query(PartyMember).filter(
+        PartyMember.party_id == party_id,
+        PartyMember.user_id == body.user_id,
+    ).first()
+    if existing and existing.status in [MemberStatus.pending, MemberStatus.accepted, MemberStatus.invited]:
+        raise HTTPException(status_code=400, detail="Этот пользователь уже в компании или приглашён")
+
+    if existing:
+        existing.status = MemberStatus.invited
+        existing.invited_by_user_id = current_user.id
+        existing.invite_message = body.message
+        member = existing
+    else:
+        member = PartyMember(
+            party_id=party_id,
+            user_id=body.user_id,
+            status=MemberStatus.invited,
+            invited_by_user_id=current_user.id,
+            invite_message=body.message,
+        )
+        db.add(member)
+    db.flush()
+
+    notif = create_notification(
+        db, body.user_id, "party_invite_received",
+        "Вас приглашают в компанию",
+        f"{current_user.username} приглашает вас в «{party.title}»",
+        {"party_id": party.id, "invite_id": member.id},
+    )
+    db.commit()
+    push_helpers.send_push_to_user(
+        db, body.user_id,
+        "Вас приглашают в компанию",
+        f"{current_user.username} приглашает вас в «{party.title}»",
+        {"party_id": party.id, "invite_id": member.id, "type": "party_invite_received"},
+    )
+    db.commit()
+    await sio.emit("new_notification", {
+        "id": notif.id,
+        "type": notif.type,
+        "title": notif.title,
+        "body": notif.body,
+        "data": notif.data,
+        "is_read": False,
+        "created_at": notif.created_at.isoformat(),
+    }, room=f"user_{body.user_id}")
+    await sio.emit(
+        "party_invite_received",
+        {"party_id": party.id, "party_title": party.title,
+         "invite_id": member.id,
+         "creator_username": current_user.username,
+         "invite_message": body.message,
+         "notification_id": notif.id},
+        room=f"user_{body.user_id}",
+    )
+    return _build_party_out(party, db)
+
+
+@router.post("/parties/{party_id}/invites/{invite_id}/accept", response_model=PartyOut)
+async def accept_party_invite(
+    party_id: int,
+    invite_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user_from_token(token, db)
+    member = db.query(PartyMember).filter(
+        PartyMember.id == invite_id,
+        PartyMember.party_id == party_id,
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Приглашение не найдено")
+    if member.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Это не ваше приглашение")
+    if member.status != MemberStatus.invited:
+        raise HTTPException(status_code=400, detail="Приглашение уже обработано")
+
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+
+    member.status = MemberStatus.accepted
+    db.flush()
+    party_closed = _check_and_close_party(party, db)
+
+    notif = create_notification(
+        db, party.creator_id, "party_invite_response",
+        "Приглашение принято",
+        f"{user.username} принял приглашение в компанию «{party.title}»",
+        {"party_id": party.id, "status": "accepted", "invite_id": member.id},
+    )
+    db.commit()
+    push_helpers.send_push_to_user(
+        db, party.creator_id,
+        "Приглашение принято",
+        f"{user.username} принял приглашение в «{party.title}»",
+        {"party_id": party.id, "type": "party_invite_response", "status": "accepted"},
+    )
+    db.commit()
+    await sio.emit("new_notification", {
+        "id": notif.id,
+        "type": notif.type,
+        "title": notif.title,
+        "body": notif.body,
+        "data": notif.data,
+        "is_read": False,
+        "created_at": notif.created_at.isoformat(),
+    }, room=f"user_{party.creator_id}")
+    await sio.emit(
+        "party_invite_response",
+        {"status": "accepted", "party_id": party.id, "party_title": party.title,
+         "invite_id": member.id, "user_id": user.id, "username": user.username,
+         "notification_id": notif.id},
+        room=f"user_{party.creator_id}",
+    )
+    if party_closed:
+        await _notify_party_closed(party, db, exclude_user_ids={party.creator_id, user.id})
+    return _build_party_out(party, db)
+
+
+@router.post("/parties/{party_id}/invites/{invite_id}/decline", response_model=PartyOut)
+async def decline_party_invite(
+    party_id: int,
+    invite_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    user = get_current_user_from_token(token, db)
+    member = db.query(PartyMember).filter(
+        PartyMember.id == invite_id,
+        PartyMember.party_id == party_id,
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Приглашение не найдено")
+    if member.user_id != user.id:
+        raise HTTPException(status_code=403, detail="Это не ваше приглашение")
+    if member.status != MemberStatus.invited:
+        raise HTTPException(status_code=400, detail="Приглашение уже обработано")
+
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+
+    member.status = MemberStatus.declined
+
+    notif = create_notification(
+        db, party.creator_id, "party_invite_response",
+        "Приглашение отклонено",
+        f"{user.username} отклонил приглашение в компанию «{party.title}»",
+        {"party_id": party.id, "status": "declined", "invite_id": member.id},
+    )
+    db.commit()
+    push_helpers.send_push_to_user(
+        db, party.creator_id,
+        "Приглашение отклонено",
+        f"{user.username} отклонил приглашение в «{party.title}»",
+        {"party_id": party.id, "type": "party_invite_response", "status": "declined"},
+    )
+    db.commit()
+    await sio.emit("new_notification", {
+        "id": notif.id,
+        "type": notif.type,
+        "title": notif.title,
+        "body": notif.body,
+        "data": notif.data,
+        "is_read": False,
+        "created_at": notif.created_at.isoformat(),
+    }, room=f"user_{party.creator_id}")
+    await sio.emit(
+        "party_invite_response",
+        {"status": "declined", "party_id": party.id, "party_title": party.title,
+         "invite_id": member.id, "user_id": user.id, "username": user.username,
+         "notification_id": notif.id},
+        room=f"user_{party.creator_id}",
+    )
+    return _build_party_out(party, db)
+
+
+@router.delete("/parties/{party_id}/invites/{invite_id}", status_code=200)
+async def cancel_party_invite(
+    party_id: int,
+    invite_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    current_user = get_current_user_from_token(token, db)
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    if party.creator_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Только создатель может отменить приглашение")
+    member = db.query(PartyMember).filter(
+        PartyMember.id == invite_id,
+        PartyMember.party_id == party_id,
+    ).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Приглашение не найдено")
+    if member.status != MemberStatus.invited:
+        raise HTTPException(status_code=400, detail="Это не активное приглашение")
+
+    invitee_id = member.user_id
+    db.delete(member)
+    db.commit()
+
+    await sio.emit(
+        "party_invite_cancelled",
+        {"party_id": party.id, "invite_id": invite_id},
+        room=f"user_{invitee_id}",
+    )
+    return {"ok": True}
+
+
+def expire_pending_invites(db: Session) -> list[int]:
+    """Mark invited rows as declined when the event is within 24h. Returns expired row IDs.
+
+    Caller commits. Used by the background expiry loop and tests.
+    """
+    import time as _time
+    cutoff = int(_time.time()) + 24 * 3600
+    rows = (
+        db.query(PartyMember)
+        .join(EventParty, PartyMember.party_id == EventParty.id)
+        .filter(
+            PartyMember.status == MemberStatus.invited,
+            EventParty.event_date_ts.isnot(None),
+            EventParty.event_date_ts <= cutoff,
+        )
+        .all()
+    )
+    expired: list[int] = []
+    for m in rows:
+        m.status = MemberStatus.declined
+        expired.append(m.id)
+    return expired

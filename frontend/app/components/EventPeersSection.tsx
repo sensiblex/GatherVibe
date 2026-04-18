@@ -5,16 +5,21 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../lib/apiFetch';
 import { useAuth } from '../context/AuthContext';
+import { toast } from './Toast';
+import { sendInvite } from '../lib/partyInviteApi';
 import type { SimilarPerson } from '../hooks/useSimilarPeople';
 
 interface Props {
   eventId: string;
+  creatorPartyId?: number;
 }
 
-export default function EventPeersSection({ eventId }: Props) {
+export default function EventPeersSection({ eventId, creatorPartyId }: Props) {
   const { user, isLoading: authLoading } = useAuth();
   const [peers, setPeers] = useState<SimilarPerson[]>([]);
   const [loading, setLoading] = useState(true);
+  const [invitedIds, setInvitedIds] = useState<Set<number>>(new Set());
+  const [pendingId, setPendingId] = useState<number | null>(null);
 
   useEffect(() => {
     if (authLoading || !user) {
@@ -39,6 +44,27 @@ export default function EventPeersSection({ eventId }: Props) {
     };
   }, [eventId, user, authLoading]);
 
+  async function handleInvite(e: React.MouseEvent, userId: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!creatorPartyId || invitedIds.has(userId) || pendingId === userId) return;
+    setPendingId(userId);
+    try {
+      const res = await sendInvite(creatorPartyId, userId);
+      if (res.ok) {
+        setInvitedIds((prev) => new Set(prev).add(userId));
+        toast('Приглашение отправлено', 'success');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast(data.detail || 'Не удалось отправить приглашение', 'error');
+      }
+    } catch {
+      toast('Ошибка сети', 'error');
+    } finally {
+      setPendingId(null);
+    }
+  }
+
   if (authLoading || !user) return null;
   if (!loading && peers.length === 0) return null;
 
@@ -59,54 +85,74 @@ export default function EventPeersSection({ eventId }: Props) {
         </div>
       ) : (
         <div className="flex gap-3 overflow-x-auto pb-2">
-          {peers.map((p) => (
-            <Link
-              key={p.user_id}
-              href={`/users/${p.user_id}`}
-              className="flex-shrink-0 w-[220px] rounded-xl p-3 transition hover:-translate-y-0.5"
-              style={{
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                boxShadow: 'var(--shadow-sm)',
-              }}
-            >
-              <div className="flex items-center gap-2 mb-2">
-                <div
-                  className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center font-bold"
-                  style={{
-                    background: 'var(--primary-hl)',
-                    color: 'var(--primary)',
-                  }}
-                >
-                  {p.avatar_url ? (
-                    <Image
-                      src={p.avatar_url}
-                      alt={p.username}
-                      width={40}
-                      height={40}
-                      className="object-cover w-full h-full"
-                      unoptimized
-                    />
-                  ) : (
-                    p.username.slice(0, 1).toUpperCase()
+          {peers.map((p) => {
+            const invited = invitedIds.has(p.user_id);
+            const pending = pendingId === p.user_id;
+            return (
+              <div
+                key={p.user_id}
+                className="flex-shrink-0 w-[220px] rounded-xl p-3 transition"
+                style={{
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  boxShadow: 'var(--shadow-sm)',
+                }}
+              >
+                <Link href={`/users/${p.user_id}`} className="block hover:-translate-y-0.5 transition">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div
+                      className="w-10 h-10 rounded-full overflow-hidden flex items-center justify-center font-bold"
+                      style={{
+                        background: 'var(--primary-hl)',
+                        color: 'var(--primary)',
+                      }}
+                    >
+                      {p.avatar_url ? (
+                        <Image
+                          src={p.avatar_url}
+                          alt={p.username}
+                          width={40}
+                          height={40}
+                          className="object-cover w-full h-full"
+                          unoptimized
+                        />
+                      ) : (
+                        p.username.slice(0, 1).toUpperCase()
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold truncate text-sm" style={{ color: 'var(--text)' }}>
+                        {p.username}
+                      </p>
+                      <p className="text-xs" style={{ color: 'var(--primary)' }}>
+                        {p.match_score}% совпадение
+                      </p>
+                    </div>
+                  </div>
+                  {p.match_reasons.length > 0 && (
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      {p.match_reasons[0]}
+                    </p>
                   )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold truncate text-sm" style={{ color: 'var(--text)' }}>
-                    {p.username}
-                  </p>
-                  <p className="text-xs" style={{ color: 'var(--primary)' }}>
-                    {p.match_score}% совпадение
-                  </p>
-                </div>
+                </Link>
+                {creatorPartyId && (
+                  <button
+                    onClick={(e) => handleInvite(e, p.user_id)}
+                    disabled={invited || pending}
+                    className="mt-2 w-full text-xs font-semibold py-1.5 rounded-lg transition"
+                    style={{
+                      background: invited ? 'var(--surface-2)' : 'var(--primary-hl)',
+                      color: invited ? 'var(--text-muted)' : 'var(--primary)',
+                      cursor: invited || pending ? 'default' : 'pointer',
+                      opacity: pending ? 0.6 : 1,
+                    }}
+                  >
+                    {invited ? '✓ Приглашение отправлено' : pending ? '...' : '+ Пригласить'}
+                  </button>
+                )}
               </div>
-              {p.match_reasons.length > 0 && (
-                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  {p.match_reasons[0]}
-                </p>
-              )}
-            </Link>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>

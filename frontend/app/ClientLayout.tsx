@@ -6,6 +6,7 @@ import { Socket } from 'socket.io-client';
 import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/AuthContext';
 import { NotificationsProvider, useNotifications, NotificationItem } from './context/NotificationsContext';
+import { InvitesProvider, useInvites } from './context/InvitesContext';
 import { ToastContainer, toast } from './components/Toast';
 import { getSocket, connectSocket, disconnectSocket } from './lib/socket';
 
@@ -14,10 +15,16 @@ const toastTypeMap: Record<string, 'success' | 'error' | 'info'> = {
   kicked_from_party: 'error',
   new_party_request: 'info',
   party_closed: 'info',
+  party_invite_received: 'info',
+  party_invite_response: 'success',
+  party_deleted_for_user: 'error',
 };
 
 function getToastType(notifType: string, notifTitle: string): 'success' | 'error' | 'info' {
   if (notifType === 'request_status_changed' && notifTitle.toLowerCase().includes('отклон')) {
+    return 'error';
+  }
+  if (notifType === 'party_invite_response' && notifTitle.toLowerCase().includes('отклон')) {
     return 'error';
   }
   return toastTypeMap[notifType] ?? 'info';
@@ -62,16 +69,19 @@ function UserNotificationSocket() {
       const partyId = parsedData.party_id as number | undefined;
       const toastType = getToastType(data.type, data.title);
 
+      // party_deleted_for_user has no valid destination anymore
+      const linkable = partyId && data.type !== 'party_deleted_for_user';
+
       toast(
         data.title,
         toastType,
-        partyId
+        linkable
           ? { label: 'Смотреть', onClick: () => routerRef.current.push(`/parties/${partyId}`) }
           : undefined,
       );
 
-      // Редирект при кике, если пользователь находится на странице этой пати
-      if (data.type === 'kicked_from_party' && partyId) {
+      // Редирект при кике или удалении party, если пользователь находится на странице этой пати
+      if ((data.type === 'kicked_from_party' || data.type === 'party_deleted_for_user') && partyId) {
         if (pathnameRef.current === `/parties/${partyId}`) {
           routerRef.current.push('/my-events');
         }
@@ -90,10 +100,24 @@ function UserNotificationSocket() {
   return null;
 }
 
+function TitleUpdater() {
+  const { unreadCount } = useNotifications();
+  const { count: inviteCount } = useInvites();
+
+  useEffect(() => {
+    const total = unreadCount + inviteCount;
+    const base = 'GatherVibe';
+    document.title = total > 0 ? `(${total}) ${base}` : base;
+  }, [unreadCount, inviteCount]);
+
+  return null;
+}
+
 function InnerLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
       <UserNotificationSocket />
+      <TitleUpdater />
       {children}
       <ToastContainer />
     </>
@@ -104,7 +128,9 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   return (
     <AuthProvider>
       <NotificationsProvider>
-        <InnerLayout>{children}</InnerLayout>
+        <InvitesProvider>
+          <InnerLayout>{children}</InnerLayout>
+        </InvitesProvider>
       </NotificationsProvider>
     </AuthProvider>
   );
