@@ -473,8 +473,13 @@ export default function PartyDetailPage() {
   const acceptedCount = party.members.filter(m => m.status === 'accepted').length;
   const pendingCount = party.members.filter(m => m.status === 'pending').length;
   const isFull = acceptedCount + 1 >= party.max_members;
-  const canJoin = !!token && !isCreator && !myMembership && party.is_open && !isFull;
-  const canLeave = !!token && !isCreator && myMembership?.status === 'accepted';
+  // Event ended: 2h after start. After that point, coordination tools are hidden,
+  // and the party becomes a "memories mode" — only chat and recap remain.
+  const ACTIVE_GRACE_SECONDS = 2 * 3600;
+  const eventEnded = party.event_date_ts !== null && party.event_date_ts !== undefined
+    && (Date.now() / 1000) > (party.event_date_ts + ACTIVE_GRACE_SECONDS);
+  const canJoin = !!token && !isCreator && !myMembership && party.is_open && !isFull && !eventEnded;
+  const canLeave = !!token && !isCreator && myMembership?.status === 'accepted' && !eventEnded;
 
   const statusBadgeStyle = (status: string): React.CSSProperties => ({
     pending:  { background: 'var(--warning-hl)',  color: 'var(--warning)',  border: '1px solid color-mix(in oklch, var(--warning) 30%, transparent)' },
@@ -511,11 +516,17 @@ export default function PartyDetailPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h1 className="text-2xl font-black" style={{ color: 'var(--text)' }}>{party.title}</h1>
-                    {!party.is_open && (
+                    {eventEnded && (
+                      <span className="text-sm px-3 py-1 rounded-full font-semibold"
+                        style={{ background: 'var(--primary-hl)', color: 'var(--primary)', border: '1px solid color-mix(in oklch, var(--primary) 30%, transparent)' }}>
+                        🎬 Событие завершено
+                      </span>
+                    )}
+                    {!eventEnded && !party.is_open && (
                       <span className="text-sm px-3 py-1 rounded-full"
                         style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>🔒 Набор закрыт</span>
                     )}
-                    {isFull && party.is_open && (
+                    {!eventEnded && isFull && party.is_open && (
                       <span className="text-sm px-3 py-1 rounded-full"
                         style={{ background: 'var(--warning-hl)', color: 'var(--warning)' }}>👥 Заполнена</span>
                     )}
@@ -529,7 +540,7 @@ export default function PartyDetailPage() {
                     {' · '}Создана {new Date(party.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
                   </p>
                 </div>
-                {isCreator && (
+                {isCreator && !eventEnded && (
                   <button onClick={() => setShowEdit(true)}
                     className="shrink-0 text-sm px-3 py-1.5 rounded-xl transition hover:opacity-80"
                     style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
@@ -543,7 +554,7 @@ export default function PartyDetailPage() {
             <div className="rounded-2xl p-6" style={cardStyle}>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-bold" style={{ color: 'var(--text)' }}>Участники</h2>
-                {pendingCount > 0 && isCreator && (
+                {pendingCount > 0 && isCreator && !eventEnded && (
                   <span className="text-xs px-2 py-1 rounded-full font-semibold"
                     style={{ background: 'var(--warning-hl)', color: 'var(--warning)', border: '1px solid color-mix(in oklch, var(--warning) 30%, transparent)' }}>
                     ⏳ {pendingCount} ожидают
@@ -587,7 +598,7 @@ export default function PartyDetailPage() {
                       <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={statusBadgeStyle(member.status)}>
                         {statusLabel(member.status)}
                       </span>
-                      {isCreator && member.status === 'pending' && (
+                      {isCreator && !eventEnded && member.status === 'pending' && (
                         <div className="flex gap-1 ml-1">
                           <button onClick={() => handleDecision(member.user_id, 'accept')} disabled={actionLoading}
                             className="text-xs px-2 py-1 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition disabled:opacity-50" title="Принять">✓</button>
@@ -595,7 +606,7 @@ export default function PartyDetailPage() {
                             className="text-xs px-2 py-1 bg-red-400 text-white rounded-lg hover:bg-red-500 transition disabled:opacity-50" title="Отклонить">✗</button>
                         </div>
                       )}
-                      {isCreator && member.status === 'accepted' && (
+                      {isCreator && !eventEnded && member.status === 'accepted' && (
                         <button onClick={() => setKickTarget(member)} disabled={actionLoading}
                           className="ml-1 text-xs px-2 py-1 rounded-lg transition disabled:opacity-50 hover:opacity-80"
                           style={{ background: 'var(--error-hl)', color: 'var(--error)', border: '1px solid color-mix(in oklch, var(--error) 30%, transparent)' }}
@@ -619,8 +630,27 @@ export default function PartyDetailPage() {
               </div>
             </div>
 
-            {/* Coordination layer */}
-            {isAcceptedMember && user && (
+            {/* Event-ended banner */}
+            {eventEnded && isAcceptedMember && (
+              <div
+                className="rounded-2xl p-5 flex items-center gap-3"
+                style={{
+                  background: 'color-mix(in oklch, var(--primary) 10%, var(--surface))',
+                  border: '1px solid color-mix(in oklch, var(--primary) 35%, transparent)',
+                  boxShadow: 'var(--shadow-sm)',
+                }}>
+                <span className="text-3xl">🎬</span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold" style={{ color: 'var(--primary)' }}>Событие завершено</p>
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                    Координация больше не нужна — теперь делитесь фото и впечатлениями в воспоминаниях ниже.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Coordination layer — hidden after the event ends */}
+            {isAcceptedMember && user && !eventEnded && (
               <div className="space-y-4">
                 <PartyMeetingPlan
                   partyId={party.id}
@@ -692,15 +722,20 @@ export default function PartyDetailPage() {
                   {actionLoading ? '...' : '🚪 Покинуть компанию'}
                 </button>
               )}
-              {isCreator && party.is_open && (
+              {isCreator && party.is_open && !eventEnded && (
                 <button onClick={handleClose} disabled={actionLoading}
                   className="w-full text-sm py-2.5 rounded-xl transition disabled:opacity-60 hover:opacity-80"
                   style={{ color: 'var(--text-muted)', border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
                   🔒 Закрыть набор
                 </button>
               )}
-              {myMembership?.status === 'pending' && (
+              {myMembership?.status === 'pending' && !eventEnded && (
                 <p className="text-xs text-center" style={{ color: 'var(--warning)' }}>⏳ Ваша заявка рассматривается</p>
+              )}
+              {eventEnded && (
+                <p className="text-xs text-center" style={{ color: 'var(--text-faint)' }}>
+                  🎬 Событие завершено — управление компанией закрыто
+                </p>
               )}
               {!token && (
                 <Link href="/login"
@@ -714,20 +749,30 @@ export default function PartyDetailPage() {
             {/* Info */}
             <div className="rounded-2xl p-6 space-y-3" style={cardStyle}>
               <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Информация</h3>
-              <div className="flex items-center justify-between text-sm">
-                <span style={{ color: 'var(--text-muted)' }}>Статус набора</span>
-                <span className="font-semibold" style={{ color: party.is_open ? 'var(--success)' : 'var(--text-faint)' }}>
-                  {party.is_open ? '🟢 Открыт' : '🔒 Закрыт'}
-                </span>
-              </div>
+              {!eventEnded && (
+                <div className="flex items-center justify-between text-sm">
+                  <span style={{ color: 'var(--text-muted)' }}>Статус набора</span>
+                  <span className="font-semibold" style={{ color: party.is_open ? 'var(--success)' : 'var(--text-faint)' }}>
+                    {party.is_open ? '🟢 Открыт' : '🔒 Закрыт'}
+                  </span>
+                </div>
+              )}
+              {eventEnded && (
+                <div className="flex items-center justify-between text-sm">
+                  <span style={{ color: 'var(--text-muted)' }}>Статус</span>
+                  <span className="font-semibold" style={{ color: 'var(--primary)' }}>🎬 Завершено</span>
+                </div>
+              )}
               <div className="flex items-center justify-between text-sm" style={{ borderTop: '1px solid var(--divider)', paddingTop: '0.75rem' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Участников</span>
                 <span className="font-semibold" style={{ color: 'var(--text)' }}>{acceptedCount + 1} / {party.max_members}</span>
               </div>
-              <div className="flex items-center justify-between text-sm" style={{ borderTop: '1px solid var(--divider)', paddingTop: '0.75rem' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Заявок</span>
-                <span className="font-semibold" style={{ color: 'var(--warning)' }}>{pendingCount}</span>
-              </div>
+              {!eventEnded && (
+                <div className="flex items-center justify-between text-sm" style={{ borderTop: '1px solid var(--divider)', paddingTop: '0.75rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Заявок</span>
+                  <span className="font-semibold" style={{ color: 'var(--warning)' }}>{pendingCount}</span>
+                </div>
+              )}
             </div>
 
             {/* Back to event */}
