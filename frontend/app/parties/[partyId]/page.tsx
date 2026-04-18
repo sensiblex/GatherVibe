@@ -10,6 +10,7 @@ import PinnedBlock from '../../components/PartyCoordination/PinnedBlock';
 import AttendanceBar from '../../components/PartyCoordination/AttendanceBar';
 import ActivePoll from '../../components/PartyCoordination/ActivePoll';
 import PartyMeetingPlan from '../../components/PartyMeetingPlan';
+import PartyRecapTab from '../../components/PartyRecapTab';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from '../../components/Toast';
 import { apiFetch } from '../../lib/apiFetch';
@@ -665,6 +666,11 @@ export default function PartyDetailPage() {
                   <PartyChat partyId={party.id} currentUserId={myId} currentUsername={myUsername} isAcceptedMember={true} />
                 )}
               </div>
+            )}
+
+            {/* Recap (memories) */}
+            {isAcceptedMember && (
+              <PartyRecapTab partyId={party.id} isCreator={isCreator} myUserId={myId} />
             )}
           </div>
 

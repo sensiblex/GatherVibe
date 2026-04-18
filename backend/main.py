@@ -23,6 +23,7 @@ import models.kudago_event
 import models.party_coordination
 import models.push_subscription
 import models.message_reaction
+import models.party_recap
 
 models.user.Base.metadata.create_all(bind=engine)
 models.event.Base.metadata.create_all(bind=engine)
@@ -33,6 +34,7 @@ models.review.Base.metadata.create_all(bind=engine)
 models.party_coordination.Base.metadata.create_all(bind=engine)
 models.push_subscription.Base.metadata.create_all(bind=engine)
 models.message_reaction.Base.metadata.create_all(bind=engine)
+models.party_recap.Base.metadata.create_all(bind=engine)
 
 
 def _run_column_migrations():
@@ -221,6 +223,10 @@ async def _reminder_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import os as _os_lifespan
+    if _os_lifespan.environ.get("SKIP_BACKGROUND_LOOPS") == "1":
+        yield
+        return
     loop = asyncio.get_event_loop()
     if not kudago_cache.location_has_cache_direct("kzn"):
         print("[KudaGo] Cache empty — syncing kzn on startup...", flush=True)
@@ -265,12 +271,14 @@ app.add_middleware(
 from routers import auth, users, events, parties, reviews, notifications, party_coordination  # noqa: E402
 from routers.party_plan import router as party_plan_router  # noqa: E402
 from routers.recommendations import router as recommendations_router  # noqa: E402
+from routers.party_recap import router as party_recap_router  # noqa: E402
 
 # Order matters: specific /users/me/* routes before wildcard /users/{user_id}
 app.include_router(auth.router)
 app.include_router(parties.router)          # has /users/me/parties — must precede users
 app.include_router(party_coordination.router)
 app.include_router(party_plan_router)
+app.include_router(party_recap_router)
 app.include_router(reviews.router)          # has /users/me/reviewable — must precede users
 app.include_router(recommendations_router)  # has /users/me/recommended-parties — must precede users
 app.include_router(users.router)            # has /users/{user_id} — must be last of users/*
