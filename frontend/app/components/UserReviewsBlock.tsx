@@ -23,6 +23,8 @@ interface ReviewSummary {
   reviews: ReviewOut[];
   stars_distribution: Record<number, number>;
   top_tags: string[];
+  top_positive_tags?: string[];
+  top_negative_tags?: string[];
 }
 
 interface UserReviewsBlockProps {
@@ -167,8 +169,38 @@ export default function UserReviewsBlock({
             </div>
           </div>
 
-          {/* ── Top tags ── */}
-          {summary.top_tags.length > 0 && (
+          {/* ── Top tags (split by polarity) ── */}
+          {(summary.top_positive_tags && summary.top_positive_tags.length > 0) && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {summary.top_positive_tags.slice(0, 5).map(tag => (
+                <span
+                  key={tag}
+                  className="text-xs px-2.5 py-1 rounded-full font-medium"
+                  style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+          {(summary.top_negative_tags && summary.top_negative_tags.length > 0) && (
+            <div className="flex flex-wrap gap-1.5 mb-5">
+              {summary.top_negative_tags.slice(0, 5).map(tag => (
+                <span
+                  key={tag}
+                  className="text-xs px-2.5 py-1 rounded-full font-medium"
+                  style={{
+                    background: 'color-mix(in oklch, #ef4444 12%, transparent)',
+                    color: '#ef4444',
+                  }}
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+          {/* Fallback: old clients that don't yet split */}
+          {(!summary.top_positive_tags && !summary.top_negative_tags && summary.top_tags.length > 0) && (
             <div className="flex flex-wrap gap-1.5 mb-5">
               {summary.top_tags.slice(0, 5).map(tag => (
                 <span

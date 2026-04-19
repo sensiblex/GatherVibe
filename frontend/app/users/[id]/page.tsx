@@ -38,6 +38,8 @@ interface ReviewSummary {
   reviews: ReviewOut[];
   stars_distribution: Record<number, number>;
   top_tags: string[];
+  top_positive_tags?: string[];
+  top_negative_tags?: string[];
 }
 
 function parseInterests(raw: string | null): string[] {
@@ -364,8 +366,39 @@ export default function UserProfilePage() {
                     </div>
                   </div>
 
-                  {/* Top tags */}
-                  {reviewSummary.top_tags.length > 0 && (
+                  {/* Top tags — positive */}
+                  {reviewSummary.top_positive_tags && reviewSummary.top_positive_tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-2">
+                      {reviewSummary.top_positive_tags.map(tag => (
+                        <span
+                          key={tag}
+                          className="text-xs px-2.5 py-1 rounded-full font-medium"
+                          style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {/* Top tags — negative */}
+                  {reviewSummary.top_negative_tags && reviewSummary.top_negative_tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mb-5">
+                      {reviewSummary.top_negative_tags.map(tag => (
+                        <span
+                          key={tag}
+                          className="text-xs px-2.5 py-1 rounded-full font-medium"
+                          style={{
+                            background: 'color-mix(in oklch, #ef4444 12%, transparent)',
+                            color: '#ef4444',
+                          }}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {/* Fallback when server hasn't split yet */}
+                  {!reviewSummary.top_positive_tags && !reviewSummary.top_negative_tags && reviewSummary.top_tags.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mb-5">
                       {reviewSummary.top_tags.map(tag => (
                         <span

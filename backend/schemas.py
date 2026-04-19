@@ -90,7 +90,7 @@ class UserUpdate(BaseModel):
     )(_sanitize_optional)
 
 
-ALLOWED_REVIEW_TAGS: List[str] = [
+POSITIVE_REVIEW_TAGS: List[str] = [
     "Пунктуальный",
     "Общительный",
     "Весёлый",
@@ -100,6 +100,17 @@ ALLOWED_REVIEW_TAGS: List[str] = [
     "Помогает другим",
     "Позитивный",
 ]
+
+NEGATIVE_REVIEW_TAGS: List[str] = [
+    "Опоздал",
+    "Не пришёл",
+    "Грубый",
+    "Недружелюбный",
+    "Ненадёжный",
+    "Скучный",
+]
+
+ALLOWED_REVIEW_TAGS: List[str] = POSITIVE_REVIEW_TAGS + NEGATIVE_REVIEW_TAGS
 
 
 class ReviewCreate(BaseModel):
@@ -140,7 +151,9 @@ class ReviewSummary(BaseModel):
     total_reviews: int
     reviews: List[ReviewOut]
     stars_distribution: Dict[int, int]  # {1: count, 2: count, ...}
-    top_tags: List[str]                  # up to 5 most frequent tags
+    top_tags: List[str]                  # up to 5 most frequent tags (mixed polarity)
+    top_positive_tags: List[str] = []    # up to 5 most frequent positive tags
+    top_negative_tags: List[str] = []    # up to 5 most frequent negative tags
     page: int = 1
     per_page: int = 10
     total_pages: int = 1

@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { apiFetch } from '../lib/apiFetch';
 import { toast } from './Toast';
 
-const ALLOWED_TAGS = [
+const POSITIVE_TAGS = [
   'Пунктуальный',
   'Общительный',
   'Весёлый',
@@ -13,6 +13,15 @@ const ALLOWED_TAGS = [
   'Интересный собеседник',
   'Помогает другим',
   'Позитивный',
+];
+
+const NEGATIVE_TAGS = [
+  'Опоздал',
+  'Не пришёл',
+  'Грубый',
+  'Недружелюбный',
+  'Ненадёжный',
+  'Скучный',
 ];
 
 export interface ReviewableUser {
@@ -425,8 +434,11 @@ function FormStep({
           Теги{' '}
           <span className="font-normal opacity-60">(до 3)</span>
         </p>
-        <div className="flex flex-wrap gap-1.5">
-          {ALLOWED_TAGS.map(tag => {
+        <p className="text-[11px] mb-1.5 opacity-70" style={{ color: 'var(--text-muted)' }}>
+          Положительные
+        </p>
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {POSITIVE_TAGS.map(tag => {
             const active = tags.includes(tag);
             const disabled = !active && tags.length >= 3;
             return (
@@ -439,6 +451,32 @@ function FormStep({
                   background: active ? 'var(--primary)' : 'var(--surface-2)',
                   color: active ? '#fff' : 'var(--text-muted)',
                   border: `1px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
+                  opacity: disabled ? 0.45 : 1,
+                  cursor: disabled ? 'default' : 'pointer',
+                }}
+              >
+                {tag}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[11px] mb-1.5 opacity-70" style={{ color: 'var(--text-muted)' }}>
+          Негативные
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {NEGATIVE_TAGS.map(tag => {
+            const active = tags.includes(tag);
+            const disabled = !active && tags.length >= 3;
+            return (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => !disabled && onTagToggle(tag)}
+                className="text-xs px-2.5 py-1 rounded-full font-medium transition"
+                style={{
+                  background: active ? '#ef4444' : 'var(--surface-2)',
+                  color: active ? '#fff' : 'var(--text-muted)',
+                  border: `1px solid ${active ? '#ef4444' : 'var(--border)'}`,
                   opacity: disabled ? 0.45 : 1,
                   cursor: disabled ? 'default' : 'pointer',
                 }}

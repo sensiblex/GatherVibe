@@ -1,17 +1,32 @@
 import math
+from collections import Counter
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func, case
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime
 
 from deps import get_db, get_current_user_from_token, oauth2_scheme
-from schemas import ReviewCreate, ReviewOut, ReviewReport, ReviewSummary, ReviewUpdate, ReviewableUser, ALLOWED_REVIEW_TAGS
+from schemas import (
+    ReviewCreate,
+    ReviewOut,
+    ReviewReport,
+    ReviewSummary,
+    ReviewUpdate,
+    ReviewableUser,
+    ALLOWED_REVIEW_TAGS,
+    POSITIVE_REVIEW_TAGS,
+    NEGATIVE_REVIEW_TAGS,
+)
 from models.user import User
 from models.attendee import EventAttendee
 from models.party import EventParty, PartyMember
 from models.review import PartyReview, ReviewReport as ReviewReportModel
 import kudago_api
+
+_POSITIVE_SET = set(POSITIVE_REVIEW_TAGS)
+_NEGATIVE_SET = set(NEGATIVE_REVIEW_TAGS)
 
 router = APIRouter(tags=["reviews"])
 
@@ -267,33 +282,70 @@ def get_user_reviews(
     per_page = min(per_page, 50)
     page = max(page, 1)
 
-    base_query = db.query(PartyReview).filter(
-        PartyReview.reviewed_id == user_id,
-        PartyReview.is_hidden == False,  # noqa: E712
-        PartyReview.is_deleted == False,  # noqa: E712
+    visible = (
+        (PartyReview.reviewed_id == user_id)
+        & (PartyReview.is_hidden == False)  # noqa: E712
+        & (PartyReview.is_deleted == False)  # noqa: E712
     )
 
-    all_rows = base_query.order_by(PartyReview.created_at.desc()).all()
-    total = len(all_rows)
-    total_pages = math.ceil(total / per_page) if total > 0 else 1
-
-    avg = round(sum(r.rating for r in all_rows) / total, 2) if total > 0 else None
+    # Aggregates in SQL: one roundtrip for avg+count and one for distribution.
+    agg = db.query(
+        func.count(PartyReview.id),
+        func.avg(PartyReview.rating),
+    ).filter(visible).one()
+    total = int(agg[0] or 0)
+    avg = round(float(agg[1]), 2) if total > 0 and agg[1] is not None else None
 
     dist: dict[int, int] = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
-    for r in all_rows:
-        dist[r.rating] = dist.get(r.rating, 0) + 1
+    if total > 0:
+        dist_rows = (
+            db.query(PartyReview.rating, func.count(PartyReview.id))
+            .filter(visible)
+            .group_by(PartyReview.rating)
+            .all()
+        )
+        for rating, cnt in dist_rows:
+            if rating in dist:
+                dist[rating] = int(cnt)
 
-    tag_counts: dict[str, int] = {}
-    for r in all_rows:
-        for tag in (r.tags or []):
-            tag_counts[tag] = tag_counts.get(tag, 0) + 1
-    top_tags = [t for t, _ in sorted(tag_counts.items(), key=lambda x: -x[1])[:5]]
+    total_pages = math.ceil(total / per_page) if total > 0 else 1
 
+    # Page slice via SQL offset/limit — not in memory.
     offset = (page - 1) * per_page
-    page_rows = all_rows[offset: offset + per_page]
+    page_rows = (
+        db.query(PartyReview)
+        .filter(visible)
+        .order_by(PartyReview.created_at.desc(), PartyReview.id.desc())
+        .offset(offset)
+        .limit(per_page)
+        .all()
+    )
+
+    # Tag aggregation: JSON column rules out pure-SQL counting portably,
+    # so stream only the `tags` column for visible reviews.
+    top_tags: list[str] = []
+    top_positive_tags: list[str] = []
+    top_negative_tags: list[str] = []
+    if total > 0:
+        tag_rows = db.query(PartyReview.tags).filter(visible).all()
+        counter: Counter[str] = Counter()
+        for (tags_val,) in tag_rows:
+            if tags_val:
+                counter.update(tags_val)
+        top_tags = [t for t, _ in counter.most_common(5)]
+        top_positive_tags = [
+            t for t, _ in counter.most_common() if t in _POSITIVE_SET
+        ][:5]
+        top_negative_tags = [
+            t for t, _ in counter.most_common() if t in _NEGATIVE_SET
+        ][:5]
 
     reviewer_ids = {r.reviewer_id for r in page_rows}
-    reviewers = {u.id: u for u in db.query(User).filter(User.id.in_(reviewer_ids)).all()}
+    reviewers = (
+        {u.id: u for u in db.query(User).filter(User.id.in_(reviewer_ids)).all()}
+        if reviewer_ids
+        else {}
+    )
 
     page_reviews = [
         ReviewOut(
@@ -315,6 +367,8 @@ def get_user_reviews(
         reviews=page_reviews,
         stars_distribution=dist,
         top_tags=top_tags,
+        top_positive_tags=top_positive_tags,
+        top_negative_tags=top_negative_tags,
         page=page,
         per_page=per_page,
         total_pages=total_pages,
