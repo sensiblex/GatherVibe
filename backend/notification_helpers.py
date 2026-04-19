@@ -1,6 +1,12 @@
 import json
+import logging
+
 from sqlalchemy.orm import Session
+
 from models.notification import Notification
+from push_helpers import send_push_to_user
+
+logger = logging.getLogger(__name__)
 
 
 def create_notification(
@@ -11,7 +17,12 @@ def create_notification(
     body: str | None = None,
     data: dict | None = None,
 ) -> Notification:
-    """Create and flush a notification (caller must db.commit())."""
+    """Create and flush a notification (caller must db.commit()).
+
+    Also dispatches a Web Push to every subscription the user has. Push
+    is best-effort — upstream failures never break in-app notification
+    creation.
+    """
     n = Notification(
         user_id=user_id,
         type=type,
@@ -22,6 +33,12 @@ def create_notification(
     )
     db.add(n)
     db.flush()  # populate n.id before commit
+
+    try:
+        send_push_to_user(db, user_id, title, body or "", data)
+    except Exception as exc:
+        logger.warning("send_push_to_user failed for user_id=%s: %s", user_id, exc)
+
     return n
 
 

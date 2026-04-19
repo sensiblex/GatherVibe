@@ -9,6 +9,7 @@ import { NotificationsProvider, useNotifications, NotificationItem } from './con
 import { InvitesProvider, useInvites } from './context/InvitesContext';
 import { ToastContainer, toast } from './components/Toast';
 import { getSocket, connectSocket, disconnectSocket } from './lib/socket';
+import { registerServiceWorker, refreshSubscription } from './lib/push';
 
 const toastTypeMap: Record<string, 'success' | 'error' | 'info'> = {
   request_status_changed: 'success',
@@ -100,6 +101,18 @@ function UserNotificationSocket() {
   return null;
 }
 
+function ServiceWorkerBootstrap() {
+  const { token } = useAuth();
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
+  useEffect(() => {
+    if (!token) return;
+    refreshSubscription();
+  }, [token]);
+  return null;
+}
+
 function TitleUpdater() {
   const { unreadCount } = useNotifications();
   const { count: inviteCount } = useInvites();
@@ -116,6 +129,7 @@ function TitleUpdater() {
 function InnerLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
+      <ServiceWorkerBootstrap />
       <UserNotificationSocket />
       <TitleUpdater />
       {children}

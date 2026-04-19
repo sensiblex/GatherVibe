@@ -11,6 +11,7 @@ import AttendanceBar from '../../components/PartyCoordination/AttendanceBar';
 import ActivePoll from '../../components/PartyCoordination/ActivePoll';
 import PartyMeetingPlan from '../../components/PartyMeetingPlan';
 import PartyRecapTab from '../../components/PartyRecapTab';
+import PushPermissionPrompt from '../../components/PushPermissionPrompt';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from '../../components/Toast';
 import { apiFetch } from '../../lib/apiFetch';
@@ -346,6 +347,7 @@ export default function PartyDetailPage() {
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [kickTarget, setKickTarget] = useState<PartyMember | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [justAccepted, setJustAccepted] = useState(false);
   const prevPartyRef = useRef<Party | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const selfLeftRef = useRef(false);
@@ -361,7 +363,10 @@ export default function PartyDetailPage() {
           const uid: number = payload.id ?? payload.user_id;
           const oldMe = prevPartyRef.current.members.find(m => m.user_id === uid);
           const newMe = data.members.find(m => m.user_id === uid);
-          if (oldMe?.status === 'pending' && newMe?.status === 'accepted') toast('🎉 Вас приняли в компанию!', 'success');
+          if (oldMe?.status === 'pending' && newMe?.status === 'accepted') {
+            toast('🎉 Вас приняли в компанию!', 'success');
+            setJustAccepted(true);
+          }
           if (oldMe?.status === 'pending' && !newMe) toast('Ваша заявка отклонена', 'error');
           if (oldMe?.status === 'accepted' && !newMe && !selfLeftRef.current) {
             toast('Вы были исключены из компании', 'error');
@@ -547,6 +552,8 @@ export default function PartyDetailPage() {
           <span>/</span>
           <span className="line-clamp-1 max-w-xs" style={{ color: 'var(--text)' }}>{party.title}</span>
         </nav>
+
+        <PushPermissionPrompt trigger={justAccepted} />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* LEFT */}

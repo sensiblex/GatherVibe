@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '../components/Navbar';
 import PartyInvitesInbox from '../components/PartyInvitesInbox';
+import PushPermissionPrompt from '../components/PushPermissionPrompt';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationsContext';
 import { usePushNotifications } from '../hooks/usePushNotifications';
@@ -332,6 +333,9 @@ export default function NotificationsPage() {
             </button>
           )}
         </div>
+
+        {/* ── Push permission prompt (only shows when default + not dismissed) ── */}
+        <PushPermissionPrompt />
 
         {/* ── Party invites inbox ── */}
         <PartyInvitesInbox />

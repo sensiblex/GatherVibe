@@ -6,6 +6,8 @@ import ClientLayout from './ClientLayout';
 export const metadata: Metadata = {
   title: 'GatherVibe',
   description: 'Найди компанию для похода на мероприятия',
+  manifest: '/manifest.webmanifest',
+  themeColor: '#610bef',
 };
 
 export default function RootLayout({

@@ -4,6 +4,7 @@ import logging
 import os
 from urllib.parse import urlparse
 
+from py_vapid import Vapid
 from pywebpush import webpush, WebPushException
 from sqlalchemy.orm import Session
 
@@ -13,25 +14,54 @@ logger = logging.getLogger(__name__)
 
 VAPID_CLAIMS_EMAIL = os.getenv("VAPID_CLAIMS_EMAIL", "webpush@gathervibe.ru")
 
+_vapid_instance: Vapid | None = None
+_vapid_load_error: Exception | None = None
 
-def _get_vapid_private_key() -> str:
-    """Return VAPID private key as PEM string.
 
-    The env var stores the PEM base64-encoded (to survive .env line limits).
-    Falls back to treating the raw value as a PEM string or base64url key.
+def _get_vapid() -> Vapid | None:
+    """Build (and cache) a py_vapid.Vapid instance from the configured env var.
+
+    Accepts any of:
+      * base64-encoded PEM (how production stores it — one line in .env)
+      * raw PEM string (``-----BEGIN PRIVATE KEY-----`` ... multi-line)
+      * raw base64url 32-byte EC private key (what py_vapid.from_string expects)
+
+    Returns None (and logs once) if the key is missing or malformed.
     """
+    global _vapid_instance, _vapid_load_error
+    if _vapid_instance is not None:
+        return _vapid_instance
+    if _vapid_load_error is not None:
+        return None
+
     raw = os.getenv("VAPID_PRIVATE_KEY", "")
     if not raw:
-        return ""
-    # Try base64-decode → PEM
+        return None
+
+    # 1. Maybe it's a base64-encoded PEM
+    pem: str | None = None
     try:
         decoded = base64.b64decode(raw).decode()
         if "BEGIN" in decoded:
-            return decoded
+            pem = decoded
     except Exception:
         pass
-    # Already a PEM string or raw base64url key — return as-is
-    return raw
+
+    # 2. Maybe it's already a raw PEM string
+    if pem is None and "BEGIN" in raw:
+        pem = raw
+
+    try:
+        if pem is not None:
+            _vapid_instance = Vapid.from_pem(pem.encode())
+        else:
+            # Fall back to raw base64url (32-byte EC private key)
+            _vapid_instance = Vapid.from_string(raw)
+        return _vapid_instance
+    except Exception as exc:
+        _vapid_load_error = exc
+        logger.error("Failed to load VAPID private key: %s", exc)
+        return None
 
 
 def send_push(
@@ -47,9 +77,9 @@ def send_push(
     Returns False when the subscription is expired (HTTP 410/404).
     Returns True for every other outcome (success or transient error).
     """
-    private_key = _get_vapid_private_key()
-    if not private_key:
-        logger.warning("VAPID_PRIVATE_KEY not configured — skipping push")
+    vapid = _get_vapid()
+    if vapid is None:
+        logger.warning("VAPID key not configured/invalid — skipping push")
         return True
 
     payload = json.dumps({"title": title, "body": body, "data": data or {}})
@@ -65,8 +95,9 @@ def send_push(
                 "keys": {"p256dh": p256dh, "auth": auth},
             },
             data=payload,
-            vapid_private_key=private_key,
+            vapid_private_key=vapid,
             vapid_claims=vapid_claims,
+            ttl=86400,
         )
         return True
     except WebPushException as exc:
