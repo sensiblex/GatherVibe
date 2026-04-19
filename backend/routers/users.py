@@ -9,9 +9,77 @@ from deps import get_db, get_current_user_from_token, oauth2_scheme
 from models.user import User
 from models.attendee import EventAttendee
 from models.party import EventParty, PartyMember
+from models.chat_message import ChatMessage
+from models.review import PartyReview
+from models.report import Report
+from models.notification import Notification
 from schemas import UserUpdate
 
 router = APIRouter(tags=["users"])
+
+
+@router.get("/users/me/export")
+def export_user_data(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """GDPR: экспорт всех данных текущего пользователя в JSON."""
+    me = get_current_user_from_token(token, db)
+
+    reviews_written = db.query(PartyReview).filter(PartyReview.reviewer_id == me.id).all()
+    reviews_received = db.query(PartyReview).filter(PartyReview.reviewed_id == me.id).all()
+    chat_msgs = db.query(ChatMessage).filter(ChatMessage.user_id == str(me.id)).all()
+    reports_filed = db.query(Report).filter(Report.reporter_id == me.id).all()
+    notifications = db.query(Notification).filter(Notification.user_id == me.id).all()
+    memberships = db.query(PartyMember).filter(PartyMember.user_id == me.id).all()
+    parties_created = db.query(EventParty).filter(EventParty.creator_id == me.id).all()
+
+    def _dt(v):
+        return v.isoformat() if v else None
+
+    return {
+        "exported_at": datetime.utcnow().isoformat() + "Z",
+        "profile": {
+            "id": me.id, "email": me.email, "username": me.username,
+            "city": me.city, "bio": me.bio, "interests": me.interests,
+            "avatar_url": me.avatar_url, "role": me.role,
+            "created_at": _dt(me.created_at),
+            "trust_score": me.trust_score,
+        },
+        "reviews_written": [
+            {"id": r.id, "reviewed_id": r.reviewed_id, "party_id": r.party_id,
+             "rating": r.rating, "text": r.text, "tags": r.tags,
+             "created_at": _dt(r.created_at)} for r in reviews_written
+        ],
+        "reviews_received": [
+            {"id": r.id, "reviewer_id": r.reviewer_id, "party_id": r.party_id,
+             "rating": r.rating, "text": r.text, "tags": r.tags,
+             "created_at": _dt(r.created_at)} for r in reviews_received
+        ],
+        "chat_messages": [
+            {"id": m.id, "room": m.room, "message": m.message,
+             "timestamp": _dt(m.timestamp), "is_deleted": m.is_deleted}
+            for m in chat_msgs
+        ],
+        "reports_filed": [
+            {"id": r.id, "target_type": r.target_type, "target_id": r.target_id,
+             "reason": r.reason, "status": r.status,
+             "created_at": _dt(r.created_at)} for r in reports_filed
+        ],
+        "notifications": [
+            {"id": n.id, "type": n.type, "title": n.title, "body": n.body,
+             "created_at": _dt(n.created_at)} for n in notifications
+        ],
+        "party_memberships": [
+            {"party_id": pm.party_id, "status": pm.status,
+             "joined_at": _dt(pm.joined_at)} for pm in memberships
+        ],
+        "parties_created": [
+            {"id": p.id, "event_id": p.event_id, "title": p.title,
+             "description": p.description,
+             "created_at": _dt(p.created_at)} for p in parties_created
+        ],
+    }
 
 
 @router.get("/users")

@@ -8,6 +8,7 @@ import { useAuth } from './context/AuthContext';
 import { NotificationsProvider, useNotifications, NotificationItem } from './context/NotificationsContext';
 import { InvitesProvider, useInvites } from './context/InvitesContext';
 import { ToastContainer, toast } from './components/Toast';
+import MuteBanner from './components/MuteBanner';
 import { getSocket, connectSocket, disconnectSocket } from './lib/socket';
 import { registerServiceWorker, refreshSubscription } from './lib/push';
 
@@ -132,6 +133,7 @@ function InnerLayout({ children }: { children: React.ReactNode }) {
       <ServiceWorkerBootstrap />
       <UserNotificationSocket />
       <TitleUpdater />
+      <MuteBanner />
       {children}
       <ToastContainer />
     </>

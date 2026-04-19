@@ -2,11 +2,14 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 
+export type UserRole = 'user' | 'moderator' | 'admin';
+
 interface AuthUser {
   id: number;
   username: string;
   email: string;
   email_notifications?: boolean;
+  role?: UserRole;
 }
 
 interface AuthContextValue {
@@ -54,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           username: p.username,
           email: p.sub,
           email_notifications: emailNotifRaw !== null ? emailNotifRaw === 'true' : undefined,
+          role: (p.role as UserRole) || 'user',
         });
         // Восстанавливаем cookie для middleware (server-side route protection)
         setProxyCookie(t);

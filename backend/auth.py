@@ -26,7 +26,12 @@ def authenticate_user(email: str, password: str, db):
 
 def create_user_token(user):
     token = create_access_token(
-        data={"sub": user.email, "id": user.id, "username": user.username},
+        data={
+            "sub": user.email,
+            "id": user.id,
+            "username": user.username,
+            "role": getattr(user, "role", "user"),
+        },
         expires_delta=timedelta(minutes=60 * 24 * 7),  # 7 дней
     )
     return {
@@ -35,4 +40,5 @@ def create_user_token(user):
         "user_id": user.id,
         "username": user.username,
         "email": user.email,
+        "role": getattr(user, "role", "user"),
     }

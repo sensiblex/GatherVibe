@@ -64,5 +64,21 @@ export async function apiFetch(
     return response;
   }
 
+  // Detect ban response and redirect to /banned screen
+  if (response.status === 403) {
+    try {
+      const cloned = response.clone();
+      const body = await cloned.json();
+      const detail = body?.detail;
+      if (detail && typeof detail === 'object' && detail.code === 'banned') {
+        const until = detail.banned_until ? encodeURIComponent(detail.banned_until) : '';
+        const reason = detail.reason ? encodeURIComponent(detail.reason) : '';
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/banned')) {
+          window.location.replace(`/banned?until=${until}&reason=${reason}`);
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
   return response;
 }

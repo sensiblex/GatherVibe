@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Date, DateTime, Float, Integer, String, Boolean, Text
+from sqlalchemy.sql import func
 from database import Base
 
 class User(Base):
@@ -33,3 +34,12 @@ class User(Base):
     preferred_time = Column(String(20), nullable=True)  # 'morning' | 'evening' | 'any'
     budget_max = Column(Integer, nullable=True)
     embedding_updated_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Moderation fields
+    role = Column(String(16), default="user", nullable=False, server_default="user")  # user|moderator|admin
+    is_banned = Column(Boolean, default=False, nullable=False, server_default="false")
+    banned_until = Column(DateTime(timezone=True), nullable=True)
+    ban_reason = Column(String(500), nullable=True)
+    muted_until = Column(DateTime(timezone=True), nullable=True)
+    warnings_count = Column(Integer, default=0, nullable=False, server_default="0")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=True)

@@ -750,6 +750,25 @@ export default function ProfilePage() {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
             <button onClick={() => setEditOpen(true)} className="btn btn-ink btn-sm">Редактировать</button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              data-testid="export-data"
+              onClick={async () => {
+                const r = await apiFetch('/users/me/export');
+                if (!r.ok) return;
+                const data = await r.json();
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `gathervibe-export-${data.profile?.id}-${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              Экспорт данных
+            </button>
             <button onClick={handleLogout} className="btn btn-ghost btn-sm" style={{ color: 'var(--match)' }}>Выйти</button>
           </div>
         </div>

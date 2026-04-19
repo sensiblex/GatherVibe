@@ -7,6 +7,7 @@ from enum import Enum
 
 import asyncio
 import json
+import uuid
 import kudago_api
 import kudago_api_async
 from pydantic import BaseModel, Field, field_validator
@@ -133,16 +134,41 @@ class PartyOut(BaseModel):
     event_title: Optional[str] = None
     event_date_ts: Optional[int] = None
     event_image_url: Optional[str] = None
+    invite_token: Optional[str] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
 
 
+class PartyInvitePreviewOut(BaseModel):
+    id: int
+    title: str
+    description: Optional[str] = None
+    max_members: int
+    member_count: int
+    creator_username: str
+    event_title: Optional[str] = None
+    event_date_ts: Optional[int] = None
+    event_image_url: Optional[str] = None
+    is_open: bool
+
+
 # ─── Helpers ────────────────────────────────────────────────────────────────
 
 
+def _ensure_invite_token(party: EventParty, db: Session) -> str:
+    """Lazy-fill missing invite_token for legacy parties."""
+    token = getattr(party, "invite_token", None)
+    if not token:
+        token = uuid.uuid4().hex
+        party.invite_token = token
+        db.commit()
+    return token
+
+
 def _build_party_out(party: EventParty, db: Session) -> PartyOut:
+    _ensure_invite_token(party, db)
     creator = db.query(User).filter(User.id == party.creator_id).first()
     members_rows = db.query(PartyMember, User).join(User, PartyMember.user_id == User.id).filter(
         PartyMember.party_id == party.id,
@@ -164,7 +190,9 @@ def _build_party_out(party: EventParty, db: Session) -> PartyOut:
         creator_username=creator.username if creator else "?",
         is_open=party.is_open, members=members,
         event_title=party.event_title, event_date_ts=party.event_date_ts,
-        event_image_url=party.event_image_url, created_at=party.created_at,
+        event_image_url=party.event_image_url,
+        invite_token=party.invite_token,
+        created_at=party.created_at,
     )
 
 
@@ -311,6 +339,7 @@ def search_parties(
         )
         .join(User, EventParty.creator_id == User.id)
         .outerjoin(member_count_sq, EventParty.id == member_count_sq.c.party_id)
+        .filter(EventParty.is_hidden == False)  # noqa: E712 — исключаем скрытые модератором
     )
 
     if q and q.strip():
@@ -392,6 +421,110 @@ def get_party_detail_public(
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
         raise HTTPException(status_code=404, detail="Компания не найдена")
+    return _build_party_out(party, db)
+
+
+@router.get("/parties/by-token/{invite_token}", response_model=PartyInvitePreviewOut)
+def get_party_by_invite_token(
+    invite_token: str,
+    db: Session = Depends(get_db),
+):
+    """Public preview — no auth. Lets unregistered users see the party before joining."""
+    party = db.query(EventParty).filter(EventParty.invite_token == invite_token).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Приглашение не найдено")
+    creator = db.query(User).filter(User.id == party.creator_id).first()
+    member_count = 1 + db.query(PartyMember).filter(
+        PartyMember.party_id == party.id,
+        PartyMember.status == MemberStatus.accepted,
+    ).count()
+    return PartyInvitePreviewOut(
+        id=party.id,
+        title=party.title,
+        description=party.description,
+        max_members=party.max_members,
+        member_count=member_count,
+        creator_username=creator.username if creator else "?",
+        event_title=party.event_title,
+        event_date_ts=party.event_date_ts,
+        event_image_url=party.event_image_url,
+        is_open=party.is_open,
+    )
+
+
+@router.post("/parties/by-token/{invite_token}/join", response_model=PartyOut)
+async def join_party_by_invite_token(
+    invite_token: str,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Auth-required join via shareable link. Adds the user as accepted directly."""
+    user = get_current_user_from_token(token, db)
+    party = db.query(EventParty).filter(EventParty.invite_token == invite_token).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Приглашение не найдено")
+
+    # Creator opens own link → no-op
+    if party.creator_id == user.id:
+        return _build_party_out(party, db)
+
+    if not party.is_open:
+        raise HTTPException(status_code=400, detail="Набор закрыт")
+
+    existing = db.query(PartyMember).filter(
+        PartyMember.party_id == party.id,
+        PartyMember.user_id == user.id,
+    ).first()
+
+    if existing and existing.status == MemberStatus.accepted:
+        return _build_party_out(party, db)
+
+    accepted_count = db.query(PartyMember).filter(
+        PartyMember.party_id == party.id,
+        PartyMember.status == MemberStatus.accepted,
+    ).count()
+    if accepted_count + 1 >= party.max_members:
+        raise HTTPException(status_code=400, detail="Компания заполнена")
+
+    if existing:
+        existing.status = MemberStatus.accepted
+        existing.invited_by_user_id = party.creator_id
+    else:
+        db.add(PartyMember(
+            party_id=party.id,
+            user_id=user.id,
+            status=MemberStatus.accepted,
+            invited_by_user_id=party.creator_id,
+            invite_message="Присоединился по ссылке-приглашению",
+        ))
+    db.flush()
+    party_closed = _check_and_close_party(party, db)
+
+    notif = create_notification(
+        db, party.creator_id, "party_invite_response",
+        "Кто-то присоединился по ссылке",
+        f"{user.username} вступил в компанию «{party.title}» по ссылке-приглашению",
+        {"party_id": party.id, "status": "accepted", "via": "invite_token"},
+    )
+    db.commit()
+    push_helpers.send_push_to_user(
+        db, party.creator_id,
+        "Кто-то присоединился",
+        f"{user.username} вступил в «{party.title}» по ссылке",
+        {"party_id": party.id, "type": "party_invite_response", "status": "accepted"},
+    )
+    db.commit()
+    await sio.emit("new_notification", {
+        "id": notif.id,
+        "type": notif.type,
+        "title": notif.title,
+        "body": notif.body,
+        "data": notif.data,
+        "is_read": False,
+        "created_at": notif.created_at.isoformat(),
+    }, room=f"user_{party.creator_id}")
+    if party_closed:
+        await _notify_party_closed(party, db, exclude_user_ids={party.creator_id, user.id})
     return _build_party_out(party, db)
 
 
@@ -523,6 +656,9 @@ async def create_party(
     db: Session = Depends(get_db),
 ):
     user = get_current_user_from_token(token, db)
+    from services.feature_flags import is_flag_enabled
+    if not is_flag_enabled(db, "party_creation_enabled"):
+        raise HTTPException(status_code=403, detail="Создание компаний временно отключено")
     if body.max_members < 2 or body.max_members > 20:
         raise HTTPException(status_code=400, detail="max_members must be between 2 and 20")
     existing_count = db.query(EventParty).filter(
@@ -582,6 +718,7 @@ async def create_party(
         event_title=event_title,
         event_date_ts=event_date_ts,
         event_image_url=event_image_url,
+        invite_token=uuid.uuid4().hex,
     )
     db.add(party)
     db.commit()

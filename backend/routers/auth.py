@@ -34,6 +34,9 @@ def register_user(
     background: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
+    from services.feature_flags import is_flag_enabled
+    if not is_flag_enabled(db, "registration_enabled"):
+        raise HTTPException(status_code=403, detail="Регистрация временно закрыта")
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
     token = str(uuid.uuid4())

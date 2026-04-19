@@ -24,6 +24,11 @@ import models.party_coordination
 import models.push_subscription
 import models.message_reaction
 import models.party_recap
+import models.report
+import models.audit_log
+import models.feature_flag
+import models.banned_word
+import models.appeal
 
 models.user.Base.metadata.create_all(bind=engine)
 models.event.Base.metadata.create_all(bind=engine)
@@ -35,6 +40,11 @@ models.party_coordination.Base.metadata.create_all(bind=engine)
 models.push_subscription.Base.metadata.create_all(bind=engine)
 models.message_reaction.Base.metadata.create_all(bind=engine)
 models.party_recap.Base.metadata.create_all(bind=engine)
+models.report.Base.metadata.create_all(bind=engine)
+models.audit_log.Base.metadata.create_all(bind=engine)
+models.feature_flag.Base.metadata.create_all(bind=engine)
+models.banned_word.Base.metadata.create_all(bind=engine)
+models.appeal.Base.metadata.create_all(bind=engine)
 
 
 def _run_column_migrations():
@@ -63,6 +73,26 @@ def _run_column_migrations():
             conn.execute(text(
                 "ALTER TABLE chat_messages ADD COLUMN file_name VARCHAR(255)"
             ))
+        event_parties_cols = {c["name"] for c in insp.get_columns("event_parties")}
+        if "invite_token" not in event_parties_cols:
+            conn.execute(text(
+                "ALTER TABLE event_parties ADD COLUMN invite_token VARCHAR(64)"
+            ))
+            # Backfill existing rows with uuid4 tokens
+            import uuid as _uuid
+            existing_ids = [r[0] for r in conn.execute(text("SELECT id FROM event_parties")).fetchall()]
+            for pid in existing_ids:
+                conn.execute(
+                    text("UPDATE event_parties SET invite_token = :tok WHERE id = :pid"),
+                    {"tok": _uuid.uuid4().hex, "pid": pid},
+                )
+            try:
+                conn.execute(text(
+                    "CREATE UNIQUE INDEX ix_event_parties_invite_token ON event_parties(invite_token)"
+                ))
+            except Exception:
+                pass
+
         party_members_cols = {c["name"] for c in insp.get_columns("party_members")}
         if "invited_by_user_id" not in party_members_cols:
             conn.execute(text(
@@ -72,6 +102,56 @@ def _run_column_migrations():
             conn.execute(text(
                 "ALTER TABLE party_members ADD COLUMN invite_message VARCHAR(200)"
             ))
+
+        # Moderation columns on users
+        users_cols = {c["name"] for c in insp.get_columns("users")}
+        if "role" not in users_cols:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'user'"
+            ))
+        if "is_banned" not in users_cols:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN is_banned BOOLEAN NOT NULL DEFAULT FALSE"
+            ))
+        if "banned_until" not in users_cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN banned_until TIMESTAMP"))
+        if "ban_reason" not in users_cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN ban_reason VARCHAR(500)"))
+        if "muted_until" not in users_cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN muted_until TIMESTAMP"))
+        if "warnings_count" not in users_cols:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN warnings_count INTEGER NOT NULL DEFAULT 0"
+            ))
+        if "created_at" not in users_cols:
+            conn.execute(text(
+                "ALTER TABLE users ADD COLUMN created_at TIMESTAMPTZ DEFAULT NOW()"
+            ))
+
+        # Moderation columns on chat_messages
+        chat_cols_now = {c["name"] for c in insp.get_columns("chat_messages")}
+        if "is_deleted" not in chat_cols_now:
+            conn.execute(text(
+                "ALTER TABLE chat_messages ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE"
+            ))
+        if "deleted_by_id" not in chat_cols_now:
+            conn.execute(text(
+                "ALTER TABLE chat_messages ADD COLUMN deleted_by_id INTEGER REFERENCES users(id)"
+            ))
+        if "deleted_at" not in chat_cols_now:
+            conn.execute(text("ALTER TABLE chat_messages ADD COLUMN deleted_at TIMESTAMP"))
+        if "delete_reason" not in chat_cols_now:
+            conn.execute(text("ALTER TABLE chat_messages ADD COLUMN delete_reason VARCHAR(200)"))
+
+        # Moderation columns on event_parties
+        ep_cols = {c["name"] for c in insp.get_columns("event_parties")}
+        if "is_hidden" not in ep_cols:
+            conn.execute(text(
+                "ALTER TABLE event_parties ADD COLUMN is_hidden BOOLEAN NOT NULL DEFAULT FALSE"
+            ))
+        if "hidden_reason" not in ep_cols:
+            conn.execute(text("ALTER TABLE event_parties ADD COLUMN hidden_reason VARCHAR(200)"))
+
         conn.commit()
 
 
@@ -93,6 +173,7 @@ from models.chat_message import ChatMessage  # noqa: E402
 from models.message_reaction import MessageReaction  # noqa: E402
 from models.party import EventParty, PartyMember  # noqa: E402
 from routers.parties import MemberStatus  # noqa: E402
+import chat_push  # noqa: E402
 
 # ── KudaGo cache sync ─────────────────────────────────────────────────────────
 import kudago_cache  # noqa: E402
@@ -230,6 +311,27 @@ async def _reminder_loop():
             logger.error("Reminder loop error: %s", exc)
 
 
+async def _post_event_loop():
+    """Background task: every 15 min dispatch +2h / +1d / +14d post-event reminders."""
+    import time
+    from post_event_jobs import run_post_event_jobs
+
+    while True:
+        await asyncio.sleep(REMINDER_LOOP_INTERVAL)
+        try:
+            db = SessionLocal()
+            try:
+                counts = await asyncio.get_event_loop().run_in_executor(
+                    None, run_post_event_jobs, db, int(time.time())
+                )
+                if any(counts.values()):
+                    logger.info("post_event_jobs sent: %s", counts)
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.error("Post-event loop error: %s", exc)
+
+
 async def _invite_expiry_loop():
     """Фоновая задача: каждые 15 минут помечает приглашения declined за 24h до события."""
     from routers.parties import expire_pending_invites
@@ -283,10 +385,12 @@ async def lifespan(app: FastAPI):
     cache_task = asyncio.create_task(_cache_sync_loop())
     reminder_task = asyncio.create_task(_reminder_loop())
     invite_expiry_task = asyncio.create_task(_invite_expiry_loop())
+    post_event_task = asyncio.create_task(_post_event_loop())
     yield
     cache_task.cancel()
     reminder_task.cancel()
     invite_expiry_task.cancel()
+    post_event_task.cancel()
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
@@ -317,9 +421,15 @@ from routers import auth, users, events, parties, reviews, notifications, party_
 from routers.party_plan import router as party_plan_router  # noqa: E402
 from routers.recommendations import router as recommendations_router  # noqa: E402
 from routers.party_recap import router as party_recap_router  # noqa: E402
+from routers.admin import router as admin_router  # noqa: E402
+from routers.reports import router as reports_router  # noqa: E402
+from routers.appeals import router as appeals_router  # noqa: E402
 
 # Order matters: specific /users/me/* routes before wildcard /users/{user_id}
 app.include_router(auth.router)
+app.include_router(admin_router)            # /admin/* — must precede users (admin has /admin/users/{id})
+app.include_router(reports_router)          # public POST /reports
+app.include_router(appeals_router)          # public POST /appeals (for banned users)
 app.include_router(parties.router)          # has /users/me/parties — must precede users
 app.include_router(party_coordination.router)
 app.include_router(party_plan_router)
@@ -352,6 +462,7 @@ async def connect(sid, environ):
 @sio.event
 async def disconnect(sid):
     print(f"Client {sid} disconnected")
+    chat_push.mark_disconnect(sid)
 
 
 # -- Event chat --
@@ -386,6 +497,20 @@ async def join_event_chat(sid, data):
     db.close()
 
 
+def _socket_sanction_block(user) -> str | None:
+    """Возвращает сообщение об ошибке если user забанен/замьючен, иначе None."""
+    from deps import _is_user_banned
+    if _is_user_banned(user):
+        return "Вы заблокированы"
+    muted_until = getattr(user, "muted_until", None)
+    if muted_until is not None:
+        now = datetime.utcnow()
+        mu = muted_until.replace(tzinfo=None) if getattr(muted_until, "tzinfo", None) else muted_until
+        if mu > now:
+            return "Вы временно не можете отправлять сообщения"
+    return None
+
+
 @sio.on('send_message')
 async def send_message(sid, data: dict):
     token = data.get('token')
@@ -399,6 +524,11 @@ async def send_message(sid, data: dict):
         await sio.emit('error', {'message': str(e)}, room=sid)
         db.close()
         return
+    block = _socket_sanction_block(user)
+    if block:
+        await sio.emit('error', {'message': block}, room=sid)
+        db.close()
+        return
     event_id = data.get('eventId')
     message_text = data.get('message', '').strip()
     if not event_id or not message_text:
@@ -409,6 +539,11 @@ async def send_message(sid, data: dict):
         db.close()
         await sio.emit('error', {'message': 'Сообщение слишком длинное (макс. 2000 символов)'}, room=sid)
         return
+    try:
+        from services.moderation_filter import filter_text
+        message_text, _ = filter_text(db, message_text)
+    except Exception:
+        pass
     msg = {
         'message':   message_text,
         'userId':    str(user.id),
@@ -472,6 +607,7 @@ async def join_party_chat(sid, data: dict):
         return
     db.close()
     await sio.enter_room(sid, f'party_{party_id}')
+    chat_push.mark_join_party(sid, user.id, party_id)
     await sio.emit(
         'party_user_joined',
         {'sid': sid, 'userId': user.id, 'username': user.username},
@@ -492,6 +628,11 @@ async def send_party_message(sid, data: dict):
         await sio.emit('error', {'message': str(e)}, room=sid)
         db.close()
         return
+    block = _socket_sanction_block(user)
+    if block:
+        await sio.emit('error', {'message': block}, room=sid)
+        db.close()
+        return
     party_id = data.get('partyId')
     message_text = data.get('message', '').strip()
     file_url = data.get('file_url')
@@ -505,6 +646,12 @@ async def send_party_message(sid, data: dict):
         await sio.emit('error', {'message': 'Сообщение слишком длинное (макс. 2000 символов)'}, room=sid)
         db.close()
         return
+    if message_text:
+        try:
+            from services.moderation_filter import filter_text
+            message_text, _ = filter_text(db, message_text)
+        except Exception:
+            pass
 
     db2 = SessionLocal()
     try:
@@ -560,11 +707,31 @@ async def send_party_message(sid, data: dict):
     }
     await sio.emit('receive_party_message', msg, room=f'party_{party_id}')
 
+    # Throttled push to offline party members (best-effort, never fails the broadcast)
+    try:
+        push_db = SessionLocal()
+        try:
+            party_for_push = push_db.query(EventParty).filter(
+                EventParty.id == party_id
+            ).first()
+            if party_for_push is not None:
+                await chat_push.notify_chat_message(
+                    push_db, party_for_push,
+                    sender_id=user.id,
+                    sender_username=user.username,
+                    message_text=message_text,
+                )
+        finally:
+            push_db.close()
+    except Exception as exc:
+        logger.warning("chat_push.notify_chat_message failed: %s", exc)
+
 
 @sio.on('leave_party_chat')
 async def leave_party_chat(sid, data: dict):
     party_id = data['partyId']
     await sio.leave_room(sid, f'party_{party_id}')
+    chat_push.mark_leave_party(sid, party_id)
 
 
 ALLOWED_REACTION_EMOJIS = {'👍', '❤️', '😂'}

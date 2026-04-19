@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Socket } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 import { getSocket } from '../lib/socket';
+import ReportButton from './ReportButton';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -265,9 +266,9 @@ export default function PartyChat({
                     </Link>
                   )}
 
-                  {/* Reaction picker on hover */}
+                  {/* Reaction picker + report on hover */}
                   {hoveredId === msg.messageId && msg.messageId != null && (
-                    <div className={`flex gap-1 mb-1 ${isOwn ? 'self-end' : 'self-start'}`}>
+                    <div className={`flex gap-1 mb-1 items-center ${isOwn ? 'self-end' : 'self-start'}`}>
                       {['👍', '❤️', '😂'].map(emoji => (
                         <button
                           key={emoji}
@@ -278,6 +279,14 @@ export default function PartyChat({
                           {emoji}
                         </button>
                       ))}
+                      {!isOwn && (
+                        <ReportButton
+                          targetType="chat_message"
+                          targetId={msg.messageId}
+                          label="Пожаловаться"
+                          compact
+                        />
+                      )}
                     </div>
                   )}
 

@@ -115,6 +115,15 @@ export default function Navbar() {
             {user && (
               <Link href="/my-events" className={`nav-link${isActive('/my-events') ? ' active' : ''}`}>Мои события</Link>
             )}
+            {user && user.role && user.role !== 'user' && (
+              <Link
+                href="/admin"
+                className={`nav-link${pathname.startsWith('/admin') ? ' active' : ''}`}
+                data-testid="nav-admin"
+              >
+                Модерация
+              </Link>
+            )}
           </div>
 
           <div className="nav-right">

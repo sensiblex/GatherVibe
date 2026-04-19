@@ -18,7 +18,11 @@ class EventParty(Base):
     event_title = Column(String(200), nullable=True)
     event_date_ts = Column(BigInteger, nullable=True)
     event_image_url = Column(String(500), nullable=True)
+    invite_token = Column(String(64), unique=True, nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    # Moderation
+    is_hidden = Column(Boolean, default=False, nullable=False, server_default="false")
+    hidden_reason = Column(String(200), nullable=True)
 
 
 class PartyMember(Base):

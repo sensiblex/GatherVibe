@@ -8,6 +8,7 @@ import { apiFetch } from '../../lib/apiFetch';
 import { useAuth } from '../../context/AuthContext';
 import { toast, ToastContainer } from '../../components/Toast';
 import UserReviewsBlock from '../../components/UserReviewsBlock';
+import ReportButton from '../../components/ReportButton';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -241,6 +242,16 @@ export default function UserProfilePage() {
                   <h1 className="text-2xl font-black" style={{ color: 'var(--text)' }}>
                     {profile.username}
                   </h1>
+                  {me && me.id !== profile.id && (
+                    <div style={{ marginTop: 8 }}>
+                      <ReportButton
+                        targetType="user"
+                        targetId={profile.id}
+                        label="Пожаловаться на пользователя"
+                        compact
+                      />
+                    </div>
+                  )}
 
                   {/* Badges row */}
                   <div className="flex flex-wrap justify-center sm:justify-start gap-2 mt-3">

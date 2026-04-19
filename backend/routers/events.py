@@ -130,6 +130,9 @@ async def upload_chat_file(
     db: Session = Depends(get_db),
 ):
     get_current_user_from_token(token, db)
+    from services.feature_flags import is_flag_enabled
+    if not is_flag_enabled(db, "file_upload_enabled"):
+        raise HTTPException(status_code=403, detail="Загрузка файлов временно отключена")
 
     content_type = file.content_type or ""
     if content_type not in ALLOWED_MIME_TYPES and not content_type.startswith("image/"):

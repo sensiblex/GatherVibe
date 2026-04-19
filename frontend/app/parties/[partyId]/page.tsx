@@ -50,6 +50,7 @@ interface Party {
   creator_username: string;
   is_open: boolean;
   members: PartyMember[];
+  invite_token?: string | null;
   created_at: string;
 }
 
@@ -590,11 +591,30 @@ export default function PartyDetailPage() {
                   </p>
                 </div>
                 {isCreator && !eventEnded && (
-                  <button onClick={() => setShowEdit(true)}
-                    className="shrink-0 text-sm px-3 py-1.5 rounded-xl transition hover:opacity-80"
-                    style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
-                    ✏️ Редактировать
-                  </button>
+                  <div className="shrink-0 flex flex-col gap-2">
+                    <button onClick={() => setShowEdit(true)}
+                      className="text-sm px-3 py-1.5 rounded-xl transition hover:opacity-80"
+                      style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
+                      ✏️ Редактировать
+                    </button>
+                    {party.invite_token && (
+                      <button
+                        onClick={async () => {
+                          const link = `${window.location.origin}/invite/${party.invite_token}`;
+                          try {
+                            await navigator.clipboard.writeText(link);
+                            toast('Ссылка скопирована — отправь её в любой мессенджер', 'success');
+                          } catch {
+                            window.prompt('Скопируйте ссылку вручную:', link);
+                          }
+                        }}
+                        className="text-sm px-3 py-1.5 rounded-xl transition hover:opacity-80"
+                        style={{ border: '1px solid var(--primary)', color: 'var(--primary)', background: 'var(--primary-hl)' }}
+                      >
+                        🔗 Скопировать ссылку
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

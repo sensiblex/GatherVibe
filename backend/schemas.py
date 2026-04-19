@@ -58,6 +58,12 @@ class UserResponse(BaseModel):
     preferred_days: Optional[str] = None
     preferred_time: Optional[str] = None
     budget_max: Optional[int] = None
+    # Moderation
+    role: Optional[str] = "user"
+    is_banned: Optional[bool] = False
+    banned_until: Optional[datetime] = None
+    muted_until: Optional[datetime] = None
+    warnings_count: Optional[int] = 0
 
     class Config:
         from_attributes = True
