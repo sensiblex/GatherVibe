@@ -1,6 +1,6 @@
 import uuid
 import time
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from typing import Optional
 from pydantic import BaseModel
@@ -29,7 +29,11 @@ class ResendVerificationRequest(BaseModel):
 
 
 @router.post("/register", response_model=UserResponse)
-def register_user(user: UserCreate, db: Session = Depends(get_db)):
+def register_user(
+    user: UserCreate,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
     token = str(uuid.uuid4())
@@ -43,7 +47,7 @@ def register_user(user: UserCreate, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    send_verification_email(new_user.email, new_user.username, token)
+    background.add_task(send_verification_email, new_user.email, new_user.username, token)
     return new_user
 
 
@@ -85,7 +89,11 @@ def verify_email(token: str, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/resend-verification")
-def resend_verification(body: ResendVerificationRequest, db: Session = Depends(get_db)):
+def resend_verification(
+    body: ResendVerificationRequest,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     email = body.email.lower().strip()
     user = db.query(User).filter(User.email == email).first()
     if not user:
@@ -102,7 +110,7 @@ def resend_verification(body: ResendVerificationRequest, db: Session = Depends(g
     user.verification_token = new_token
     db.commit()
     _resend_rate[email] = now
-    send_verification_email(email, user.username, new_token)
+    background.add_task(send_verification_email, email, user.username, new_token)
     return {"message": "Если email зарегистрирован, письмо будет отправлено"}
 
 

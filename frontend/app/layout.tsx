@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import 'leaflet/dist/leaflet.css';
 import './globals.css';
 import ClientLayout from './ClientLayout';
@@ -7,6 +7,9 @@ export const metadata: Metadata = {
   title: 'GatherVibe',
   description: 'Найди компанию для похода на мероприятия',
   manifest: '/manifest.webmanifest',
+};
+
+export const viewport: Viewport = {
   themeColor: '#610bef',
 };
 
