@@ -72,12 +72,9 @@ function JoinModal({
   const handleSubmit = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/parties/${party.id}/join`, {
+      const res = await apiFetch(`/parties/${party.id}/join`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: message.trim() || null }),
       });
       if (res.ok) {
@@ -165,9 +162,8 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
     if (!token) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/parties/${party.id}/leave`, {
+      const res = await apiFetch(`/parties/${party.id}/leave`, {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
         toast('Вы покинули компанию', 'info');

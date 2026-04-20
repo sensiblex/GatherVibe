@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
+import { apiFetch } from '../lib/apiFetch';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -231,25 +232,29 @@ export default function EventAttendees({ eventId, eventMeta }: { eventId: string
   const [onlyLooking, setOnlyLooking] = useState(false);
   const [sortBy, setSortBy] = useState<'date' | 'match'>('match');
   const [filterInterest, setFilterInterest] = useState<string>('');
+  // `token` здесь только как маркер "залогинен ли". Реальный JWT в HttpOnly cookie.
   const [token, setToken] = useState<string | null>(null);
   const [myUserId, setMyUserId] = useState<number | null>(null);
 
   useEffect(() => {
-    const t = localStorage.getItem('token');
-    setToken(t);
-    if (t) {
-      try {
-        const payload = JSON.parse(atob(t.split('.')[1]));
-        setMyUserId(payload.user_id ?? null);
-      } catch {
-        setMyUserId(null);
-      }
-    }
+    // /users/me → и проверка сессии, и получение myUserId одним запросом.
+    apiFetch('/users/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && typeof data.id === 'number') {
+          setToken('session');
+          setMyUserId(data.id);
+        } else {
+          setToken(null);
+          setMyUserId(null);
+        }
+      })
+      .catch(() => { setToken(null); setMyUserId(null); });
   }, []);
 
   useEffect(() => {
     if (!token) return;
-    fetch(`${API_BASE}/users/me`, { headers: { Authorization: `Bearer ${token}` } })
+    apiFetch('/users/me')
       .then(r => (r.ok ? r.json() : null))
       .then(u => {
         if (u?.interests) setMyInterests(splitInterests(u.interests));
@@ -259,8 +264,8 @@ export default function EventAttendees({ eventId, eventMeta }: { eventId: string
 
   const fetchAttendees = useCallback(async () => {
     try {
-      const res = await fetch(
-        `${API_BASE}/attendees/${eventId}${onlyLooking ? '?only_looking=true' : ''}`
+      const res = await apiFetch(
+        `/attendees/${eventId}${onlyLooking ? '?only_looking=true' : ''}`
       );
       if (res.ok) setAttendees(await res.json());
     } catch {}
@@ -269,9 +274,7 @@ export default function EventAttendees({ eventId, eventMeta }: { eventId: string
   const fetchMyStatus = useCallback(async () => {
     if (!token) { setMyStatus({ attending: false }); return; }
     try {
-      const res = await fetch(`${API_BASE}/attendees/${eventId}/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/attendees/${eventId}/me`);
       if (res.ok) {
         const data = await res.json();
         setMyStatus(data);
@@ -347,9 +350,9 @@ export default function EventAttendees({ eventId, eventMeta }: { eventId: string
     if (!token) { window.location.href = '/login'; return; }
     setJoining(true);
     try {
-      const res = await fetch(`${API_BASE}/attendees/${eventId}`, {
+      const res = await apiFetch(`/attendees/${eventId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           comment:         comment.trim() || null,
           is_looking:      isLooking,
@@ -374,10 +377,7 @@ export default function EventAttendees({ eventId, eventMeta }: { eventId: string
     if (!token) return;
     setJoining(true);
     try {
-      await fetch(`${API_BASE}/attendees/${eventId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await apiFetch(`/attendees/${eventId}`, { method: 'DELETE' });
       setMyStatus({ attending: false });
       setComment('');
       setShowForm(false);

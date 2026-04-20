@@ -127,7 +127,7 @@ export function normaliseKudago(data: Record<string, unknown>): UnifiedEvent {
     category: cats[0] ?? null,
     categories: cats,
     image_url: imgs[0]?.url ?? (data.cover_url as string) ?? null,
-    is_free: Boolean(data.is_free),
+    is_free: data.is_free === true || String(data.price ?? '').trim() === '0',
     price: (data.price as string) || '',
     age_restriction: (data.age_restriction as string) ?? null,
     place_title: (data.place_title as string) || '',

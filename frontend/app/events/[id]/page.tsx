@@ -230,10 +230,13 @@ export default function EventDetailPage() {
     if (!eventId) return;
     setStatus('loading');
 
+    const controller = new AbortController();
+    const { signal } = controller;
     const isNumericId = /^\d+$/.test(eventId);
 
     const fetchKudago = async () => {
-      const kg = await apiFetch(`${API_BASE}/kudago/events/${eventId}`);
+      const kg = await apiFetch(`${API_BASE}/kudago/events/${eventId}`, { signal });
+      if (signal.aborted) return;
       if (kg.ok) {
         const data = await kg.json();
         setEvent(normaliseKudago(data));
@@ -246,12 +249,13 @@ export default function EventDetailPage() {
     };
 
     if (!isNumericId) {
-      fetchKudago().catch(() => setStatus('error'));
-      return;
+      fetchKudago().catch((e) => { if (!signal.aborted) setStatus('error'); void e; });
+      return () => controller.abort();
     }
 
-    apiFetch(`${API_BASE}/events/${eventId}`)
+    apiFetch(`${API_BASE}/events/${eventId}`, { signal })
       .then(async (res) => {
+        if (signal.aborted) return;
         if (res.ok) {
           const data = await res.json();
           setEvent(normaliseLocal(data));
@@ -264,7 +268,9 @@ export default function EventDetailPage() {
         }
         await fetchKudago();
       })
-      .catch(() => setStatus('error'));
+      .catch((e) => { if (!signal.aborted) setStatus('error'); void e; });
+
+    return () => controller.abort();
   }, [eventId]);
 
   useEffect(() => {

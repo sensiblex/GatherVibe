@@ -6,8 +6,9 @@
  *   /socket.io/* → http://backend:8000/socket.io/*
  * - В dev-режиме без Docker можно задать NEXT_PUBLIC_API_URL=http://localhost:8000
  *
- * Читает JWT из localStorage, добавляет Authorization: Bearer header.
- * При 401 очищает auth-данные, редиректит на /login.
+ * Аутентификация — только через HttpOnly cookie `token` (ставится backend'ом при /login).
+ * Все запросы идут с `credentials: 'include'`, чтобы браузер сам прикреплял cookie.
+ * В localStorage токен НЕ кладётся — защищает от XSS (его JS просто не может прочитать).
  */
 
 import { toast } from '../components/Toast';
@@ -15,16 +16,11 @@ import { toast } from '../components/Toast';
 /** Если задана NEXT_PUBLIC_API_URL (Docker = "/api", dev = "http://localhost:8000") */
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-function getToken(): string | null {
-  if (typeof window === 'undefined') return null;
-  try { return localStorage.getItem('token'); } catch { return null; }
-}
-
 function clearAuth(): void {
-  ['token', 'user_id', 'username', 'email'].forEach((k) => {
+  // localStorage уже не хранит token, но могли остаться кэши от старых версий.
+  ['token', 'user_id', 'username', 'email', 'email_notifications'].forEach((k) => {
     try { localStorage.removeItem(k); } catch { /* ignore */ }
   });
-  document.cookie = 'token=; path=/; max-age=0';
   window.dispatchEvent(new Event('auth:logout'));
 }
 
@@ -34,9 +30,15 @@ function handle401(): void {
   window.location.replace('/login');
 }
 
+export interface ApiFetchOptions extends RequestInit {
+  /** Если true — 401 не триггерит глобальный редирект на /login.
+   * Используй на самой странице логина, чтобы ошибка входа не крутилась в цикле. */
+  skipAuthRedirect?: boolean;
+}
+
 export async function apiFetch(
   input: RequestInfo | URL,
-  init: RequestInit = {},
+  init: ApiFetchOptions = {},
 ): Promise<Response> {
   let url: RequestInfo | URL = input;
   if (typeof input === 'string' && input.startsWith('/')) {
@@ -51,15 +53,18 @@ export async function apiFetch(
     }
   }
 
-  const headers = new Headers(init.headers);
-  if (!headers.has('Authorization')) {
-    const token = getToken();
-    if (token) headers.set('Authorization', `Bearer ${token}`);
-  }
+  const { skipAuthRedirect, ...fetchInit } = init;
+  const headers = new Headers(fetchInit.headers);
 
-  const response = await fetch(url, { ...init, headers });
+  // Cookie-based auth: браузер сам отправит HttpOnly `token`.
+  // `credentials: 'include'` нужен при cross-origin (dev-режим без Docker).
+  const response = await fetch(url, {
+    ...fetchInit,
+    headers,
+    credentials: fetchInit.credentials ?? 'include',
+  });
 
-  if (response.status === 401) {
+  if (response.status === 401 && !skipAuthRedirect) {
     handle401();
     return response;
   }

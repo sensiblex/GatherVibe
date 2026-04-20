@@ -262,10 +262,7 @@ function EditPartyModal({ party, onClose, onSaved }: { party: Party; onClose: ()
     if (!window.confirm('Удалить компанию?')) return;
     setDeleting(true);
     try {
-      await apiFetch(`${API_BASE}/parties/${party.id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await apiFetch(`${API_BASE}/parties/${party.id}`, { method: 'DELETE' });
       toast('Компания удалена', 'info');
       onSaved(); onClose();
       router.push(`/events/${party.event_id}`);

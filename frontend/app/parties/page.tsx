@@ -210,7 +210,7 @@ function blurInput(e: React.FocusEvent<HTMLElement>) {
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function PartiesSearchPage() {
-  const { token } = useAuth();
+  const { token, isLoading: authLoading } = useAuth();
   const router = useRouter();
 
   const [parties, setParties]       = useState<PartyItem[]>([]);
@@ -238,6 +238,13 @@ export default function PartiesSearchPage() {
   const cityDebRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadingRef  = useRef(false);
+
+  // ── Redirect unauthenticated users ────────────────────────────────────────
+  useEffect(() => {
+    if (!authLoading && !token) {
+      router.replace('/login');
+    }
+  }, [authLoading, token, router]);
 
   // ── Read filters from URL on mount ─────────────────────────────────────────
   useEffect(() => {
@@ -282,7 +289,8 @@ export default function PartiesSearchPage() {
     sort: string,
     append: boolean,
   ) => {
-    if (!token || loadingRef.current) return;
+    if (!token) { setLoading(false); setLoadingMore(false); return; }
+    if (loadingRef.current) return;
     loadingRef.current = true;
     append ? setLoadingMore(true) : setLoading(true);
     setError(null);
@@ -299,13 +307,13 @@ export default function PartiesSearchPage() {
       if (to)       params.set('date_to', `${to}T23:59:59`);
       if (minM)     params.set('min_members', minM);
       if (maxM)     params.set('max_members', maxM);
+      if (onlyOpen) params.set('is_open', 'true');
 
       const res = await apiFetch(`/parties/search?${params}`);
       if (!res.ok) throw new Error(`Ошибка ${res.status}`);
       const data: SearchResponse = await res.json();
 
-      let items = data.items;
-      if (onlyOpen) items = items.filter(p => p.is_open && p.member_count + 1 < p.max_members);
+      const items = data.items;
 
       setTotal(data.total);
       setTotalPages(data.pages);
@@ -408,6 +416,10 @@ export default function PartiesSearchPage() {
   if (minMembers) chips.push({ label: `мин. ${minMembers} чел.`, clear: () => setMinMembers('') });
   if (maxMembers) chips.push({ label: `макс. ${maxMembers} чел.`, clear: () => setMaxMembers('') });
   if (onlyOpen)   chips.push({ label: '✅ Только открытые', clear: () => setOnlyOpen(false) });
+
+  // Pre-auth guard: пока auth ещё грузится или уже редиректим — ничего не рендерим
+  // (иначе skeleton мелькает перед router.replace('/login'))
+  if (authLoading || !token) return null;
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>

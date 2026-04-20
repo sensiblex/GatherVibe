@@ -39,12 +39,16 @@ export default function MyEventsPage() {
   const [reviewingEventId, setReviewingEventId] = useState<string | null>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) { router.push('/login'); return; }
-
+    // middleware редиректит аноним на /login, здесь пробуем запрос —
+    // 401 от apiFetch сам сделает редирект.
     Promise.all([
-      apiFetch(`${API_BASE}/users/me/events`).then(r => r.json()),
-      apiFetch(`${API_BASE}/users/me/reviewable`).then(r => r.json()).catch(() => [] as ReviewableUser[]),
+      apiFetch(`${API_BASE}/users/me/events`).then(r => {
+        if (!r.ok) throw new Error(`Не удалось загрузить события: ${r.status}`);
+        return r.json();
+      }),
+      apiFetch(`${API_BASE}/users/me/reviewable`)
+        .then(r => (r.ok ? r.json() : [] as ReviewableUser[]))
+        .catch(() => [] as ReviewableUser[]),
     ]).then(([eventsData, reviewable]: [MyEventsResponse, ReviewableUser[]]) => {
       setData(eventsData);
 

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch } from '../lib/apiFetch';
+import { useAuth } from '../context/AuthContext';
 import Navbar from '../components/Navbar';
 import UserReviewsBlock from '../components/UserReviewsBlock';
 import MatchingProfileSection from '../components/MatchingProfileSection';
@@ -576,6 +577,7 @@ function MyEventsTab() {
 // ──────────────────────────────────────────────────────────────────
 export default function ProfilePage() {
   const router = useRouter();
+  const { logout } = useAuth();
   const [user, setUser]               = useState<User | null>(null);
   const [stats, setStats]             = useState<UserStats | null>(null);
   const [loading, setLoading]         = useState(true);
@@ -589,9 +591,7 @@ export default function ProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) { router.push('/login'); return; }
-
+    // middleware редиректит аноним на /login; apiFetch при 401 тоже редиректит.
     apiFetch(`${API_BASE}/users/me`)
       .then(async res => {
         if (res.status === 401) {
@@ -617,8 +617,8 @@ export default function ProfilePage() {
     { label: 'Найдено компаний',     value: String(stats?.matches_found    ?? 0), emoji: '✨' },
   ];
 
-  const handleLogout = () => {
-    ['token', 'user_id', 'username', 'email'].forEach(k => localStorage.removeItem(k));
+  const handleLogout = async () => {
+    await logout();
     router.push('/');
   };
 

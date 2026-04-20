@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '../components/Navbar';
 import PartyInvitesInbox from '../components/PartyInvitesInbox';
@@ -240,11 +240,27 @@ export default function NotificationsPage() {
   const router = useRouter();
   const [markingAll, setMarkingAll] = useState(false);
 
-  // Email notifications state — initialise from the user object (extended in AuthContext).
+  // Email notifications state. Сидим на `user` из AuthContext,
+  // но синкаем со свежим /users/me при mount — иначе старый localStorage
+  // может показывать неактуальное значение.
   const [emailEnabled, setEmailEnabled] = useState<boolean>(
     user?.email_notifications ?? true
   );
   const [emailLoading, setEmailLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch('/users/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        if (typeof data.email_notifications === 'boolean') {
+          setEmailEnabled(data.email_notifications);
+        }
+      })
+      .catch(() => { /* ignore */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleEmailToggle = useCallback(async () => {
     const next = !emailEnabled;

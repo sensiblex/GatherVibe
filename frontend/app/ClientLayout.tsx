@@ -56,7 +56,8 @@ function UserNotificationSocket() {
     socketRef.current = socket;
 
     const onConnect = () => {
-      socket.emit('subscribe_notifications', { token });
+      // Auth теперь идёт через cookie в handshake; token не нужен в payload.
+      socket.emit('subscribe_notifications', {});
     };
 
     if (socket.connected) onConnect();

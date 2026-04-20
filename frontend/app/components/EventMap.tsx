@@ -1,5 +1,8 @@
 'use client';
 
+import 'leaflet/dist/leaflet.css';
+import 'react-leaflet-cluster/dist/assets/MarkerCluster.css';
+import 'react-leaflet-cluster/dist/assets/MarkerCluster.Default.css';
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { LatLngTuple } from 'leaflet';

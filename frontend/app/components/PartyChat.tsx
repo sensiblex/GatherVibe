@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Socket } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 import { getSocket } from '../lib/socket';
+import { apiFetch } from '../lib/apiFetch';
 import ReportButton from './ReportButton';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -51,15 +52,15 @@ export default function PartyChat({
   useEffect(() => {
     if (!isAcceptedMember || !currentUserId || !token) return;
 
-    fetch(`${API_BASE}/messages/party_${partyId}?limit=50`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    apiFetch(`${API_BASE}/messages/party_${partyId}?limit=50`)
       .then(r => r.ok ? r.json() : { messages: [] })
       .then((data: { messages: Message[] } | Message[]) => {
         const raw = Array.isArray(data) ? data : (data.messages ?? []);
         const history = (raw as unknown as Array<Record<string, unknown>>).map((m) => ({
           ...m,
           messageId: (m.id ?? m.messageId) as number | undefined,
+          userId: (m.userId ?? m.user_id) as number | undefined,
+          timestamp: (m.timestamp ?? m.created_at) as string | undefined,
           isSystem: (m.isSystem ?? m.is_system ?? false) as boolean,
           eventType: (m.eventType ?? m.event_type ?? null) as string | null,
           fileUrl: (m.fileUrl ?? m.file_url ?? null) as string | null,
@@ -77,7 +78,8 @@ export default function PartyChat({
 
     const join = () => {
       setConnected(true);
-      socket.emit('join_party_chat', { partyId, token });
+      // Auth — через cookie в WS-handshake.
+      socket.emit('join_party_chat', { partyId });
     };
 
     if (socket.connected) {
@@ -126,17 +128,18 @@ export default function PartyChat({
   const send = () => {
     if (!socketRef.current || !currentUserId || !token) return;
     if (!input.trim()) return;
+    // Auth — через cookie в WS-handshake.
     socketRef.current.emit('send_party_message', {
       partyId,
       message: input.trim(),
-      token,
     });
     setInput('');
   };
 
   const sendReaction = (messageId: number, emoji: string) => {
     if (!socketRef.current || !token) return;
-    socketRef.current.emit('add_party_reaction', { party_id: partyId, message_id: messageId, emoji, token });
+    // Auth — через cookie в WS-handshake.
+    socketRef.current.emit('add_party_reaction', { party_id: partyId, message_id: messageId, emoji });
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -150,7 +153,7 @@ export default function PartyChat({
       form.append('file', file);
       const res = await fetch(`${API_BASE}/upload/chat`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',  // HttpOnly cookie auth
         body: form,
       });
       if (!res.ok) throw new Error('Upload failed');
@@ -159,10 +162,10 @@ export default function PartyChat({
         file_type: string;
         file_name: string;
       };
+      // Auth — через cookie в WS-handshake.
       socketRef.current.emit('send_party_message', {
         partyId,
         message: input.trim(),
-        token,
         file_url,
         file_type,
         file_name,

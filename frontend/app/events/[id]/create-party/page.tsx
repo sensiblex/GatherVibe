@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '../../../components/Navbar';
 import { useAuth } from '../../../context/AuthContext';
+import { apiFetch } from '../../../lib/apiFetch';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -48,9 +49,9 @@ export default function CreatePartyPage() {
     if (!form.title.trim()) { setError('Название обязательно'); return; }
     setCreating(true); setError(null);
     try {
-      const res = await fetch(`${API_BASE}/parties/event/${eventId}`, {
+      const res = await apiFetch(`/parties/event/${eventId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: form.title.trim(),
           description: form.description.trim() || null,

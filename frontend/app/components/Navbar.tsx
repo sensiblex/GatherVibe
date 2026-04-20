@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationsContext';
 import { useEffect, useState } from 'react';
+import { apiFetch } from '../lib/apiFetch';
 import NavbarInvitesDropdown from './NavbarInvitesDropdown';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
@@ -70,7 +71,7 @@ export default function Navbar() {
     if (!token) { setAvatarUrl(null); return; }
     const cached = localStorage.getItem('avatar_url');
     if (cached) setAvatarUrl(cached);
-    fetch(`${API_BASE}/users/me`, { headers: { Authorization: `Bearer ${token}` } })
+    apiFetch(`${API_BASE}/users/me`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         const url: string | null = data?.avatar_url ?? null;

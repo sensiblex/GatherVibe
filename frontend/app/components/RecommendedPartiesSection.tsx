@@ -17,7 +17,9 @@ function useMyInterests() {
       return;
     }
     let cancelled = false;
-    apiFetch(`/users/${user.id}`)
+    // `/users/me` отдаёт все приватные поля; `/users/{id}` уважает show_interests
+    // и может вернуть null даже при заполненных интересах — ломало onboarding CTA.
+    apiFetch(`/users/me`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!cancelled) setInterests(data?.interests ?? null);
