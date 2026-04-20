@@ -8,6 +8,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import update as sql_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -38,8 +39,13 @@ from sio_instance import sio
 router = APIRouter(tags=["party_coordination"])
 
 # In-memory rate-limit: suppress system chat message if changed < 5 min ago
-# key: (party_id, user_id) → last system message timestamp
-_attendance_msg_cache: dict[tuple, datetime] = {}
+# key: (party_id, user_id) → last system message timestamp.
+# Ограничиваем размер и TTL, чтобы не утекала память на долгоживущих воркерах.
+try:
+    from cachetools import TTLCache
+    _attendance_msg_cache = TTLCache(maxsize=10_000, ttl=600)
+except ImportError:  # pragma: no cover — cachetools в requirements_docker.txt
+    _attendance_msg_cache: dict[tuple, datetime] = {}
 ATTENDANCE_RATE_LIMIT_SECONDS = 300
 
 
@@ -312,7 +318,11 @@ async def vote_poll(
         db.rollback()
         raise HTTPException(status_code=400, detail="Вы уже проголосовали в этом голосовании")
 
-    option.vote_count += 1
+    db.execute(
+        sql_update(PollOption)
+        .where(PollOption.id == body.option_id)
+        .values(vote_count=PollOption.vote_count + 1)
+    )
     db.flush()
 
     out = _build_poll_out(poll, db, user.id)

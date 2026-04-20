@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime
 
-import kudago_api
+import asyncio
+import kudago_api_async
 from auth import verify_password, hash_password
 from deps import get_db, get_current_user_from_token, oauth2_scheme
 from models.user import User
@@ -26,13 +27,33 @@ def export_user_data(
     """GDPR: экспорт всех данных текущего пользователя в JSON."""
     me = get_current_user_from_token(token, db)
 
-    reviews_written = db.query(PartyReview).filter(PartyReview.reviewer_id == me.id).all()
-    reviews_received = db.query(PartyReview).filter(PartyReview.reviewed_id == me.id).all()
-    chat_msgs = db.query(ChatMessage).filter(ChatMessage.user_id == str(me.id)).all()
-    reports_filed = db.query(Report).filter(Report.reporter_id == me.id).all()
-    notifications = db.query(Notification).filter(Notification.user_id == me.id).all()
-    memberships = db.query(PartyMember).filter(PartyMember.user_id == me.id).all()
-    parties_created = db.query(EventParty).filter(EventParty.creator_id == me.id).all()
+    # GDPR-экспорт: ограничиваем выборки чтобы не дать DoS-вектор по памяти.
+    # Для реального полного экспорта нужен background job + файл, здесь —
+    # inline для разумных объёмов.
+    EXPORT_MSGS_CAP = 5000
+    EXPORT_NOTIF_CAP = 1000
+    EXPORT_OTHER_CAP = 2000
+    reviews_written = db.query(PartyReview).filter(
+        PartyReview.reviewer_id == me.id
+    ).order_by(PartyReview.id.desc()).limit(EXPORT_OTHER_CAP).all()
+    reviews_received = db.query(PartyReview).filter(
+        PartyReview.reviewed_id == me.id
+    ).order_by(PartyReview.id.desc()).limit(EXPORT_OTHER_CAP).all()
+    chat_msgs = db.query(ChatMessage).filter(
+        ChatMessage.user_id == me.id  # user_id теперь Integer, а не str
+    ).order_by(ChatMessage.id.desc()).limit(EXPORT_MSGS_CAP).all()
+    reports_filed = db.query(Report).filter(
+        Report.reporter_id == me.id
+    ).order_by(Report.id.desc()).limit(EXPORT_OTHER_CAP).all()
+    notifications = db.query(Notification).filter(
+        Notification.user_id == me.id
+    ).order_by(Notification.id.desc()).limit(EXPORT_NOTIF_CAP).all()
+    memberships = db.query(PartyMember).filter(
+        PartyMember.user_id == me.id
+    ).order_by(PartyMember.id.desc()).limit(EXPORT_OTHER_CAP).all()
+    parties_created = db.query(EventParty).filter(
+        EventParty.creator_id == me.id
+    ).order_by(EventParty.id.desc()).limit(EXPORT_OTHER_CAP).all()
 
     def _dt(v):
         return v.isoformat() if v else None
@@ -150,7 +171,7 @@ def get_my_stats(
 
 
 @router.get("/users/me/events")
-def get_my_events(
+async def get_my_events(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
@@ -200,7 +221,9 @@ def get_my_events(
 
     for event_id in party_event_ids:
         try:
-            raw = kudago_api.get_event_by_id(int(event_id))
+            raw = await asyncio.wait_for(
+                kudago_api_async.get_event_by_id(int(event_id)), timeout=3.0
+            )
             dates = raw.get("dates") or []
             date_ts: Optional[int] = None
             future = sorted(
@@ -249,7 +272,14 @@ def get_my_events(
 
 
 @router.get("/users/{user_id}")
-def get_user(user_id: int, db: Session = Depends(get_db)):
+def get_user(
+    user_id: int,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    # Требуем авторизации — иначе любой бот может перебирать ID и собирать
+    # username/bio/avatar. Приватность полей уже уважается (show_*).
+    get_current_user_from_token(token, db)
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
@@ -265,97 +295,5 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.patch("/users/me")
-def update_me(
-    body: UserUpdate,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user_from_token(token, db)
-
-    if body.username is not None:
-        if not body.username.strip():
-            raise HTTPException(status_code=400, detail="Имя пользователя не может быть пустым")
-        user.username = body.username.strip()
-
-    if body.new_password is not None:
-        if not body.old_password:
-            raise HTTPException(status_code=400, detail="Необходимо указать текущий пароль для смены")
-        if len(body.new_password) < 8:
-            raise HTTPException(status_code=400, detail="Новый пароль должен содержать минимум 8 символов")
-        if not verify_password(body.old_password, user.hashed_password):
-            raise HTTPException(status_code=400, detail="Неверный текущий пароль")
-        if body.new_password == body.old_password:
-            raise HTTPException(status_code=400, detail="Новый пароль должен отличаться от текущего")
-        user.hashed_password = hash_password(body.new_password)
-
-    if body.city is not None:
-        user.city = body.city
-    if body.bio is not None:
-        user.bio = body.bio
-    if body.interests is not None:
-        user.interests = body.interests
-    if body.avatar_url is not None:
-        user.avatar_url = body.avatar_url
-
-    # Matching fields
-    matching_touched = False
-    if body.birth_date is not None:
-        user.birth_date = body.birth_date
-    if body.latitude is not None:
-        user.latitude = body.latitude
-    if body.longitude is not None:
-        user.longitude = body.longitude
-    if body.geo_precision is not None:
-        user.geo_precision = body.geo_precision
-    if body.show_age is not None:
-        user.show_age = body.show_age
-    if body.is_discoverable_on_events is not None:
-        user.is_discoverable_on_events = body.is_discoverable_on_events
-    if body.preferred_categories is not None:
-        user.preferred_categories = body.preferred_categories
-        matching_touched = True
-    if body.preferred_days is not None:
-        user.preferred_days = body.preferred_days
-    if body.preferred_time is not None:
-        user.preferred_time = body.preferred_time
-    if body.budget_max is not None:
-        user.budget_max = body.budget_max
-
-    # Refresh embedding if any field feeding into compose_user_text changed
-    if body.interests is not None or body.bio is not None or body.city is not None or matching_touched:
-        try:
-            from services import embeddings
-            from routers.recommendations import (
-                invalidate_user_cache, invalidate_user_event_cache,
-            )
-            embeddings.refresh_user_embedding(db, user)
-            invalidate_user_cache(user.id)
-            invalidate_user_event_cache(user.id)
-        except Exception:
-            # Embedding refresh is best-effort — don't fail the PATCH
-            pass
-
-    db.commit()
-    db.refresh(user)
-
-    return {
-        "id": user.id,
-        "username": user.username,
-        "email": user.email,
-        "city": user.city,
-        "bio": user.bio,
-        "interests": user.interests,
-        "avatar_url": user.avatar_url,
-        "is_active": user.is_active,
-        "birth_date": user.birth_date.isoformat() if user.birth_date else None,
-        "latitude": user.latitude,
-        "longitude": user.longitude,
-        "geo_precision": user.geo_precision,
-        "show_age": user.show_age,
-        "is_discoverable_on_events": user.is_discoverable_on_events,
-        "preferred_categories": user.preferred_categories,
-        "preferred_days": user.preferred_days,
-        "preferred_time": user.preferred_time,
-        "budget_max": user.budget_max,
-    }
+# PATCH /users/me — handler живёт в routers/auth.py (регистрируется первым).
+# Дубль отсюда удалён: маршрут всё равно перекрывался, код был недостижим.

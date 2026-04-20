@@ -122,8 +122,8 @@ ALLOWED_REVIEW_TAGS: List[str] = POSITIVE_REVIEW_TAGS + NEGATIVE_REVIEW_TAGS
 class ReviewCreate(BaseModel):
     reviewed_id: int
     party_id: int
-    rating: int  # 1-5
-    text: Optional[str] = None
+    rating: int = Field(..., ge=1, le=5)
+    text: Optional[str] = Field(None, max_length=2000)
     tags: Optional[List[str]] = None  # max 3 from ALLOWED_REVIEW_TAGS
 
     _sanitize_text = field_validator("text", mode="before")(_sanitize_optional)
@@ -145,8 +145,8 @@ class ReviewOut(BaseModel):
 
 
 class ReviewUpdate(BaseModel):
-    rating: Optional[int] = None
-    text: Optional[str] = None
+    rating: Optional[int] = Field(None, ge=1, le=5)
+    text: Optional[str] = Field(None, max_length=2000)
     tags: Optional[List[str]] = None
 
     _sanitize_text = field_validator("text", mode="before")(_sanitize_optional)

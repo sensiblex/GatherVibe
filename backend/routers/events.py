@@ -1,5 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, File
 from sqlalchemy.orm import Session
+from sqlalchemy import func as sa_func, select as sa_select, update as sa_update
 from typing import Optional, List
 from datetime import datetime
 import time
@@ -8,14 +9,16 @@ import uuid
 import pathlib
 
 from pydantic import BaseModel
-from deps import get_db, get_current_user_from_token, oauth2_scheme
+from deps import get_db, get_current_user_from_token, oauth2_scheme, require_admin
 from schemas import EventCreate, EventResponse, EventUpdate
 from models.event import Event
 from models.attendee import EventAttendee
 from models.chat_message import ChatMessage
 from models.message_reaction import MessageReaction
 from models.user import User
+from models.party import EventParty, PartyMember
 import kudago_api
+import kudago_api_async
 import kudago_cache
 
 router = APIRouter(tags=["events"])
@@ -65,7 +68,22 @@ def get_messages(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    get_current_user_from_token(token, db)
+    current_user = get_current_user_from_token(token, db)
+    # For party rooms, verify membership
+    if room.startswith("party_"):
+        try:
+            room_party_id = int(room.split("_", 1)[1])
+            member = db.query(PartyMember).filter(
+                PartyMember.party_id == room_party_id,
+                PartyMember.user_id == current_user.id,
+                PartyMember.status == "accepted",
+            ).first()
+            party_obj = db.query(EventParty).filter(EventParty.id == room_party_id).first()
+            is_creator = party_obj and party_obj.creator_id == current_user.id
+            if not member and not is_creator:
+                raise HTTPException(status_code=403, detail="Нет доступа к чату этой компании")
+        except (ValueError, IndexError):
+            raise HTTPException(status_code=400, detail="Некорректный room")
     query = db.query(ChatMessage).filter(ChatMessage.room == room)
     if before_id is not None:
         query = query.filter(ChatMessage.id < before_id)
@@ -134,6 +152,11 @@ async def upload_chat_file(
     if not is_flag_enabled(db, "file_upload_enabled"):
         raise HTTPException(status_code=403, detail="Загрузка файлов временно отключена")
 
+    ext = pathlib.Path(file.filename or "").suffix.lower()
+    FORBIDDEN_EXTENSIONS = {'.html', '.htm', '.svg', '.js', '.php', '.xml', '.xhtml'}
+    if ext in FORBIDDEN_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Тип файла не разрешён")
+
     content_type = file.content_type or ""
     if content_type not in ALLOWED_MIME_TYPES and not content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail=f"Недопустимый тип файла: {content_type}")
@@ -186,8 +209,8 @@ def get_cities(db: Session = Depends(get_db)):
 
 @router.get("/events", response_model=List[EventResponse])
 def get_events(
-    skip: int = 0,
-    limit: int = 20,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=200),
     city: Optional[str] = None,
     category: Optional[str] = None,
     search: Optional[str] = None,
@@ -464,7 +487,7 @@ def kudago_sync(
     background_tasks: BackgroundTasks,
     locations: Optional[str] = Query(default=None, description="Через запятую: msk,spb,kzn"),
     wait: bool = Query(default=False, description="Если true — ждать завершения и вернуть статистику"),
-    token: str = Depends(oauth2_scheme),
+    _admin=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """Принудительная синхронизация кэша событий из KudaGo API.
@@ -472,7 +495,6 @@ def kudago_sync(
     По умолчанию запускает задачу в фоне и возвращает 202. При wait=true
     выполняется синхронно и возвращает статистику — для ручных отладок.
     """
-    get_current_user_from_token(token, db)
     loc_list = [l.strip() for l in locations.split(",")] if locations else kudago_cache.DEFAULT_LOCATIONS
 
     if wait:
@@ -487,7 +509,12 @@ def kudago_sync(
 
 
 @router.get("/kudago/debug")
-def kudago_debug(location: str = Query(default="kzn"), search: str = Query(default="мир"), db: Session = Depends(get_db)):
+def kudago_debug(
+    location: str = Query(default="kzn"),
+    search: str = Query(default="мир"),
+    _admin=Depends(require_admin),
+    db: Session = Depends(get_db),
+):
     import time as _time
     from models.kudago_event import KudaGoEvent as KE
     from sqlalchemy import func as sf
@@ -523,11 +550,12 @@ def kudago_debug(location: str = Query(default="kzn"), search: str = Query(defau
 
 
 @router.get("/kudago/events/{event_id}")
-def kudago_get_event_detail(event_id: int):
+async def kudago_get_event_detail(event_id: int):
     try:
-        return kudago_api.parse_event_detail(kudago_api.get_event_by_id(event_id))
+        raw = await kudago_api_async.get_event_by_id(event_id)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
+    return kudago_api.parse_event_detail(raw)
 
 
 @router.get("/kudago/today")
@@ -620,14 +648,19 @@ def join_event(
     created_at = row.created_at or datetime.utcnow()
 
     try:
-        local_event = db.query(Event).filter(Event.id == int(event_id)).first()
-        if local_event:
-            local_event.current_participants = (
-                db.query(EventAttendee)
-                .filter(EventAttendee.event_id == event_id)
-                .count()
-            )
-            db.commit()
+        eid_int = int(event_id)
+        # Атомарный UPDATE с подзапросом — одна SQL-инструкция; корректен
+        # относительно concurrent attend/leave и не требует промежуточного select.
+        db.execute(
+            sa_update(Event)
+            .where(Event.id == eid_int)
+            .values(current_participants=(
+                sa_select(sa_func.count()).select_from(EventAttendee)
+                .where(EventAttendee.event_id == event_id)
+                .scalar_subquery()
+            ))
+        )
+        db.commit()
     except (ValueError, TypeError):
         pass
 
@@ -657,14 +690,17 @@ def leave_event(
     db.commit()
 
     try:
-        local_event = db.query(Event).filter(Event.id == int(event_id)).first()
-        if local_event:
-            local_event.current_participants = (
-                db.query(EventAttendee)
-                .filter(EventAttendee.event_id == event_id)
-                .count()
-            )
-            db.commit()
+        eid_int = int(event_id)
+        db.execute(
+            sa_update(Event)
+            .where(Event.id == eid_int)
+            .values(current_participants=(
+                sa_select(sa_func.count()).select_from(EventAttendee)
+                .where(EventAttendee.event_id == event_id)
+                .scalar_subquery()
+            ))
+        )
+        db.commit()
     except (ValueError, TypeError):
         pass
 
@@ -687,6 +723,8 @@ def get_my_attendance(
 @router.get("/attendees/{event_id}/matches", response_model=List[AttendeeMatchOut])
 def get_matches(
     event_id: str,
+    only_looking: bool = Query(default=False),
+    limit: int = Query(default=200, ge=1, le=500),
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
@@ -695,12 +733,18 @@ def get_matches(
         i.strip() for i in (user.interests or "").split(",") if i.strip()
     )
 
-    rows = (
+    # Pre-filter по is_looking ещё в БД; LIMIT применяем ПОСЛЕ scoring,
+    # но чтобы не держать в памяти всех attendees популярного события —
+    # загружаем хотя бы не больше 2000 (разумный потолок для in-Python sort).
+    HARD_CAP = 2000
+    query = (
         db.query(EventAttendee, User)
         .join(User, EventAttendee.user_id == User.id)
         .filter(EventAttendee.event_id == event_id, EventAttendee.user_id != user.id)
-        .all()
     )
+    if only_looking:
+        query = query.filter(EventAttendee.is_looking == True)  # noqa: E712
+    rows = query.order_by(EventAttendee.created_at.desc()).limit(HARD_CAP).all()
 
     result = []
     for a, u in rows:
@@ -716,25 +760,35 @@ def get_matches(
         ))
 
     result.sort(key=lambda x: x.common_count, reverse=True)
-    return result
+    return result[:limit]
 
 
 @router.get("/attendees/{event_id}", response_model=List[AttendeeOut])
 def get_attendees(
     event_id: str,
     only_looking: bool = Query(default=False),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    get_current_user_from_token(token, db)
     query = db.query(EventAttendee, User).join(User, EventAttendee.user_id == User.id).filter(
         EventAttendee.event_id == event_id
     )
     if only_looking:
         query = query.filter(EventAttendee.is_looking == True)
-    rows = query.order_by(EventAttendee.created_at.desc()).all()
+    # Добавили пагинацию: для популярных событий с тысячами attendees
+    # полный `.all()` в Python — DoS-вектор по памяти.
+    rows = query.order_by(EventAttendee.created_at.desc()).offset(offset).limit(limit).all()
     return [
         AttendeeOut(
-            id=a.id, user_id=u.id, username=u.username, city=u.city,
-            interests=u.interests, comment=a.comment,
+            id=a.id,
+            user_id=u.id,
+            username=u.username,
+            city=u.city if getattr(u, "show_city", True) else None,
+            interests=u.interests if getattr(u, "show_interests", True) else None,
+            comment=a.comment,
             is_looking=a.is_looking,
             created_at=a.created_at or datetime.utcnow(),
             avatar_url=u.avatar_url,

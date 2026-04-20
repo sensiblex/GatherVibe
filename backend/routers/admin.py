@@ -480,6 +480,10 @@ def unban_user(
     u = db.query(User).filter(User.id == user_id).first()
     if not u:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
+    # Permanent-бан (banned_until is NULL) может снять только админ:
+    # чтобы модератор не отменял решения админов.
+    if u.is_banned and u.banned_until is None and me.role != "admin":
+        raise HTTPException(status_code=403, detail="Постоянный бан может снять только администратор")
     u.is_banned = False
     u.banned_until = None
     u.ban_reason = None
@@ -540,10 +544,14 @@ def admin_delete_user(
 # ── Bulk actions ─────────────────────────────────────────────────────────────
 
 class BulkPayload(BaseModel):
-    user_ids: list[int] = Field(..., min_length=1, max_length=200)
+    # Ограничиваем батч 50 (раньше было 200) — снижаем blast radius
+    # скомпрометированного модер-аккаунта и phish-CSRF через social-engineering.
+    user_ids: list[int] = Field(..., min_length=1, max_length=50)
     action: str = Field(..., pattern=r"^(warn|mute|ban)$")
     duration_hours: Optional[int] = None
     reason: Optional[str] = Field(default=None, max_length=500)
+    # Чтобы случайный POST без подтверждения не прошёл (phish/CSRF protection).
+    confirm: bool = False
 
 
 @router.post("/users/bulk")
@@ -552,10 +560,16 @@ def bulk_user_action(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
+    if not payload.confirm:
+        raise HTTPException(status_code=400, detail="confirm=true обязателен для bulk-операций")
     if payload.action not in ("warn", "mute", "ban"):
         raise HTTPException(status_code=400, detail="Недопустимое действие")
     if payload.action == "ban" and payload.duration_hours is None and me.role != "admin":
         raise HTTPException(status_code=403, detail="Permanent ban — только admin")
+    # Батчи >20 требуют admin: даже если модер действует с confirm, массовые
+    # действия всё равно нуждаются в повышенных правах.
+    if len(payload.user_ids) > 20 and me.role != "admin":
+        raise HTTPException(status_code=403, detail="Батчи >20 пользователей — только admin")
 
     succeeded = 0
     skipped = 0

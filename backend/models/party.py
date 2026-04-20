@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Float, Index, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Float, Index, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.sql import func
 from database import Base
 
@@ -39,7 +39,16 @@ class PartyMember(Base):
     invited_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     invite_message = Column(String(200), nullable=True)
 
-    __table_args__ = (UniqueConstraint("party_id", "user_id", name="uq_party_user"),)
+    __table_args__ = (
+        UniqueConstraint("party_id", "user_id", name="uq_party_user"),
+        CheckConstraint(
+            "status IN ('pending','accepted','rejected','left','invited','declined')",
+            name="ck_party_member_status",
+        ),
+        # Hot-path: 8 мест делают count() по (party_id, status) для проверки
+        # заполненности компании. Composite index закрывает все эти запросы.
+        Index("ix_party_members_party_status", "party_id", "status"),
+    )
 
 
 class PartyMeetingPlan(Base):
@@ -53,7 +62,7 @@ class PartyMeetingPlan(Base):
     meet_lat      = Column(Float, nullable=True)
     meet_lon      = Column(Float, nullable=True)
     meet_landmark = Column(Text, nullable=True)
-    updated_by    = Column(Integer, ForeignKey("users.id"), nullable=False)
+    updated_by    = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     updated_at    = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
@@ -68,7 +77,7 @@ class PartyMeetingPlanHistory(Base):
     meet_lat      = Column(Float, nullable=True)
     meet_lon      = Column(Float, nullable=True)
     meet_landmark = Column(Text, nullable=True)
-    changed_by    = Column(Integer, ForeignKey("users.id"), nullable=False)
+    changed_by    = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     changed_at    = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (

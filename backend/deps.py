@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from database import SessionLocal
 from models.user import User
+from models.token_revocation import RevokedToken
 
 
 class OAuth2BearerOrCookie(OAuth2):
@@ -66,12 +67,17 @@ def get_current_user_from_token(token: str, db: Session, *, allow_banned: bool =
     payload = verify_token(token)
     if payload is None:
         raise HTTPException(status_code=401, detail="Неверный токен")
+    jti = payload.get("jti")
+    if jti and db.query(RevokedToken).filter(RevokedToken.jti == jti).first():
+        raise HTTPException(status_code=401, detail="Токен отозван")
     email = payload.get("sub")
     if not email:
         raise HTTPException(status_code=401, detail="Неверный токен")
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
+    if not getattr(user, "is_active", True):
+        raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
     if not allow_banned and _is_user_banned(user):
         until = user.banned_until.isoformat() if user.banned_until else None
         raise HTTPException(
@@ -109,15 +115,24 @@ def require_admin(user: User = Depends(current_user)) -> User:
 
 
 def get_user_from_socket_token(token: str, db: Session) -> User:
-    """Authentication helper for Socket.IO handlers."""
+    """Authentication helper for Socket.IO handlers.
+    Отказывает revoked jti, забаненным юзерам и неактивным — симметрично HTTP-варианту.
+    """
     from jwt_handler import verify_token
     payload = verify_token(token)
     if payload is None:
         raise ValueError("Неверный токен")
+    jti = payload.get("jti")
+    if jti and db.query(RevokedToken).filter(RevokedToken.jti == jti).first():
+        raise ValueError("Токен отозван")
     email = payload.get("sub")
     if not email:
         raise ValueError("Неверный токен")
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise ValueError("Пользователь не найден")
+    if not getattr(user, "is_active", True):
+        raise ValueError("Аккаунт заблокирован")
+    if _is_user_banned(user):
+        raise ValueError("Аккаунт заблокирован")
     return user

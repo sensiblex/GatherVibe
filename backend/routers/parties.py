@@ -8,7 +8,6 @@ from enum import Enum
 import asyncio
 import json
 import uuid
-import kudago_api
 import kudago_api_async
 from pydantic import BaseModel, Field, field_validator
 from deps import get_db, get_current_user_from_token, oauth2_scheme
@@ -42,17 +41,17 @@ class MemberStatus(str, Enum):
 
 
 class PartyCreateBody(BaseModel):
-    title: str
-    description: Optional[str] = None
-    max_members: int = 4
+    title: str = Field(..., min_length=1, max_length=60)
+    description: Optional[str] = Field(None, max_length=500)
+    max_members: int = Field(4, ge=2, le=50)
 
     _san = field_validator("title", "description", mode="before")(_san)
 
 
 class PartyUpdateBody(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    max_members: Optional[int] = None
+    title: Optional[str] = Field(None, min_length=1, max_length=60)
+    description: Optional[str] = Field(None, max_length=500)
+    max_members: Optional[int] = Field(None, ge=2, le=50)
 
     _san = field_validator("title", "description", mode="before")(_san)
 
@@ -97,7 +96,8 @@ class PendingRequestOut(BaseModel):
     user_id: int
     username: str
     party_id: int
-    event_title: Optional[str] = None
+    party_title: Optional[str] = None  # название компании (party.title)
+    event_title: Optional[str] = None  # название события (party.event_title, из KudaGo или локального Event)
     created_at: datetime
     message: Optional[str] = None
 
@@ -167,33 +167,74 @@ def _ensure_invite_token(party: EventParty, db: Session) -> str:
     return token
 
 
-def _build_party_out(party: EventParty, db: Session) -> PartyOut:
-    _ensure_invite_token(party, db)
-    creator = db.query(User).filter(User.id == party.creator_id).first()
-    members_rows = db.query(PartyMember, User).join(User, PartyMember.user_id == User.id).filter(
-        PartyMember.party_id == party.id,
-        PartyMember.user_id != party.creator_id,
-        PartyMember.status.in_([MemberStatus.pending, MemberStatus.accepted, MemberStatus.invited])
-    ).all()
-    members = [
-        PartyMemberOut(id=m.id, user_id=u.id, username=u.username, city=u.city,
-                       interests=u.interests, status=m.status, joined_at=m.joined_at,
-                       message=m.message,
-                       invited_by_user_id=m.invited_by_user_id,
-                       invite_message=m.invite_message)
-        for m, u in members_rows
-    ]
-    return PartyOut(
-        id=party.id, event_id=party.event_id, title=party.title,
-        description=party.description, max_members=party.max_members,
-        creator_id=party.creator_id,
-        creator_username=creator.username if creator else "?",
-        is_open=party.is_open, members=members,
-        event_title=party.event_title, event_date_ts=party.event_date_ts,
-        event_image_url=party.event_image_url,
-        invite_token=party.invite_token,
-        created_at=party.created_at,
+def _build_party_out(party: EventParty, db: Session, viewer_id: Optional[int] = None) -> PartyOut:
+    # Делегируем на bulk-версию (2 запроса вместо 2× на party). Так исключаем
+    # дивёргенцию между одиночной и списковой формами и получаем то же самое
+    # bulk-оптимизированное поведение для любого callera.
+    result = _build_parties_out_bulk([party], db, viewer_id=viewer_id)
+    return result[0]
+
+
+def _build_parties_out_bulk(
+    parties: List[EventParty],
+    db: Session,
+    viewer_id: Optional[int] = None,
+) -> List[PartyOut]:
+    """Batch-версия _build_party_out: 2 запроса на весь список вместо 2×N.
+
+    - Одним запросом подтягивает всех creator'ов.
+    - Одним запросом — всех members (с join на User) по списку party_id.
+    """
+    if not parties:
+        return []
+    # creators: один IN-запрос
+    creator_ids = {p.creator_id for p in parties}
+    creators = {u.id: u for u in db.query(User).filter(User.id.in_(creator_ids)).all()}
+
+    # members всех party одним запросом
+    party_ids = [p.id for p in parties]
+    member_rows = (
+        db.query(PartyMember, User)
+        .join(User, PartyMember.user_id == User.id)
+        .filter(PartyMember.party_id.in_(party_ids))
+        .all()
     )
+    members_by_party: dict[int, list] = {pid: [] for pid in party_ids}
+    for m, u in member_rows:
+        members_by_party[m.party_id].append((m, u))
+
+    result: List[PartyOut] = []
+    for party in parties:
+        _ensure_invite_token(party, db)
+        is_privileged = (viewer_id is not None and viewer_id == party.creator_id)
+        visible_statuses = (
+            {MemberStatus.pending, MemberStatus.accepted, MemberStatus.invited}
+            if is_privileged
+            else {MemberStatus.accepted, MemberStatus.invited}
+        )
+        members = [
+            PartyMemberOut(
+                id=m.id, user_id=u.id, username=u.username, city=u.city,
+                interests=u.interests, status=m.status, joined_at=m.joined_at,
+                message=m.message, invited_by_user_id=m.invited_by_user_id,
+                invite_message=m.invite_message,
+            )
+            for (m, u) in members_by_party.get(party.id, [])
+            if m.user_id != party.creator_id and m.status in visible_statuses
+        ]
+        creator = creators.get(party.creator_id)
+        result.append(PartyOut(
+            id=party.id, event_id=party.event_id, title=party.title,
+            description=party.description, max_members=party.max_members,
+            creator_id=party.creator_id,
+            creator_username=creator.username if creator else "?",
+            is_open=party.is_open, members=members,
+            event_title=party.event_title, event_date_ts=party.event_date_ts,
+            event_image_url=party.event_image_url,
+            invite_token=party.invite_token if is_privileged else None,
+            created_at=party.created_at,
+        ))
+    return result
 
 
 def _check_and_close_party(party: EventParty, db: Session) -> bool:
@@ -222,6 +263,7 @@ async def _notify_party_closed(party: EventParty, db: Session, exclude_user_ids:
         PartyMember.party_id == party.id,
         PartyMember.status == MemberStatus.accepted,
     ).all()
+    pending_notifs = []
     for m in members:
         if m.user_id in exclude_user_ids:
             continue
@@ -231,6 +273,9 @@ async def _notify_party_closed(party: EventParty, db: Session, exclude_user_ids:
             f"Компания «{party.title}» набрала участников и больше не принимает заявки",
             {"party_id": party.id},
         )
+        pending_notifs.append((m.user_id, notif))
+    db.commit()
+    for user_id, notif in pending_notifs:
         await sio.emit("new_notification", {
             "id": notif.id,
             "type": notif.type,
@@ -239,7 +284,7 @@ async def _notify_party_closed(party: EventParty, db: Session, exclude_user_ids:
             "data": notif.data,
             "is_read": False,
             "created_at": notif.created_at.isoformat(),
-        }, room=f"user_{m.user_id}")
+        }, room=f"user_{user_id}")
 
 
 # ─── Routes ─────────────────────────────────────────────────────────────────
@@ -265,7 +310,7 @@ def get_my_parties(
 
     all_parties = list({p.id: p for p in created + member_parties}.values())
     all_parties.sort(key=lambda p: p.created_at or datetime.min, reverse=True)
-    return [_build_party_out(p, db) for p in all_parties]
+    return _build_parties_out_bulk(all_parties, db, viewer_id=user.id)
 
 
 @router.get("/parties/my-pending-requests", response_model=List[PendingRequestOut])
@@ -293,7 +338,8 @@ def get_my_pending_requests(
             user_id=user.id,
             username=user.username,
             party_id=party.id,
-            event_title=party.title,
+            party_title=party.title,
+            event_title=party.event_title,
             created_at=member.joined_at,
             message=member.message,
         ))
@@ -313,6 +359,7 @@ def search_parties(
     min_members: Optional[int] = Query(default=None, ge=1),
     max_members: Optional[int] = Query(default=None, ge=1),
     sort_by: Literal["date", "popular", "new"] = Query(default="new"),
+    is_open: Optional[bool] = Query(default=None),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=100),
     token: str = Depends(oauth2_scheme),
@@ -363,7 +410,33 @@ def search_parties(
     if max_members is not None:
         base_q = base_q.filter(EventParty.max_members <= max_members)
 
-    total = base_q.count()
+    if is_open is not None:
+        base_q = base_q.filter(EventParty.is_open == is_open)
+
+    # Count на отдельном лёгком запросе — без JOIN'ов на User/member_count_sq.
+    # `base_q.count()` обёртывает всё в `SELECT count(*) FROM (... JOINs ...)` —
+    # у нас для count нужны только фильтры по EventParty.
+    count_q = db.query(sa_func.count(EventParty.id)).filter(
+        EventParty.is_hidden == False  # noqa: E712
+    )
+    if q and q.strip():
+        pattern = f"%{q.strip()}%"
+        count_q = count_q.filter(
+            EventParty.title.ilike(pattern) | EventParty.description.ilike(pattern)
+        )
+    if city and city.strip():
+        count_q = count_q.filter(EventParty.city.ilike(f"%{city.strip()}%"))
+    if date_from is not None:
+        count_q = count_q.filter(EventParty.created_at >= date_from)
+    if date_to is not None:
+        count_q = count_q.filter(EventParty.created_at <= date_to)
+    if min_members is not None:
+        count_q = count_q.filter(EventParty.max_members >= min_members)
+    if max_members is not None:
+        count_q = count_q.filter(EventParty.max_members <= max_members)
+    if is_open is not None:
+        count_q = count_q.filter(EventParty.is_open == is_open)
+    total = count_q.scalar() or 0
 
     if sort_by == "popular":
         base_q = base_q.order_by(sa_func.coalesce(member_count_sq.c.member_count, 0).desc())
@@ -404,11 +477,11 @@ def get_party_detail(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    get_current_user_from_token(token, db)
+    current_user = get_current_user_from_token(token, db)
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
         raise HTTPException(status_code=404, detail="Компания не найдена")
-    return _build_party_out(party, db)
+    return _build_party_out(party, db, viewer_id=current_user.id)
 
 
 @router.get("/parties/detail/{party_id}", response_model=PartyOut)
@@ -417,11 +490,11 @@ def get_party_detail_public(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    get_current_user_from_token(token, db)
+    current_user = get_current_user_from_token(token, db)
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
         raise HTTPException(status_code=404, detail="Компания не найдена")
-    return _build_party_out(party, db)
+    return _build_party_out(party, db, viewer_id=current_user.id)
 
 
 @router.get("/parties/by-token/{invite_token}", response_model=PartyInvitePreviewOut)
@@ -483,7 +556,7 @@ async def join_party_by_invite_token(
         PartyMember.party_id == party.id,
         PartyMember.status == MemberStatus.accepted,
     ).count()
-    if accepted_count + 1 >= party.max_members:
+    if accepted_count > party.max_members:
         raise HTTPException(status_code=400, detail="Компания заполнена")
 
     if existing:
@@ -534,7 +607,7 @@ def get_parties(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    get_current_user_from_token(token, db)
+    current_user = get_current_user_from_token(token, db)
     try:
         local_event = db.query(Event).filter(Event.id == int(event_id)).first()
         if local_event and local_event.date_time < datetime.utcnow():
@@ -545,7 +618,8 @@ def get_parties(
     parties = db.query(EventParty).filter(EventParty.event_id == event_id).order_by(
         EventParty.created_at.desc()
     ).all()
-    return [_build_party_out(p, db) for p in parties]
+    # viewer_id нужен чтобы creator видел invite_token своих party
+    return _build_parties_out_bulk(parties, db, viewer_id=current_user.id)
 
 
 @router.post("/parties/requests/{request_id}/approve", response_model=PartyOut)
@@ -783,23 +857,29 @@ async def delete_party(
         PartyMember.user_id != party.creator_id,
     ).all()
 
+    # Capture these before deletion so they remain available for socket payloads
+    deleted_party_id = party.id
+    deleted_party_title = party.title
+
     notified = []
     for m in affected:
         notif = create_notification(
             db, m.user_id, "party_deleted_for_user",
             "Компания удалена",
-            f"Компания «{party.title}» удалена создателем",
-            {"party_id": party.id, "previous_status": str(m.status)},
+            f"Компания «{deleted_party_title}» удалена создателем",
+            {"party_id": deleted_party_id, "previous_status": str(m.status)},
         )
         db.flush()
         notified.append((m.user_id, notif))
 
+    db.query(PartyMember).filter(PartyMember.party_id == party_id).delete()
+    db.delete(party)
     db.commit()
 
     await sio.emit(
         "party_deleted",
-        {"party_id": party.id, "party_title": party.title},
-        room=f"party_{party.id}",
+        {"party_id": deleted_party_id, "party_title": deleted_party_title},
+        room=f"party_{deleted_party_id}",
     )
     for uid, notif in notified:
         await sio.emit("new_notification", {
@@ -813,13 +893,10 @@ async def delete_party(
         }, room=f"user_{uid}")
         await sio.emit(
             "party_deleted_user",
-            {"party_id": party.id, "party_title": party.title, "notification_id": notif.id},
+            {"party_id": deleted_party_id, "party_title": deleted_party_title, "notification_id": notif.id},
             room=f"user_{uid}",
         )
 
-    db.query(PartyMember).filter(PartyMember.party_id == party_id).delete()
-    db.delete(party)
-    db.commit()
     return {"ok": True}
 
 
@@ -831,7 +908,7 @@ async def join_party(
     db: Session = Depends(get_db),
 ):
     user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    party = db.query(EventParty).filter(EventParty.id == party_id).with_for_update().first()
     if not party:
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if not party.is_open:
@@ -845,7 +922,7 @@ async def join_party(
     accepted_count = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.status == MemberStatus.accepted
     ).count()
-    if accepted_count + 1 >= party.max_members:
+    if accepted_count > party.max_members:
         raise HTTPException(status_code=400, detail="Компания заполнена")
     existing = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.user_id == user.id

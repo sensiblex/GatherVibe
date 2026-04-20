@@ -26,6 +26,17 @@ node_modules/
 *.backup
 *.old
 
+# Backend artifacts / uploads
+backend/_openapi.json
+backend/_pytest_out.log
+backend/uploads/chat/
+backend/uploads/recap/
+backend/uploads/avatars/
+
+# Test output
+test-screenshots/
+start-claude.ps1
+
 # IDE
 .vscode/settings.json
 

@@ -188,6 +188,13 @@ def load_embeddings_bulk(
     return out
 
 
+#: Верхняя граница размера кандидатного множества для brute-force similarity.
+#: При превышении берём только N самых свежих — иначе на 10к+ эмбеддингов
+#: каждый request рекомендаций превращается в full table scan + десериализацию
+#: всего корпуса. Для точного ANN-поиска нужен pgvector ivfflat.
+MAX_CANDIDATES_SCAN = 2000
+
+
 def find_similar(
     db: Session,
     entity_type: str,
@@ -199,12 +206,15 @@ def find_similar(
     """Brute-force cosine search over stored embeddings of `entity_type`.
 
     Returns [(entity_id, similarity), ...] sorted desc.
-    For N>10K entities, switch to pgvector ivfflat index (same table).
+    Масштаб ограничен MAX_CANDIDATES_SCAN: для корпусов >N берём самые свежие
+    записи (по id DESC). TODO: pgvector ivfflat для полного recall.
     """
     exclude = {str(x) for x in (exclude_ids or [])}
     rows = (
         db.query(EntityEmbedding.entity_id, EntityEmbedding.embedding_json)
         .filter(EntityEmbedding.entity_type == entity_type)
+        .order_by(EntityEmbedding.id.desc())
+        .limit(MAX_CANDIDATES_SCAN)
         .all()
     )
     scored: list[tuple[str, float]] = []

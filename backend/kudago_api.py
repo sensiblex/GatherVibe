@@ -1,15 +1,36 @@
 import httpx
+import logging
 import time
 from typing import Optional
 
 BASE_URL = "https://kudago.com/public-api/v1.4"
 
+_logger = logging.getLogger(__name__)
+
 
 def _get(path: str, params: dict) -> dict:
-    with httpx.Client(timeout=10) as client:
-        r = client.get(f"{BASE_URL}/{path}/", params=params)
-        r.raise_for_status()
-        return r.json()
+    """GET с лёгким retry для 429/503. Raises на 4xx (кроме 429) и 5xx после последней попытки."""
+    backoff = 1.0
+    last_exc: Optional[Exception] = None
+    for attempt in range(3):
+        try:
+            with httpx.Client(timeout=10) as client:
+                r = client.get(f"{BASE_URL}/{path}/", params=params)
+                if r.status_code in (429, 502, 503, 504):
+                    _logger.warning("KudaGo %s returned %s (attempt %d/3)", path, r.status_code, attempt + 1)
+                    time.sleep(backoff)
+                    backoff *= 2
+                    continue
+                r.raise_for_status()
+                return r.json()
+        except (httpx.TimeoutException, httpx.TransportError) as e:
+            _logger.warning("KudaGo %s transport error (attempt %d/3): %s", path, attempt + 1, e)
+            last_exc = e
+            time.sleep(backoff)
+            backoff *= 2
+    if last_exc is not None:
+        raise last_exc
+    raise httpx.HTTPStatusError("KudaGo rate-limited/unavailable after retries", request=None, response=None)
 
 
 def get_events(

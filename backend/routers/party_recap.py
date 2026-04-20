@@ -17,7 +17,7 @@ from typing import List, Literal, Optional
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from deps import get_db, get_current_user_from_token, oauth2_scheme
@@ -34,9 +34,25 @@ RECAP_WINDOW_SECONDS  = 48 * 3600         # post-event upload window
 MAX_PINNED_HIGHLIGHTS = 5
 MAX_PHOTO_BYTES       = 10 * 1024 * 1024  # 10MB
 ALLOWED_PHOTO_MIME    = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+ALLOWED_PHOTO_EXTS    = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+FORBIDDEN_PHOTO_EXTS  = {".html", ".htm", ".svg", ".js", ".php", ".xml", ".xhtml"}
 
 
 # ── Schemas ──────────────────────────────────────────────────────────────────
+
+
+def _safe_url(v: Optional[str]) -> Optional[str]:
+    """Разрешаем только относительные /uploads/... или https:// абсолютные.
+    Отсекает javascript:, data:, file: и прочие стор-XSS векторы.
+    """
+    if v is None:
+        return v
+    s = v.strip()
+    if not s:
+        return None
+    if s.startswith("/uploads/") or s.startswith("https://"):
+        return s
+    raise ValueError("URL должен начинаться с /uploads/ или https://")
 
 
 class RecapItemCreate(BaseModel):
@@ -44,9 +60,19 @@ class RecapItemCreate(BaseModel):
     media_url: Optional[str] = Field(None, max_length=500)
     caption: Optional[str] = Field(None, max_length=500)
 
+    @field_validator("media_url", mode="after")
+    @classmethod
+    def _validate_media_url(cls, v):
+        return _safe_url(v)
+
 
 class RecapCoverUpdate(BaseModel):
     cover_url: Optional[str] = Field(None, max_length=500)
+
+    @field_validator("cover_url", mode="after")
+    @classmethod
+    def _validate_cover_url(cls, v):
+        return _safe_url(v)
 
 
 class RecapReactionBody(BaseModel):
@@ -247,8 +273,15 @@ async def upload_recap_photo(
                             detail="Воспоминания можно добавлять только после окончания события")
 
     content_type = (file.content_type or "").lower()
-    if not (content_type in ALLOWED_PHOTO_MIME or content_type.startswith("image/")):
+    # Строгий whitelist по MIME — `startswith("image/")` больше не принимаем,
+    # иначе `image/svg+xml` проходит и даёт stored XSS при прямом открытии файла.
+    if content_type not in ALLOWED_PHOTO_MIME:
         raise HTTPException(status_code=400, detail=f"Недопустимый тип файла: {content_type}")
+
+    # И whitelist, и blacklist по расширению, чтобы злодей не подсунул .svg/.html с MIME image/jpeg.
+    ext = pathlib.Path(file.filename or "").suffix.lower()
+    if ext in FORBIDDEN_PHOTO_EXTS or (ext and ext not in ALLOWED_PHOTO_EXTS):
+        raise HTTPException(status_code=400, detail=f"Недопустимое расширение файла: {ext}")
 
     contents = await file.read()
     if len(contents) > MAX_PHOTO_BYTES:

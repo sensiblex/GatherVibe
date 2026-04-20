@@ -29,6 +29,7 @@ import models.audit_log
 import models.feature_flag
 import models.banned_word
 import models.appeal
+import models.token_revocation
 
 models.user.Base.metadata.create_all(bind=engine)
 models.event.Base.metadata.create_all(bind=engine)
@@ -45,6 +46,7 @@ models.audit_log.Base.metadata.create_all(bind=engine)
 models.feature_flag.Base.metadata.create_all(bind=engine)
 models.banned_word.Base.metadata.create_all(bind=engine)
 models.appeal.Base.metadata.create_all(bind=engine)
+models.token_revocation.Base.metadata.create_all(bind=engine)
 
 
 def _run_column_migrations():
@@ -155,7 +157,13 @@ def _run_column_migrations():
         conn.commit()
 
 
-_run_column_migrations()
+try:
+    _run_column_migrations()
+except Exception:
+    # ALTER'ы идемпотентны и выполняются на startup. Если один падает (diskfull,
+    # lock), не валим весь процесс: Alembic остаётся главным источником истины.
+    import logging as _lg
+    _lg.getLogger(__name__).exception("Column migration failed — continuing, schema may be partial")
 
 # ── Shared dependencies (re-exported so tests can override via main.get_db) ──
 from deps import (  # noqa: E402
@@ -231,6 +239,11 @@ async def _reminder_loop():
                     )
 
                     for party in parties:
+                        # Кооперативный yield перед каждой party: даём event-loop
+                        # обработать socket-события между синхронными DB-запросами.
+                        # Полноценное решение — async session; здесь это bandaid
+                        # под текущую нагрузку.
+                        await asyncio.sleep(0)
                         # Собираем accepted-участников + creator
                         accepted_rows = (
                             db.query(PartyMember)
@@ -256,14 +269,16 @@ async def _reminder_loop():
                         hours_before = delta_secs // 3600
 
                         for uid in recipient_ids:
-                            # Dedup: use trailing comma to avoid substring false positives (e.g. 1 vs 10)
-                            dedup_fragment = f'%"party_id": {party.id},%'
+                            # Dedup: party_id может быть последним ключом (}), middle (,) или рядом с пробелом.
+                            # Проверяем обе валидные JSON-формы, чтобы не промахнуться.
+                            frag_mid = f'%"party_id": {party.id},%'
+                            frag_end = f'%"party_id": {party.id}}}%'
                             already_sent = (
                                 db.query(Notification)
                                 .filter(
                                     Notification.user_id == uid,
                                     Notification.type == notif_type,
-                                    Notification.data.like(dedup_fragment),
+                                    (Notification.data.like(frag_mid) | Notification.data.like(frag_end)),
                                 )
                                 .first()
                             )
@@ -366,6 +381,45 @@ async def _invite_expiry_loop():
             logger.error("Invite expiry loop error: %s", exc)
 
 
+async def _db_cleanup_loop():
+    """Периодически чистит таблицы, которые растут неограниченно.
+
+    - revoked_tokens: удаляем записи с exp < NOW() (JWT уже истёк — blacklist-check не нужен).
+    - recommendation_impressions: удаляем записи старше 90 дней (аналитика свежее не читается).
+
+    Интервал: раз в час. Пропуск одного запуска допустим.
+    """
+    import logging as _lg
+    logger = _lg.getLogger(__name__)
+    from models.token_revocation import RevokedToken
+    from models.recommendation_impression import RecommendationImpression
+    from datetime import datetime, timedelta
+    from sqlalchemy import delete as sa_delete
+    while True:
+        try:
+            await asyncio.sleep(3600)  # 1 hour
+            db = SessionLocal()
+            try:
+                now = datetime.utcnow()
+                stale_impr = now - timedelta(days=90)
+                try:
+                    r1 = db.execute(sa_delete(RevokedToken).where(RevokedToken.exp < now))
+                    r2 = db.execute(sa_delete(RecommendationImpression).where(
+                        RecommendationImpression.created_at < stale_impr
+                    ))
+                    db.commit()
+                    logger.info("db_cleanup: revoked=%s impressions=%s", r1.rowcount, r2.rowcount)
+                except Exception as exc:
+                    logger.warning("db_cleanup inner error: %s", exc)
+                    db.rollback()
+            finally:
+                db.close()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("db_cleanup loop error: %s", exc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import os as _os_lifespan
@@ -386,11 +440,13 @@ async def lifespan(app: FastAPI):
     reminder_task = asyncio.create_task(_reminder_loop())
     invite_expiry_task = asyncio.create_task(_invite_expiry_loop())
     post_event_task = asyncio.create_task(_post_event_loop())
+    db_cleanup_task = asyncio.create_task(_db_cleanup_loop())
     yield
     cache_task.cancel()
     reminder_task.cancel()
     invite_expiry_task.cancel()
     post_event_task.cancel()
+    db_cleanup_task.cancel()
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
@@ -454,9 +510,64 @@ def health_check():
 
 # ── Socket.IO event handlers ──────────────────────────────────────────────────
 
+def _extract_token_from_environ(environ: dict) -> str | None:
+    """Читаем JWT из cookie (HttpOnly или non-HttpOnly) в handshake headers.
+
+    Позволяет фронту не передавать токен в socket.emit явно — достаточно того,
+    что браузер сам отправил cookie при установке WS-соединения.
+    Делаем unquote: если кто-то percent-encodit токен (напр. `eyJ...%3D`),
+    без декодирования JWT потом не провалидируется.
+    """
+    from urllib.parse import unquote as _unquote
+    cookie_header = environ.get("HTTP_COOKIE", "") or ""
+    for chunk in cookie_header.split(";"):
+        chunk = chunk.strip()
+        if chunk.startswith("token="):
+            return _unquote(chunk[len("token="):])
+    return None
+
+
 @sio.event
 async def connect(sid, environ):
+    # Пытаемся аутентифицировать по cookie ещё на handshake и сохранить user_id
+    # в сессии sio. Если токена нет / невалиден — соединение остаётся анонимным
+    # (события типа join_event_chat потом отклонят такие sid).
+    token = _extract_token_from_environ(environ)
+    if token:
+        db = SessionLocal()
+        try:
+            user = get_user_from_socket_token(token, db)
+            await sio.save_session(sid, {"user_id": user.id, "username": user.username})
+        except Exception:
+            pass
+        finally:
+            db.close()
     print(f"Client {sid} connected")
+
+
+async def _get_session_user(sid, db):
+    """Возвращает User из sio-сессии (установленной в connect), либо None."""
+    try:
+        sess = await sio.get_session(sid)
+    except Exception:
+        return None
+    uid = (sess or {}).get("user_id")
+    if not uid:
+        return None
+    return db.query(User).filter(User.id == uid).first()
+
+
+async def _authenticate_sid(sid, data, db):
+    """Возвращает User для sid. Сначала пытается session (из cookie handshake),
+    затем падает на data.get('token') ради обратной совместимости с фронтом,
+    который ещё шлёт токен в emit. Raises ValueError если не удалось."""
+    user = await _get_session_user(sid, db)
+    if user is not None:
+        return user
+    token = (data or {}).get('token') if isinstance(data, dict) else None
+    if not token:
+        raise ValueError("Требуется авторизация")
+    return get_user_from_socket_token(token, db)
 
 
 @sio.event
@@ -471,27 +582,36 @@ async def disconnect(sid):
 async def join_event_chat(sid, data):
     import logging
     logger = logging.getLogger(__name__)
-    if not isinstance(data, dict):
-        logger.warning(f"join_event_chat: отклонён запрос без токена, sid={sid}")
-        await sio.emit('error', {'message': 'Требуется авторизация'}, room=sid)
-        return
-    token = data.get('token')
-    if not token:
-        logger.warning(f"join_event_chat: пустой токен, sid={sid}")
-        await sio.emit('error', {'message': 'Требуется авторизация'}, room=sid)
-        return
+    if data is not None and not isinstance(data, dict):
+        data = {}
     db = SessionLocal()
     try:
-        user = get_user_from_socket_token(token, db)
-    except ValueError as e:
-        logger.warning(f"join_event_chat: невалидный токен, sid={sid}, error={e}")
+        user = await _authenticate_sid(sid, data, db)
+    except (ValueError, Exception) as e:
+        logger.warning(f"join_event_chat: auth failed, sid={sid}, error={e}")
         await sio.emit('error', {'message': 'Требуется авторизация'}, room=sid)
         db.close()
         return
-    event_id = data.get('eventId')
+    event_id = (data or {}).get('eventId')
     if not event_id:
         db.close()
         return
+    # Проверяем, что пользователь подписан на событие (числовой ID для local events).
+    # Для KudaGo событий (строковые ID) доступ открыт, т.к. они публичны.
+    try:
+        event_id_int = int(event_id)
+        from models.attendee import EventAttendee
+        is_attendee = db.query(EventAttendee).filter(
+            EventAttendee.event_id == event_id_int,
+            EventAttendee.user_id == user.id,
+        ).first()
+        if not is_attendee:
+            logger.warning(f"join_event_chat: user {user.id} не подписан на event {event_id_int}, sid={sid}")
+            await sio.emit('error', {'message': 'Нужно быть участником события'}, room=sid)
+            db.close()
+            return
+    except ValueError:
+        pass  # KudaGo string ID — публичный чат
     await sio.enter_room(sid, f'event_{event_id}')
     await sio.emit('user_joined', {'sid': sid, 'userId': user.id, 'username': user.username}, room=f'event_{event_id}')
     db.close()
@@ -513,14 +633,12 @@ def _socket_sanction_block(user) -> str | None:
 
 @sio.on('send_message')
 async def send_message(sid, data: dict):
-    token = data.get('token')
-    if not token:
-        await sio.emit('error', {'message': 'Токен отсутствует'}, room=sid)
-        return
+    if data is not None and not isinstance(data, dict):
+        data = {}
     db = SessionLocal()
     try:
-        user = get_user_from_socket_token(token, db)
-    except ValueError as e:
+        user = await _authenticate_sid(sid, data or {}, db)
+    except (ValueError, Exception) as e:
         await sio.emit('error', {'message': str(e)}, room=sid)
         db.close()
         return
@@ -535,6 +653,21 @@ async def send_message(sid, data: dict):
         db.close()
         await sio.emit('error', {'message': 'eventId и message обязательны'}, room=sid)
         return
+    # Same attendance check as join_event_chat: нельзя писать в чат событий,
+    # на которое ты не записан. Для KudaGo-событий (строковые ID) — публично.
+    try:
+        event_id_int = int(event_id)
+        from models.attendee import EventAttendee
+        is_attendee = db.query(EventAttendee).filter(
+            EventAttendee.event_id == event_id_int,
+            EventAttendee.user_id == user.id,
+        ).first()
+        if not is_attendee:
+            db.close()
+            await sio.emit('error', {'message': 'Нужно быть участником события'}, room=sid)
+            return
+    except ValueError:
+        pass  # KudaGo string ID — публичный чат
     if len(message_text) > 2000:
         db.close()
         await sio.emit('error', {'message': 'Сообщение слишком длинное (макс. 2000 символов)'}, room=sid)
@@ -574,18 +707,16 @@ async def leave_event_chat(sid, event_id: str):
 
 @sio.on('join_party_chat')
 async def join_party_chat(sid, data: dict):
-    token = data.get('token')
-    if not token:
-        await sio.emit('error', {'message': 'Токен отсутствует'}, room=sid)
-        return
+    if data is not None and not isinstance(data, dict):
+        data = {}
     db = SessionLocal()
     try:
-        user = get_user_from_socket_token(token, db)
-    except ValueError as e:
+        user = await _authenticate_sid(sid, data or {}, db)
+    except (ValueError, Exception) as e:
         await sio.emit('error', {'message': str(e)}, room=sid)
         db.close()
         return
-    party_id = data.get('partyId')
+    party_id = (data or {}).get('partyId')
     if not party_id:
         await sio.emit('error', {'message': 'partyId отсутствует'}, room=sid)
         db.close()
@@ -617,14 +748,12 @@ async def join_party_chat(sid, data: dict):
 
 @sio.on('send_party_message')
 async def send_party_message(sid, data: dict):
-    token = data.get('token')
-    if not token:
-        await sio.emit('error', {'message': 'Токен отсутствует'}, room=sid)
-        return
+    if data is not None and not isinstance(data, dict):
+        data = {}
     db = SessionLocal()
     try:
-        user = get_user_from_socket_token(token, db)
-    except ValueError as e:
+        user = await _authenticate_sid(sid, data or {}, db)
+    except (ValueError, Exception) as e:
         await sio.emit('error', {'message': str(e)}, room=sid)
         db.close()
         return
@@ -640,6 +769,27 @@ async def send_party_message(sid, data: dict):
     file_name = data.get('file_name')
     if not party_id or (not message_text and not file_url):
         await sio.emit('error', {'message': 'partyId и message (или file_url) обязательны'}, room=sid)
+        db.close()
+        return
+    # Валидация file_url: принимаем только локальные /uploads/* и https URL
+    # (без javascript:, data:, file: — иначе stored XSS через href/src).
+    if file_url:
+        if not isinstance(file_url, str) or len(file_url) > 500:
+            await sio.emit('error', {'message': 'Некорректный file_url'}, room=sid)
+            db.close()
+            return
+        if not (file_url.startswith('/uploads/') or file_url.startswith('https://')):
+            await sio.emit('error', {'message': 'file_url должен быть /uploads/... или https://...'}, room=sid)
+            db.close()
+            return
+    # file_type whitelist
+    ALLOWED_FILE_TYPES = {'image', 'document', 'video', 'audio'}
+    if file_type and (not isinstance(file_type, str) or file_type not in ALLOWED_FILE_TYPES):
+        await sio.emit('error', {'message': 'Некорректный file_type'}, room=sid)
+        db.close()
+        return
+    if file_name and (not isinstance(file_name, str) or len(file_name) > 255):
+        await sio.emit('error', {'message': 'Некорректный file_name'}, room=sid)
         db.close()
         return
     if message_text and len(message_text) > 2000:
@@ -729,7 +879,9 @@ async def send_party_message(sid, data: dict):
 
 @sio.on('leave_party_chat')
 async def leave_party_chat(sid, data: dict):
-    party_id = data['partyId']
+    party_id = (data or {}).get('partyId')
+    if not party_id:
+        return
     await sio.leave_room(sid, f'party_{party_id}')
     chat_push.mark_leave_party(sid, party_id)
 
@@ -739,13 +891,11 @@ ALLOWED_REACTION_EMOJIS = {'👍', '❤️', '😂'}
 
 @sio.on('add_party_reaction')
 async def add_party_reaction(sid, data: dict):
-    token = data.get('token')
-    if not token:
-        await sio.emit('error', {'message': 'Токен отсутствует'}, room=sid)
-        return
-    party_id = data.get('party_id')
-    message_id = data.get('message_id')
-    emoji = data.get('emoji')
+    if data is not None and not isinstance(data, dict):
+        data = {}
+    party_id = (data or {}).get('party_id')
+    message_id = (data or {}).get('message_id')
+    emoji = (data or {}).get('emoji')
     if not party_id or not message_id or not emoji:
         await sio.emit('error', {'message': 'party_id, message_id и emoji обязательны'}, room=sid)
         return
@@ -756,8 +906,8 @@ async def add_party_reaction(sid, data: dict):
     db = SessionLocal()
     try:
         try:
-            user = get_user_from_socket_token(token, db)
-        except ValueError as e:
+            user = await _authenticate_sid(sid, data or {}, db)
+        except (ValueError, Exception) as e:
             await sio.emit('error', {'message': str(e)}, room=sid)
             return
 
@@ -816,16 +966,15 @@ async def add_party_reaction(sid, data: dict):
 
 @sio.on('subscribe_notifications')
 async def subscribe_notifications(sid, data: dict):
-    token = data.get('token')
-    if not token:
-        await sio.emit('error', {'message': 'Токен отсутствует'}, room=sid)
-        return
+    if data is not None and not isinstance(data, dict):
+        data = {}
     db = SessionLocal()
     try:
-        user = get_user_from_socket_token(token, db)
-    except ValueError as e:
-        await sio.emit('error', {'message': str(e)}, room=sid)
-        return
+        try:
+            user = await _authenticate_sid(sid, data or {}, db)
+        except (ValueError, Exception) as e:
+            await sio.emit('error', {'message': str(e)}, room=sid)
+            return
     finally:
         db.close()
     await sio.enter_room(sid, f'user_{user.id}')

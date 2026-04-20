@@ -70,8 +70,6 @@ async def update_party_plan(
         raise HTTPException(status_code=404, detail="Компания не найдена")
     if party.creator_id != current_user.id:
         raise HTTPException(status_code=403, detail="Только создатель может редактировать план")
-    if not party.is_open:
-        raise HTTPException(status_code=400, detail="Нельзя редактировать план завершённой компании")
 
     if body.note and len(body.note) > 300:
         raise HTTPException(status_code=422, detail="Заметка не должна превышать 300 символов")

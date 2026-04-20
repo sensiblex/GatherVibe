@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, case
 from sqlalchemy.orm import Session
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 
 from deps import get_db, get_current_user_from_token, oauth2_scheme
 from schemas import (
@@ -23,7 +23,8 @@ from models.user import User
 from models.attendee import EventAttendee
 from models.party import EventParty, PartyMember
 from models.review import PartyReview, ReviewReport as ReviewReportModel
-import kudago_api
+import asyncio
+import kudago_api_async
 
 _POSITIVE_SET = set(POSITIVE_REVIEW_TAGS)
 _NEGATIVE_SET = set(NEGATIVE_REVIEW_TAGS)
@@ -50,7 +51,7 @@ def _recalc_trust_score(user_id: int, db: Session) -> None:
 
 
 @router.post("/reviews", response_model=ReviewOut)
-def create_review(
+async def create_review(
     payload: ReviewCreate,
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -71,28 +72,9 @@ def create_review(
     if not party:
         raise HTTPException(status_code=404, detail="Пати не найдена")
 
-    now_ts = int(datetime.utcnow().timestamp())
-    event_ts: int | None = None
-    attendee_row = db.query(EventAttendee).filter(
-        EventAttendee.event_id == party.event_id,
-    ).first()
-    if attendee_row and attendee_row.event_date_ts:
-        event_ts = attendee_row.event_date_ts
-    else:
-        try:
-            raw = kudago_api.get_event_by_id(int(party.event_id))
-            dates = raw.get("dates") or []
-            for d in dates:
-                ts = d.get("start")
-                if ts:
-                    event_ts = int(ts)
-                    break
-        except Exception:
-            pass
-
-    if event_ts is not None:
-        if event_ts > now_ts:
-            raise HTTPException(status_code=400, detail="Событие ещё не прошло")
+    event_ts = party.event_date_ts  # use DB value, not KudaGo
+    if event_ts and event_ts > datetime.now(timezone.utc).timestamp():
+        raise HTTPException(status_code=400, detail="Событие ещё не прошло")
         # window_deadline = event_ts + REVIEW_WINDOW_DAYS * 24 * 3600
         # if now_ts > window_deadline:
         #     raise HTTPException(status_code=400, detail="Окно для отзыва (30 дней) истекло")
@@ -158,7 +140,7 @@ def report_review(
 ):
     current_user = get_current_user_from_token(token, db)
     review = db.query(PartyReview).filter(PartyReview.id == review_id).first()
-    if not review:
+    if not review or getattr(review, "is_deleted", False):
         raise HTTPException(status_code=404, detail="Отзыв не найден")
     already_reported = db.query(ReviewReportModel).filter(
         ReviewReportModel.review_id == review_id,
@@ -376,7 +358,7 @@ def get_user_reviews(
 
 
 @router.get("/users/me/reviewable", response_model=List[ReviewableUser])
-def get_reviewable_users(
+async def get_reviewable_users(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
@@ -400,31 +382,45 @@ def get_reviewable_users(
     if not my_party_ids:
         return []
 
-    past_party_ids = []
+    # Batch-load все party одним запросом вместо N.
+    parties_by_id = {
+        p.id: p
+        for p in db.query(EventParty).filter(EventParty.id.in_(my_party_ids)).all()
+    }
+
+    # Сперва используем party.event_date_ts (DB-значение, без сети).
+    past_party_ids: list = []
+    parties_needing_kudago: list = []
     for party_id in my_party_ids:
-        party = db.query(EventParty).filter(EventParty.id == party_id).first()
+        party = parties_by_id.get(party_id)
         if not party:
             continue
-        att = db.query(EventAttendee).filter(
-            EventAttendee.event_id == party.event_id,
-        ).first()
-        if att and att.event_date_ts:
-            if att.event_date_ts < now_ts:
+        if party.event_date_ts:
+            if party.event_date_ts < now_ts:
                 past_party_ids.append(party_id)
             continue
-        try:
-            raw = kudago_api.get_event_by_id(int(party.event_id))
-            dates = raw.get("dates") or []
-            event_ts = None
-            for d in dates:
-                ts = d.get("start")
-                if ts:
-                    event_ts = int(ts)
-                    break
-            if event_ts and event_ts < now_ts:
-                past_party_ids.append(party_id)
-        except Exception:
-            pass
+        parties_needing_kudago.append(party)
+
+    # Для оставшихся — параллельный KudaGo fetch через asyncio.gather,
+    # чтобы N запросов уходили конкурентно, а не последовательно.
+    if parties_needing_kudago:
+        async def _fetch_ts(p):
+            try:
+                raw = await asyncio.wait_for(
+                    kudago_api_async.get_event_by_id(int(p.event_id)), timeout=3.0
+                )
+                for d in raw.get("dates") or []:
+                    ts = d.get("start")
+                    if ts:
+                        return (p.id, int(ts))
+            except Exception:
+                return (p.id, None)
+            return (p.id, None)
+
+        results = await asyncio.gather(*[_fetch_ts(p) for p in parties_needing_kudago])
+        for pid, ts in results:
+            if ts is not None and ts < now_ts:
+                past_party_ids.append(pid)
 
     if not past_party_ids:
         return []

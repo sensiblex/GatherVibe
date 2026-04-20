@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Integer, String, Boolean, Text, DateTime
+from sqlalchemy import Column, ForeignKey, Index, Integer, String, Boolean, Text, DateTime
 from database import Base
 from datetime import datetime
 
@@ -7,7 +7,7 @@ class ChatMessage(Base):
 
     id          = Column(Integer, primary_key=True, index=True)
     room        = Column(String, nullable=False, index=True)   # e.g. "event_42" or "party_7"
-    user_id     = Column(String, nullable=False)
+    user_id     = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     username    = Column(String, nullable=False)
     message     = Column(Text, nullable=False)
     timestamp   = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -23,3 +23,9 @@ class ChatMessage(Base):
     deleted_by_id  = Column(Integer, ForeignKey("users.id"), nullable=True)
     deleted_at     = Column(DateTime(timezone=True), nullable=True)
     delete_reason  = Column(String(200), nullable=True)
+
+    __table_args__ = (
+        # История чата: `WHERE room = X ORDER BY timestamp DESC LIMIT N` — без
+        # composite index это index scan по room + filesort.
+        Index("ix_chat_messages_room_timestamp", "room", "timestamp"),
+    )

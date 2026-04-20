@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, DateTime, Float, Integer, String, Boolean, Text
+from sqlalchemy import Column, Date, DateTime, Float, Integer, String, Boolean, Text, text as sa_text
 from sqlalchemy.sql import func
 from database import Base
 
@@ -12,7 +12,7 @@ class User(Base):
     city = Column(String, nullable=True)
     interests = Column(String, nullable=True)
     bio = Column(Text, nullable=True)
-    is_active = Column(Boolean, default=True)
+    is_active = Column(Boolean, default=True, nullable=False, server_default=sa_text('true'))
     avatar_url = Column(String, nullable=True)
     show_email     = Column(Boolean, default=False)
     show_city      = Column(Boolean, default=True)
