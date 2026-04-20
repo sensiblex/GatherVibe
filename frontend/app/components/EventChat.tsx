@@ -73,6 +73,11 @@ export default function EventChat({
     };
     socket.on('receive_message', handleMessage);
 
+    const onServerError = (payload: { message?: string }) => {
+      console.error('[EventChat] server error:', payload?.message || payload);
+    };
+    socket.on('error', onServerError);
+
     return () => {
       controller.abort();
       socket.emit('leave_event_chat', eventId);
@@ -80,6 +85,7 @@ export default function EventChat({
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('receive_message', handleMessage);
+      socket.off('error', onServerError);
       socketRef.current = null;
     };
   }, [eventId, token]);

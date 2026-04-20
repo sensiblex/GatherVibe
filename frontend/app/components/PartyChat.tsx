@@ -103,11 +103,16 @@ export default function PartyChat({
       );
     };
 
+    const onServerError = (payload: { message?: string }) => {
+      console.error('[PartyChat] server error:', payload?.message || payload);
+    };
+
     socket.on('connect', onConnect);
     socket.on('connect_error', onConnectError);
     socket.on('disconnect', onDisconnect);
     socket.on('receive_party_message', onMessage);
     socket.on('party_reaction_updated', onReactionUpdated);
+    socket.on('error', onServerError);
 
     return () => {
       socket.emit('leave_party_chat', { partyId });
@@ -117,6 +122,7 @@ export default function PartyChat({
       socket.off('disconnect', onDisconnect);
       socket.off('receive_party_message', onMessage);
       socket.off('party_reaction_updated', onReactionUpdated);
+      socket.off('error', onServerError);
       socketRef.current = null;
     };
   }, [partyId, currentUserId, isAcceptedMember, token]);

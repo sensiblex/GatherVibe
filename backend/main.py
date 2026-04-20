@@ -179,6 +179,7 @@ from sio_instance import sio  # noqa: E402
 from database import SessionLocal  # noqa: E402
 from models.chat_message import ChatMessage  # noqa: E402
 from models.message_reaction import MessageReaction  # noqa: E402
+from models.user import User  # noqa: E402
 from models.party import EventParty, PartyMember  # noqa: E402
 from routers.parties import MemberStatus  # noqa: E402
 import chat_push  # noqa: E402
@@ -596,22 +597,28 @@ async def join_event_chat(sid, data):
     if not event_id:
         db.close()
         return
-    # Проверяем, что пользователь подписан на событие (числовой ID для local events).
-    # Для KudaGo событий (строковые ID) доступ открыт, т.к. они публичны.
+    # event_attendees.event_id хранится как строка (поддержка и числовых local id,
+    # и KudaGo id). Если для этого event_id есть запись в нашей events-таблице —
+    # это локальное событие, требуем attendance. Иначе считаем KudaGo (публичный чат).
+    event_id_str = str(event_id)
+    from models.attendee import EventAttendee
+    from models.event import Event
+    is_local = False
     try:
-        event_id_int = int(event_id)
-        from models.attendee import EventAttendee
+        local_id = int(event_id_str)
+        is_local = db.query(Event).filter(Event.id == local_id).first() is not None
+    except (ValueError, TypeError):
+        pass
+    if is_local:
         is_attendee = db.query(EventAttendee).filter(
-            EventAttendee.event_id == event_id_int,
+            EventAttendee.event_id == event_id_str,
             EventAttendee.user_id == user.id,
         ).first()
         if not is_attendee:
-            logger.warning(f"join_event_chat: user {user.id} не подписан на event {event_id_int}, sid={sid}")
+            logger.warning(f"join_event_chat: user {user.id} не подписан на event {event_id_str}, sid={sid}")
             await sio.emit('error', {'message': 'Нужно быть участником события'}, room=sid)
             db.close()
             return
-    except ValueError:
-        pass  # KudaGo string ID — публичный чат
     await sio.enter_room(sid, f'event_{event_id}')
     await sio.emit('user_joined', {'sid': sid, 'userId': user.id, 'username': user.username}, room=f'event_{event_id}')
     db.close()
@@ -653,21 +660,26 @@ async def send_message(sid, data: dict):
         db.close()
         await sio.emit('error', {'message': 'eventId и message обязательны'}, room=sid)
         return
-    # Same attendance check as join_event_chat: нельзя писать в чат событий,
-    # на которое ты не записан. Для KudaGo-событий (строковые ID) — публично.
+    # Same attendance check as join_event_chat: нельзя писать в чат локальных
+    # событий, на которое ты не записан. Для KudaGo (отсутствует в events) — публично.
+    event_id_str = str(event_id)
+    from models.attendee import EventAttendee
+    from models.event import Event
+    is_local = False
     try:
-        event_id_int = int(event_id)
-        from models.attendee import EventAttendee
+        local_id = int(event_id_str)
+        is_local = db.query(Event).filter(Event.id == local_id).first() is not None
+    except (ValueError, TypeError):
+        pass
+    if is_local:
         is_attendee = db.query(EventAttendee).filter(
-            EventAttendee.event_id == event_id_int,
+            EventAttendee.event_id == event_id_str,
             EventAttendee.user_id == user.id,
         ).first()
         if not is_attendee:
             db.close()
             await sio.emit('error', {'message': 'Нужно быть участником события'}, room=sid)
             return
-    except ValueError:
-        pass  # KudaGo string ID — публичный чат
     if len(message_text) > 2000:
         db.close()
         await sio.emit('error', {'message': 'Сообщение слишком длинное (макс. 2000 символов)'}, room=sid)
@@ -754,6 +766,7 @@ async def send_party_message(sid, data: dict):
     try:
         user = await _authenticate_sid(sid, data or {}, db)
     except (ValueError, Exception) as e:
+        logger.warning("send_party_message: auth failed sid=%s err=%s", sid, e)
         await sio.emit('error', {'message': str(e)}, room=sid)
         db.close()
         return
