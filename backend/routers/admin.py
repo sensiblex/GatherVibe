@@ -22,6 +22,14 @@ from services.feature_flags import ensure_known_flags, KNOWN_FLAGS
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
+def _get_user_or_404(db: Session, user_id: int) -> User:
+    """Возвращает User по id или бросает 404 'Пользователь не найден'."""
+    u = db.query(User).filter(User.id == user_id).first()
+    if not u:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    return u
+
+
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
 class ReportOut(BaseModel):
@@ -411,9 +419,7 @@ def warn_user(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
-    u = db.query(User).filter(User.id == user_id).first()
-    if not u:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    u = _get_user_or_404(db, user_id)
     _ensure_can_sanction(me, u)
     u.warnings_count = (u.warnings_count or 0) + 1
     log_action(db, actor=me, action="warn_user",
@@ -430,9 +436,7 @@ def mute_user(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
-    u = db.query(User).filter(User.id == user_id).first()
-    if not u:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    u = _get_user_or_404(db, user_id)
     _ensure_can_sanction(me, u)
     u.muted_until = datetime.utcnow() + timedelta(hours=payload.duration_hours)
     log_action(db, actor=me, action="mute_user",
@@ -449,9 +453,7 @@ def ban_user(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
-    u = db.query(User).filter(User.id == user_id).first()
-    if not u:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    u = _get_user_or_404(db, user_id)
     _ensure_can_sanction(me, u)
     # Permanent ban — только admin
     if payload.duration_hours is None and me.role != "admin":
@@ -477,9 +479,7 @@ def unban_user(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
-    u = db.query(User).filter(User.id == user_id).first()
-    if not u:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    u = _get_user_or_404(db, user_id)
     # Permanent-бан (banned_until is NULL) может снять только админ:
     # чтобы модератор не отменял решения админов.
     if u.is_banned and u.banned_until is None and me.role != "admin":
@@ -499,9 +499,7 @@ def unmute_user(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
-    u = db.query(User).filter(User.id == user_id).first()
-    if not u:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    u = _get_user_or_404(db, user_id)
     u.muted_until = None
     log_action(db, actor=me, action="unmute_user",
                target_type="user", target_id=user_id)
@@ -520,9 +518,7 @@ def admin_delete_user(
     db: Session = Depends(get_db),
     me: User = Depends(require_admin),
 ):
-    u = db.query(User).filter(User.id == user_id).first()
-    if not u:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    u = _get_user_or_404(db, user_id)
     if u.id == me.id:
         admin_count = db.query(User).filter(User.role == "admin").count()
         if admin_count <= 1:
@@ -714,9 +710,7 @@ def set_user_role(
 ):
     if payload.role not in ("user", "moderator", "admin"):
         raise HTTPException(status_code=400, detail="Недопустимая роль")
-    u = db.query(User).filter(User.id == user_id).first()
-    if not u:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    u = _get_user_or_404(db, user_id)
     # Защита от self-demotion последнего admin
     if u.id == me.id and payload.role != "admin":
         admin_count = db.query(User).filter(User.role == "admin").count()
@@ -773,9 +767,7 @@ def admin_user_detail(
     db: Session = Depends(get_db),
     _: User = Depends(require_moderator),
 ):
-    u = db.query(User).filter(User.id == user_id).first()
-    if not u:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    u = _get_user_or_404(db, user_id)
     # Reports on this user
     against = db.query(Report).filter(
         Report.target_type == "user",

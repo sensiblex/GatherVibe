@@ -148,11 +148,11 @@ def sync_location(location: str, pages: int = PAGES_PER_SYNC) -> int:
     now_ts = int(time.time())
     upserted = 0
 
-    print(f"[KudaGo] sync_location start: location={location} pages={pages}", flush=True)
+    logger.info(f"[KudaGo] sync_location start: location={location} pages={pages}")
     db = SessionLocal()
     try:
         for page in range(1, pages + 1):
-            print(f"[KudaGo] fetching page {page}/{pages} for {location}...", flush=True)
+            logger.debug(f"[KudaGo] fetching page {page}/{pages} for {location}...")
             try:
                 raw = kudago_api.get_events(
                     location=location,
@@ -161,7 +161,7 @@ def sync_location(location: str, pages: int = PAGES_PER_SYNC) -> int:
                     actual_since=now_ts,
                 )
             except Exception as exc:
-                print(f"[KudaGo] fetch error location={location} page={page}: {exc}", flush=True)
+                logger.warning(f"[KudaGo] fetch error location={location} page={page}: {exc}")
                 break
 
             results = raw.get("results") or []

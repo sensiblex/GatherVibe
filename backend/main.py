@@ -429,14 +429,14 @@ async def lifespan(app: FastAPI):
         return
     loop = asyncio.get_event_loop()
     if not kudago_cache.location_has_cache_direct("kzn"):
-        print("[KudaGo] Cache empty — syncing kzn on startup...", flush=True)
+        logger.info("[KudaGo] Cache empty — syncing kzn on startup...")
         try:
             n = await loop.run_in_executor(None, lambda: kudago_cache.sync_location("kzn", pages=3))
-            print(f"[KudaGo] kzn sync done: {n} events", flush=True)
+            logger.info(f"[KudaGo] kzn sync done: {n} events")
         except Exception as exc:
-            print(f"[KudaGo] kzn sync FAILED: {exc}", flush=True)
+            logger.error(f"[KudaGo] kzn sync FAILED: {exc}")
     else:
-        print("[KudaGo] kzn cache already populated, skipping startup sync", flush=True)
+        logger.info("[KudaGo] kzn cache already populated, skipping startup sync")
     cache_task = asyncio.create_task(_cache_sync_loop())
     reminder_task = asyncio.create_task(_reminder_loop())
     invite_expiry_task = asyncio.create_task(_invite_expiry_loop())
@@ -543,7 +543,7 @@ async def connect(sid, environ):
             pass
         finally:
             db.close()
-    print(f"Client {sid} connected")
+    logger.info(f"Client {sid} connected")
 
 
 async def _get_session_user(sid, db):
@@ -573,7 +573,7 @@ async def _authenticate_sid(sid, data, db):
 
 @sio.event
 async def disconnect(sid):
-    print(f"Client {sid} disconnected")
+    logger.info(f"Client {sid} disconnected")
     chat_push.mark_disconnect(sid)
 
 
@@ -581,8 +581,6 @@ async def disconnect(sid):
 
 @sio.on('join_event_chat')
 async def join_event_chat(sid, data):
-    import logging
-    logger = logging.getLogger(__name__)
     if data is not None and not isinstance(data, dict):
         data = {}
     db = SessionLocal()
@@ -991,7 +989,7 @@ async def subscribe_notifications(sid, data: dict):
     finally:
         db.close()
     await sio.enter_room(sid, f'user_{user.id}')
-    print(f"[notifications] {sid} subscribed to user_{user.id}")
+    logger.info(f"[notifications] {sid} subscribed to user_{user.id}")
 
 
 # ── ASGI app (entry point for uvicorn) ───────────────────────────────────────

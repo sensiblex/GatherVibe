@@ -62,13 +62,20 @@ def _is_user_banned(user: User) -> bool:
     return banned_until_naive > now
 
 
+def _is_token_revoked(db: Session, jti: Optional[str]) -> bool:
+    """True если jti не пустой и такая запись есть в RevokedToken."""
+    if not jti:
+        return False
+    return db.query(RevokedToken).filter(RevokedToken.jti == jti).first() is not None
+
+
 def get_current_user_from_token(token: str, db: Session, *, allow_banned: bool = False) -> User:
     from jwt_handler import verify_token
     payload = verify_token(token)
     if payload is None:
         raise HTTPException(status_code=401, detail="Неверный токен")
     jti = payload.get("jti")
-    if jti and db.query(RevokedToken).filter(RevokedToken.jti == jti).first():
+    if _is_token_revoked(db, jti):
         raise HTTPException(status_code=401, detail="Токен отозван")
     email = payload.get("sub")
     if not email:
@@ -123,7 +130,7 @@ def get_user_from_socket_token(token: str, db: Session) -> User:
     if payload is None:
         raise ValueError("Неверный токен")
     jti = payload.get("jti")
-    if jti and db.query(RevokedToken).filter(RevokedToken.jti == jti).first():
+    if _is_token_revoked(db, jti):
         raise ValueError("Токен отозван")
     email = payload.get("sub")
     if not email:

@@ -17,6 +17,10 @@ from sqlalchemy.orm import Session
 from models.party import EventParty, PartyMember
 from models.review import PartyReview
 from models.user import User
+from services.scoring_utils import (
+    jaccard as _jaccard,
+    parse_csv_to_set as _parse_interests,
+)
 
 
 # ─── Weights ──────────────────────────────────────────────────────────────────
@@ -29,21 +33,6 @@ W_FILL = 0.05
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
-
-
-def _parse_interests(raw: str | None) -> set[str]:
-    if not raw:
-        return set()
-    return {t.strip().lower() for t in raw.split(",") if t.strip()}
-
-
-def _jaccard(a: set[str], b: set[str]) -> float:
-    if not a and not b:
-        return 0.0
-    union = a | b
-    if not union:
-        return 0.0
-    return len(a & b) / len(union)
 
 
 def _top_review_tags(db: Session, user_id: int, n: int = 3) -> set[str]:

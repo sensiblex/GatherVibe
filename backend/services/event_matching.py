@@ -27,6 +27,11 @@ from models.kudago_event import KudaGoEvent
 from models.recommendation_impression import RecommendationImpression
 from models.user import User
 from services import embeddings
+from services.scoring_utils import (
+    age_from_birthdate as _age_from_birthdate,
+    jaccard as _jaccard,
+    parse_csv_to_set as _parse_csv,
+)
 
 
 # ─── Weights (sum ~= 1.0) ─────────────────────────────────────────────────────
@@ -54,28 +59,6 @@ def _decode_json_list(raw) -> list[str]:
         return [str(x) for x in data] if isinstance(data, list) else []
     except (json.JSONDecodeError, TypeError):
         return []
-
-
-def _parse_csv(raw: str | None) -> set[str]:
-    if not raw:
-        return set()
-    return {t.strip().lower() for t in raw.split(",") if t.strip()}
-
-
-def _jaccard(a: set[str], b: set[str]) -> float:
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)
-
-
-def _age_from_birthdate(bd: date | None, today: date | None = None) -> int | None:
-    if bd is None:
-        return None
-    today = today or date.today()
-    years = today.year - bd.year
-    if (today.month, today.day) < (bd.month, bd.day):
-        years -= 1
-    return max(0, years)
 
 
 def _time_score(start_ts: int | None, now_ts: int) -> float:

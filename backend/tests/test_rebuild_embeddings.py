@@ -4,7 +4,7 @@ import os
 import sys
 
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 from sqlalchemy import create_engine

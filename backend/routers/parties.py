@@ -6,26 +6,39 @@ from datetime import datetime
 from enum import Enum
 
 import asyncio
-import json
 import uuid
 import kudago_api_async
 from pydantic import BaseModel, Field, field_validator
 from deps import get_db, get_current_user_from_token, oauth2_scheme
 from utils.sanitize import sanitize_text
-
-
-def _san(cls, v):
-    return sanitize_text(v)
 from schemas import PartySearchItem, PartySearchResponse
 from sio_instance import sio
 from models.user import User
 from models.event import Event
-from models.attendee import EventAttendee
 from models.party import EventParty, PartyMember
 from notification_helpers import create_notification
 import push_helpers
 
+
+def _san(cls, v):
+    return sanitize_text(v)
+
+
 router = APIRouter(tags=["parties"])
+
+
+def _require_creator(party: EventParty, current_user: User, action: str) -> None:
+    """403 если current_user — не создатель party. detail: 'Только создатель может {action}'."""
+    if party.creator_id != current_user.id:
+        raise HTTPException(status_code=403, detail=f"Только создатель может {action}")
+
+
+def _get_party_or_404(db: Session, party_id: int) -> EventParty:
+    """Возвращает EventParty по id или бросает 404 'Компания не найдена'."""
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party:
+        raise HTTPException(status_code=404, detail="Компания не найдена")
+    return party
 
 
 # ─── Enums & schemas ────────────────────────────────────────────────────────
@@ -478,9 +491,7 @@ def get_party_detail(
     db: Session = Depends(get_db),
 ):
     current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
+    party = _get_party_or_404(db, party_id)
     return _build_party_out(party, db, viewer_id=current_user.id)
 
 
@@ -491,9 +502,7 @@ def get_party_detail_public(
     db: Session = Depends(get_db),
 ):
     current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
+    party = _get_party_or_404(db, party_id)
     return _build_party_out(party, db, viewer_id=current_user.id)
 
 
@@ -632,11 +641,8 @@ async def approve_request(
     member = db.query(PartyMember).filter(PartyMember.id == request_id).first()
     if not member:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    party = db.query(EventParty).filter(EventParty.id == member.party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может принимать участников")
+    party = _get_party_or_404(db, member.party_id)
+    _require_creator(party, current_user, "принимать участников")
     member.status = MemberStatus.accepted
     db.flush()
     party_closed = _check_and_close_party(party, db)
@@ -684,11 +690,8 @@ async def reject_request(
     member = db.query(PartyMember).filter(PartyMember.id == request_id).first()
     if not member:
         raise HTTPException(status_code=404, detail="Заявка не найдена")
-    party = db.query(EventParty).filter(EventParty.id == member.party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может отклонять заявки")
+    party = _get_party_or_404(db, member.party_id)
+    _require_creator(party, current_user, "отклонять заявки")
     member.status = MemberStatus.rejected
     notif = create_notification(
         db, member.user_id, "request_status_changed",
@@ -808,11 +811,8 @@ def update_party(
     db: Session = Depends(get_db),
 ):
     current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может редактировать компанию")
+    party = _get_party_or_404(db, party_id)
+    _require_creator(party, current_user, "редактировать компанию")
     if body.title is not None:
         if not body.title.strip():
             raise HTTPException(status_code=400, detail="Название не может быть пустым")
@@ -843,11 +843,8 @@ async def delete_party(
     db: Session = Depends(get_db),
 ):
     current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может удалить компанию")
+    party = _get_party_or_404(db, party_id)
+    _require_creator(party, current_user, "удалить компанию")
 
     affected = db.query(PartyMember).filter(
         PartyMember.party_id == party_id,
@@ -1019,9 +1016,7 @@ def leave_party(
     db: Session = Depends(get_db),
 ):
     user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
+    party = _get_party_or_404(db, party_id)
     if party.creator_id == user.id:
         raise HTTPException(status_code=400, detail="Создатель не может покинуть компанию. Закройте её.")
     member = db.query(PartyMember).filter(
@@ -1045,11 +1040,8 @@ async def kick_member(
     db: Session = Depends(get_db),
 ):
     current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может исключать участников")
+    party = _get_party_or_404(db, party_id)
+    _require_creator(party, current_user, "исключать участников")
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="Нельзя исключить самого себя")
     member = db.query(PartyMember).filter(
@@ -1110,11 +1102,8 @@ async def accept_member(
     db: Session = Depends(get_db),
 ):
     current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может принимать участников")
+    party = _get_party_or_404(db, party_id)
+    _require_creator(party, current_user, "принимать участников")
     m = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.user_id == user_id
     ).first()
@@ -1158,11 +1147,8 @@ async def reject_member(
     db: Session = Depends(get_db),
 ):
     current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может отклонять заявки")
+    party = _get_party_or_404(db, party_id)
+    _require_creator(party, current_user, "отклонять заявки")
     m = db.query(PartyMember).filter(
         PartyMember.party_id == party_id, PartyMember.user_id == user_id
     ).first()
@@ -1201,11 +1187,8 @@ async def close_party(
     db: Session = Depends(get_db),
 ):
     current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может закрыть компанию")
+    party = _get_party_or_404(db, party_id)
+    _require_creator(party, current_user, "закрыть компанию")
     if not party.is_open:
         return _build_party_out(party, db)
     party.is_open = False
@@ -1259,11 +1242,8 @@ async def invite_to_party(
     db: Session = Depends(get_db),
 ):
     current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может приглашать")
+    party = _get_party_or_404(db, party_id)
+    _require_creator(party, current_user, "приглашать")
     if not party.is_open:
         raise HTTPException(status_code=400, detail="Набор закрыт")
     if body.user_id == current_user.id:
@@ -1360,9 +1340,7 @@ async def accept_party_invite(
     if member.status != MemberStatus.invited:
         raise HTTPException(status_code=400, detail="Приглашение уже обработано")
 
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
+    party = _get_party_or_404(db, party_id)
 
     member.status = MemberStatus.accepted
     db.flush()
@@ -1422,9 +1400,7 @@ async def decline_party_invite(
     if member.status != MemberStatus.invited:
         raise HTTPException(status_code=400, detail="Приглашение уже обработано")
 
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
+    party = _get_party_or_404(db, party_id)
 
     member.status = MemberStatus.declined
 
@@ -1469,11 +1445,8 @@ async def cancel_party_invite(
     db: Session = Depends(get_db),
 ):
     current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может отменить приглашение")
+    party = _get_party_or_404(db, party_id)
+    _require_creator(party, current_user, "отменить приглашение")
     member = db.query(PartyMember).filter(
         PartyMember.id == invite_id,
         PartyMember.party_id == party_id,

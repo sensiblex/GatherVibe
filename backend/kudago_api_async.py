@@ -10,12 +10,11 @@ import logging
 from typing import Optional, List, Dict, Any
 
 from kudago_api_models import (
-    EventsRequest, SearchRequest, EventByIdRequest, EventsTodayRequest,
+    EventsRequest, SearchRequest,
     Event, EventDetail, EventsResponse, SearchResponse, EventDetailResponse,
-    CategoriesResponse, LocationsResponse
 )
-from kudago_api_cache import cached, get_cache_instance, clear_cache
-from kudago_api_monitor import metrics_collector, monitor_async_request
+from kudago_api_cache import cached
+from kudago_api_monitor import monitor_async_request
 
 logger = logging.getLogger("kudago_api_async")
 
@@ -268,15 +267,7 @@ async def get_locations() -> List[Dict[str, Any]]:
 
 # ==================== Функции парсинга ====================
 
-def _safe_str(val: Any) -> str:
-    """Безопасное преобразование значения в строку."""
-    if not val and val != 0:
-        return ""
-    if isinstance(val, str):
-        return val
-    if isinstance(val, dict):
-        return str(val.get("name") or val.get("slug") or val.get("title") or val.get("id") or "")
-    return str(val)
+from kudago_common import safe_str as _safe_str  # noqa: E402
 
 
 async def parse_events(raw: Dict[str, Any]) -> List[Dict[str, Any]]:

@@ -3,6 +3,8 @@ import logging
 import time
 from typing import Optional
 
+from kudago_common import safe_str as _safe_str
+
 BASE_URL = "https://kudago.com/public-api/v1.4"
 
 _logger = logging.getLogger(__name__)
@@ -127,16 +129,6 @@ def get_locations() -> list:
         if isinstance(data, list):
             return data
         return data.get("results", data)
-
-
-def _safe_str(val) -> str:
-    if not val and val != 0:
-        return ""
-    if isinstance(val, str):
-        return val
-    if isinstance(val, dict):
-        return str(val.get("name") or val.get("slug") or val.get("title") or val.get("id") or "")
-    return str(val)
 
 
 def _is_permanent_date(d: dict) -> bool:

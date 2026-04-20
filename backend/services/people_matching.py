@@ -17,6 +17,11 @@ from sqlalchemy.orm import Session
 from models.attendee import EventAttendee
 from models.user import User
 from services import embeddings
+from services.scoring_utils import (
+    age_from_birthdate as _age_from_birthdate,
+    jaccard as _jaccard,
+    parse_csv_to_set as _parse_csv,
+)
 
 
 W_SEMANTIC = 0.30
@@ -28,28 +33,6 @@ W_TRUST = 0.05
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
-
-
-def _parse_csv(raw: str | None) -> set[str]:
-    if not raw:
-        return set()
-    return {t.strip().lower() for t in raw.split(",") if t.strip()}
-
-
-def _jaccard(a: set[str], b: set[str]) -> float:
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)
-
-
-def _age_from_birthdate(bd: date | None, today: date | None = None) -> int | None:
-    if bd is None:
-        return None
-    today = today or date.today()
-    years = today.year - bd.year
-    if (today.month, today.day) < (bd.month, bd.day):
-        years -= 1
-    return max(0, years)
 
 
 def _age_score(a: int | None, b: int | None) -> float:
