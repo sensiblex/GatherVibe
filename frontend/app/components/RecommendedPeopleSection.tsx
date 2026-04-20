@@ -5,14 +5,7 @@ import Link from 'next/link';
 import { useAuth } from '../context/AuthContext';
 import { useSimilarPeople, type SimilarPerson } from '../hooks/useSimilarPeople';
 
-function scoreColor(score: number): string {
-  if (score >= 70) return '#16a34a';
-  if (score >= 40) return '#d97706';
-  return '#64748b';
-}
-
 function PersonCard({ person }: { person: SimilarPerson }) {
-  const color = scoreColor(person.match_score);
   return (
     <Link
       href={`/users/${person.user_id}`}
@@ -57,12 +50,6 @@ function PersonCard({ person }: { person: SimilarPerson }) {
               </p>
             )}
           </div>
-          <span
-            className="px-2 py-1 rounded-full text-xs font-bold text-white"
-            style={{ background: color }}
-          >
-            {person.match_score}%
-          </span>
         </div>
 
         {person.bio && (

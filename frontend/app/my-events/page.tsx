@@ -7,6 +7,7 @@ import { apiFetch } from '../lib/apiFetch';
 import Navbar from '../components/Navbar';
 import ReviewModal, { ReviewableUser } from '../components/ReviewModal';
 import { ToastContainer } from '../components/Toast';
+import { translateCategory } from '../events/utils';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -204,7 +205,7 @@ export default function MyEventsPage() {
                         {ev.category && (
                           <span className="text-[11px] px-2 py-0.5 rounded-full font-medium"
                             style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}>
-                            {ev.category}
+                            {translateCategory(ev.category)}
                           </span>
                         )}
                         {ev.is_looking && (

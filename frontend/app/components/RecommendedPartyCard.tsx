@@ -49,7 +49,7 @@ export default function RecommendedPartyCard({ party }: { party: RecommendedPart
           className="absolute top-3 left-3 px-2.5 py-1 rounded-full text-xs font-bold text-white"
           style={{ background: color, boxShadow: 'var(--shadow-sm)' }}
         >
-          {party.match_score}% совпадение
+          ✨ Рекомендуем
         </span>
       </div>
 

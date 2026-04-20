@@ -22,6 +22,7 @@ import {
   formatAge,
   safeEventTimestamp,
 } from './event-utils';
+import { translateCategory } from '../utils';
 
 const EventMap = dynamic(() => import('../../components/EventMap'), { ssr: false });
 
@@ -389,7 +390,7 @@ export default function EventDetailPage() {
                       className="text-xs px-3 py-1 rounded-full font-semibold"
                       style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
                     >
-                      {CATEGORY_LABELS[c] ?? c}
+                      {CATEGORY_LABELS[c] ?? translateCategory(c)}
                     </span>
                   ))}
                   {event.is_permanent && (

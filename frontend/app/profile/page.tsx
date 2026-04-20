@@ -9,6 +9,7 @@ import Navbar from '../components/Navbar';
 import UserReviewsBlock from '../components/UserReviewsBlock';
 import MatchingProfileSection from '../components/MatchingProfileSection';
 import { INTERESTS_LIST, getInterestLabel } from '../lib/interests';
+import { translateCategory } from '../events/utils';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const IMGBB_KEY = process.env.NEXT_PUBLIC_IMGBB_KEY || '';
@@ -562,7 +563,7 @@ function MyEventsTab() {
                 {ev.category && (
                   <span className="inline-block text-[11px] px-2 py-0.5 rounded-full font-medium mt-1"
                     style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}>
-                    {ev.category}
+                    {translateCategory(ev.category)}
                   </span>
                 )}
               </div>

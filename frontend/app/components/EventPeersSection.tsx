@@ -124,9 +124,6 @@ export default function EventPeersSection({ eventId, creatorPartyId }: Props) {
                       <p className="font-semibold truncate text-sm" style={{ color: 'var(--text)' }}>
                         {p.username}
                       </p>
-                      <p className="text-xs" style={{ color: 'var(--primary)' }}>
-                        {p.match_score}% совпадение
-                      </p>
                     </div>
                   </div>
                   {p.match_reasons.length > 0 && (

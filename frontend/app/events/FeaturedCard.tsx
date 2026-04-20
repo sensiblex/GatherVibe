@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Image from 'next/image';
 import { KudaGoEvent } from '../components/EventCard';
-import { CATEGORY_RU, shortMonth } from './utils';
+import { translateCategory, shortMonth } from './utils';
 
 interface FeaturedCardProps {
   event: KudaGoEvent;
@@ -16,8 +16,9 @@ export default function FeaturedCard({ event, attendeeCount = 0, onClick }: Feat
 
   const cats = (event.categories as (string | { slug?: string; name?: string })[])
     .map(c => {
-      if (typeof c === 'string') return CATEGORY_RU[c] ?? c;
-      if (c?.slug) return CATEGORY_RU[c.slug] ?? c.name ?? c.slug;
+      if (typeof c === 'string') return translateCategory(c);
+      if (c?.slug) return translateCategory(c.slug);
+      if (c && typeof c === 'object' && c.name) return translateCategory(c.name);
       return null;
     })
     .filter(Boolean)

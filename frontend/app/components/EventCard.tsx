@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import { translateCategory } from '../events/utils';
 
 
 export interface KudaGoEvent {
@@ -27,47 +28,6 @@ export interface KudaGoEvent {
   site_url: string;
 }
 
-const CATEGORY_RU: Record<string, string> = {
-  concert: 'Концерт', theater: 'Театр', theatre: 'Театр',
-  exhibition: 'Выставка', movie: 'Кино', cinema: 'Кино',
-  festival: 'Фестиваль', sport: 'Спорт', sports: 'Спорт',
-  other: 'Разное', holiday: 'Праздник', 'kids-holiday': 'Детский праздник',
-  education: 'Образование', lecture: 'Лекция', 'business-events': 'Бизнес',
-  business: 'Бизнес', tour: 'Экскурсия', excursion: 'Экскурсия',
-  party: 'Вечеринка', nightlife: 'Ночная жизнь',
-  'stand-up': 'Стэндап', standup: 'Стэндап', comedy: 'Комедия',
-  opera: 'Опера', ballet: 'Балет', musical: 'Мюзикл',
-  'open-air': 'Опен-эйр', 'art-object': 'Искусство', art: 'Искусство',
-  circus: 'Цирк', magic: 'Фокус',
-  'master-class': 'Мастер-класс', masterclass: 'Мастер-класс', workshop: 'Мастер-класс',
-  'photo-video': 'Фото/Видео', photography: 'Фотография',
-  literature: 'Литература', book: 'Книги',
-  food: 'Еда', 'food-wine': 'Еда и вино',
-  yoga: 'Йога', fitness: 'Фитнес', dance: 'Танцы',
-  gaming: 'Игры', 'computer-games': 'Игры', quest: 'Квест',
-  charity: 'Благотворительность', fashion: 'Мода',
-  science: 'Наука', technology: 'Технологии', health: 'Здоровье',
-  nature: 'Природа', animals: 'Животные', religion: 'Религия',
-  'social-activity': 'Общество', networking: 'Нетворкинг',
-  'speed-dating': 'Спид-дейтинг',
-  'rock-music': 'Рок', 'jazz-blues': 'Джаз / Блюз', jazz: 'Джаз',
-  blues: 'Блюз', 'classical-music': 'Классика', classical: 'Классика',
-  'electronic-music': 'Электронная музыка', electronic: 'Электронная музыка',
-  'hip-hop': 'Хип-хоп', pop: 'Поп', 'pop-music': 'Поп', metal: 'Метал',
-  folk: 'Фольк', reggae: 'Регги', 'r-n-b': 'R&B', soul: 'Саул',
-  funk: 'Фанк', acoustic: 'Акустика', 'world-music': 'Этническая музыка',
-  'action-movie': 'Боевик', comedy_film: 'Комедия', drama: 'Драма',
-  horror: 'Ужасы', thriller: 'Триллер', cartoon: 'Мультфильм',
-  animation: 'Анимация', documentary: 'Документальный',
-  'sci-fi': 'Фантастика', fantasy: 'Фэнтези', adventure: 'Приключения',
-  drama_play: 'Драма', puppet: 'Кукольный театр',
-  improvisation: 'Импровизация', 'performance-art': 'Перформанс',
-  performance: 'Перформанс',
-  'for-kids': 'Для детей', kids: 'Для детей', children: 'Для детей',
-  family: 'Семейное', free: 'Бесплатно', online: 'Онлайн',
-  outdoor: 'На улице', indoor: 'В помещении',
-};
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toLabel(val: any): string {
   if (!val && val !== 0) return '';
@@ -81,7 +41,7 @@ function toKey(val: any, idx: number): string {
   return toLabel(val) || String(idx);
 }
 function translateTag(raw: string): string {
-  return CATEGORY_RU[raw.toLowerCase().trim()] ?? raw;
+  return translateCategory(raw);
 }
 function formatDate(dateStr: string | null, timeStr: string | null): string {
   if (!dateStr) return '';

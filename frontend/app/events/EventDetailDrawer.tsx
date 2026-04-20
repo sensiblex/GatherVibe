@@ -4,21 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect } from 'react';
 import { KudaGoEvent } from '../components/EventCard';
-
-const CATEGORY_RU: Record<string, string> = {
-  concert: 'Концерт', theater: 'Театр', theatre: 'Театр',
-  exhibition: 'Выставка', movie: 'Кино', cinema: 'Кино',
-  festival: 'Фестиваль', sport: 'Спорт', sports: 'Спорт',
-  other: 'Разное', holiday: 'Праздник', 'kids-holiday': 'Детский праздник',
-  education: 'Образование', lecture: 'Лекция', 'business-events': 'Бизнес',
-  business: 'Бизнес', tour: 'Экскурсия', excursion: 'Экскурсия',
-  party: 'Вечеринка', nightlife: 'Ночная жизнь',
-  'stand-up': 'Стэндап', standup: 'Стэндап', comedy: 'Комедия',
-  opera: 'Опера', ballet: 'Балет', musical: 'Мюзикл',
-  'open-air': 'Опен-эйр', 'art-object': 'Искусство', art: 'Искусство',
-  circus: 'Цирк', magic: 'Фокус',
-  'master-class': 'Мастер-класс', masterclass: 'Мастер-класс', workshop: 'Мастер-класс',
-};
+import { translateCategory } from './utils';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toLabel(val: any): string {
@@ -30,7 +16,7 @@ function toLabel(val: any): string {
 }
 
 function translateCat(raw: string): string {
-  return CATEGORY_RU[raw.toLowerCase().trim()] ?? raw;
+  return translateCategory(raw);
 }
 
 function formatDrawerDate(dateStr: string | null, timeStr: string | null): string {
