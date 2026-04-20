@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import 'leaflet/dist/leaflet.css';
+import 'react-leaflet-cluster/dist/assets/MarkerCluster.css';
+import 'react-leaflet-cluster/dist/assets/MarkerCluster.Default.css';
 import './globals.css';
 import ClientLayout from './ClientLayout';
 

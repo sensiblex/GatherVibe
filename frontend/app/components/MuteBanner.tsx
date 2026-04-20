@@ -2,18 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../lib/apiFetch';
+import { useAuth } from '../context/AuthContext';
 
 interface Me { muted_until: string | null; banned_until: string | null; is_banned: boolean; ban_reason: string | null; }
 
 export default function MuteBanner() {
+  const { token } = useAuth();
   const [me, setMe] = useState<Me | null>(null);
 
   useEffect(() => {
+    if (!token) { setMe(null); return; }
     apiFetch('/users/me')
       .then(async (r) => (r.ok ? r.json() : null))
       .then(setMe)
       .catch(() => setMe(null));
-  }, []);
+  }, [token]);
 
   if (!me) return null;
 

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
 import Navbar from '../components/Navbar';
+import EventsMap from '../components/EventsMap';
 import { KudaGoEvent } from '../components/EventCard';
 import EventDetailDrawer from './EventDetailDrawer';
 import DateStrip from './DateStrip';
@@ -544,6 +545,15 @@ export default function EventsPage() {
             />
           </div>
         )}
+
+      {/* ── Events map: synced 1:1 with the filtered list below ── */}
+      {!error && !loading && (
+        <EventsMap
+          events={sortedEvents}
+          city={city}
+          onEventClick={setSelectedEvent}
+        />
+      )}
 
       {/* ── Main content ── */}
       <main className="events-body">
