@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { apiFetch } from '../lib/apiFetch';
+import { getInterestLabel } from '../lib/interests';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -46,7 +47,7 @@ function InterestBadge({ interest, highlight }: { interest: string; highlight?: 
         color: highlight ? '#fff' : 'var(--accent, #4f46e5)',
       }}
     >
-      {interest.trim()}
+      {getInterestLabel(interest.trim())}
     </span>
   );
 }

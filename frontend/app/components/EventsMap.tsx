@@ -52,12 +52,17 @@ function MapInnerComponent({ events, center, bounds, onEventClick }: MapInnerPro
   function FitBounds({ bounds }: { bounds: LatLngBoundsExpression | null }) {
     const map = useMap();
     useEffect(() => {
-      if (bounds) {
-        try {
-          map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
-        } catch {
-          // bounds can be invalid for a single point — Leaflet handles it, ignore
-        }
+      if (bounds && map) {
+        const timer = setTimeout(() => {
+          try {
+            if (map._panes?.mapPane) {
+              map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+            }
+          } catch {
+            // bounds can be invalid for a single point — Leaflet handles it, ignore
+          }
+        }, 100);
+        return () => clearTimeout(timer);
       }
     }, [map, bounds]);
     return null;

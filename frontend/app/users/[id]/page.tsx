@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { toast, ToastContainer } from '../../components/Toast';
 import UserReviewsBlock from '../../components/UserReviewsBlock';
 import ReportButton from '../../components/ReportButton';
+import { getInterestLabel } from '../../lib/interests';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -291,7 +292,7 @@ export default function UserProfilePage() {
                             color: 'var(--accent, #4f46e5)',
                           }}
                         >
-                          {interest}
+                          {getInterestLabel(interest)}
                         </span>
                       ))}
                     </div>

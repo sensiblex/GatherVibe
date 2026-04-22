@@ -24,7 +24,6 @@ import kudago_cache
 router = APIRouter(tags=["events"])
 
 
-# ─── Attendee schemas ──────────────────────────────────────────────────────
 
 
 class AttendeeCreateBody(BaseModel):
@@ -57,7 +56,6 @@ class AttendeeMatchOut(AttendeeOut):
     common_count: int = 0
 
 
-# ─── Chat / messages ────────────────────────────────────────────────────────
 
 
 @router.get("/messages/{room}")
@@ -69,7 +67,6 @@ def get_messages(
     db: Session = Depends(get_db),
 ):
     current_user = get_current_user_from_token(token, db)
-    # For party rooms, verify membership
     if room.startswith("party_"):
         try:
             room_party_id = int(room.split("_", 1)[1])
@@ -89,7 +86,7 @@ def get_messages(
         query = query.filter(ChatMessage.id < before_id)
     rows = query.order_by(ChatMessage.id.desc()).limit(limit).all()
     rows = list(reversed(rows))
-    user_ids = [int(r.user_id) for r in rows if r.user_id and r.user_id.isdigit()]
+    user_ids = [r.user_id for r in rows if r.user_id]
     users_map = {}
     if user_ids:
         users_map = {
@@ -138,7 +135,7 @@ ALLOWED_MIME_TYPES = {
     "application/pdf",
     "application/zip",
 }
-MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 
 
 @router.post("/upload/chat")
@@ -172,7 +169,6 @@ async def upload_chat_file(
     else:
         file_type = "file"
 
-    # Strip any directory components from the filename (path traversal guard)
     bare_name = pathlib.Path(file.filename or "upload").name or "upload"
     safe_name = "".join(c if c.isalnum() or c in "._-" else "_" for c in bare_name)
     safe_name = safe_name[:128] or "upload"
@@ -192,7 +188,6 @@ async def upload_chat_file(
     }
 
 
-# ─── Local events ───────────────────────────────────────────────────────────
 
 
 @router.get("/events/categories")
@@ -335,7 +330,6 @@ def update_event(
     return event
 
 
-# ─── KudaGo ─────────────────────────────────────────────────────────────────
 
 
 @router.get("/kudago/events")
@@ -582,7 +576,6 @@ def kudago_locations():
         raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
 
 
-# ─── Attendees ───────────────────────────────────────────────────────────────
 
 
 @router.get("/attendees/batch-counts")
