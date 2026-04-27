@@ -12,6 +12,7 @@ import {
   formatMapStats,
 } from '../events/events-map';
 import type { CitySlug } from '../events/event-filters';
+import { capitalizeFirstDisplayChar } from '../lib/text';
 
 interface EventsMapProps {
   events: KudaGoEvent[];
@@ -82,13 +83,15 @@ function MapInnerComponent({ events, center, bounds, onEventClick }: MapInnerPro
       />
       <FitBounds bounds={bounds} />
       <MarkerClusterGroup chunkedLoading maxClusterRadius={60}>
-        {events.map((ev) => (
-          <Marker
-            key={ev.kudago_id}
-            position={[ev.lat as number, ev.lon as number]}
-            icon={pinIcon}
-          >
-            <Popup maxWidth={260}>
+        {events.map((ev) => {
+          const displayTitle = capitalizeFirstDisplayChar(ev.title);
+          return (
+            <Marker
+              key={ev.kudago_id}
+              position={[ev.lat as number, ev.lon as number]}
+              icon={pinIcon}
+            >
+              <Popup maxWidth={260}>
               <div style={{ minWidth: 200 }}>
                 {ev.cover_url && (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -99,7 +102,7 @@ function MapInnerComponent({ events, center, bounds, onEventClick }: MapInnerPro
                   />
                 )}
                 <strong style={{ display: 'block', marginBottom: 4, fontSize: 14 }}>
-                  {ev.title}
+                  {displayTitle}
                 </strong>
                 {ev.place_title && (
                   <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>
@@ -153,9 +156,10 @@ function MapInnerComponent({ events, center, bounds, onEventClick }: MapInnerPro
                   </Link>
                 )}
               </div>
-            </Popup>
-          </Marker>
-        ))}
+              </Popup>
+            </Marker>
+          );
+        })}
       </MarkerClusterGroup>
     </MapContainer>
   );

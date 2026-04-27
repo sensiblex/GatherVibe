@@ -10,6 +10,7 @@ import UserReviewsBlock from '../components/UserReviewsBlock';
 import MatchingProfileSection from '../components/MatchingProfileSection';
 import { INTERESTS_LIST, getInterestLabel } from '../lib/interests';
 import { translateCategory } from '../events/utils';
+import { capitalizeFirstDisplayChar } from '../lib/text';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const IMGBB_KEY = process.env.NEXT_PUBLIC_IMGBB_KEY || '';
@@ -412,10 +413,11 @@ function MyPartiesTab({ userId }: { userId: number }) {
   const renderList = (list: PartyOut[]) =>
     list.map(p => {
       const accepted = p.members.filter(m => m.status === 'accepted').length;
+      const displayTitle = capitalizeFirstDisplayChar(p.title);
       return (
         <Link key={p.id} href={`/parties/${p.id}`} style={cardStyle} className="hover:opacity-80 transition-opacity">
           <div className="flex items-center justify-between gap-2">
-            <span className="font-semibold text-sm line-clamp-1" style={{ color: 'var(--text)' }}>{p.title}</span>
+            <span className="font-semibold text-sm line-clamp-1" style={{ color: 'var(--text)' }}>{displayTitle}</span>
             <span className="text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0"
               style={p.is_open
                 ? { background: 'var(--success-hl)', color: 'var(--success)' }
@@ -542,33 +544,36 @@ function MyEventsTab() {
         </div>
       ) : (
         <div className="space-y-3">
-          {list.map(ev => (
-            <Link key={ev.event_id} href={`/events/${ev.event_id}`}
-              className="flex gap-3 rounded-2xl p-3 hover:opacity-80 transition-opacity"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-              {ev.image_url ? (
-                <img src={ev.image_url} alt={ev.title} className="w-16 h-16 rounded-xl object-cover shrink-0" />
-              ) : (
-                <div className="w-16 h-16 rounded-xl shrink-0 flex items-center justify-center text-2xl"
-                  style={{ background: 'var(--surface)' }}>🎭</div>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm line-clamp-1" style={{ color: 'var(--text)' }}>{ev.title}</p>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                  {ev.date_ts
-                    ? new Date(ev.date_ts * 1000).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
-                    : 'Дата не указана'}
-                  {ev.city ? ` · ${ev.city}` : ''}
-                </p>
-                {ev.category && (
-                  <span className="inline-block text-[11px] px-2 py-0.5 rounded-full font-medium mt-1"
-                    style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}>
-                    {translateCategory(ev.category)}
-                  </span>
+          {list.map(ev => {
+            const displayTitle = capitalizeFirstDisplayChar(ev.title);
+            return (
+              <Link key={ev.event_id} href={`/events/${ev.event_id}`}
+                className="flex gap-3 rounded-2xl p-3 hover:opacity-80 transition-opacity"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+                {ev.image_url ? (
+                  <img src={ev.image_url} alt={displayTitle} className="w-16 h-16 rounded-xl object-cover shrink-0" />
+                ) : (
+                  <div className="w-16 h-16 rounded-xl shrink-0 flex items-center justify-center text-2xl"
+                    style={{ background: 'var(--surface)' }}>🎭</div>
                 )}
-              </div>
-            </Link>
-          ))}
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm line-clamp-1" style={{ color: 'var(--text)' }}>{displayTitle}</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                    {ev.date_ts
+                      ? new Date(ev.date_ts * 1000).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+                      : 'Дата не указана'}
+                    {ev.city ? ` · ${ev.city}` : ''}
+                  </p>
+                  {ev.category && (
+                    <span className="inline-block text-[11px] px-2 py-0.5 rounded-full font-medium mt-1"
+                      style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}>
+                      {translateCategory(ev.category)}
+                    </span>
+                  )}
+                </div>
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

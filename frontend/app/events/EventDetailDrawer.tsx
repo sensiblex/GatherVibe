@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useEffect } from 'react';
 import { KudaGoEvent } from '../components/EventCard';
 import { translateCategory } from './utils';
+import { capitalizeFirstDisplayChar } from '../lib/text';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toLabel(val: any): string {
@@ -41,6 +42,8 @@ interface EventDetailDrawerProps {
 }
 
 export default function EventDetailDrawer({ event, onClose }: EventDetailDrawerProps) {
+  const displayTitle = capitalizeFirstDisplayChar(event.title);
+
   // Close on Escape key
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -92,7 +95,7 @@ export default function EventDetailDrawer({ event, onClose }: EventDetailDrawerP
         }}
         role="dialog"
         aria-modal="true"
-        aria-label={event.title}
+        aria-label={displayTitle}
       >
         {/* Close button */}
         <button
@@ -115,7 +118,7 @@ export default function EventDetailDrawer({ event, onClose }: EventDetailDrawerP
           <div className="relative w-full shrink-0" style={{ height: '200px' }}>
             <Image
               src={event.cover_url}
-              alt={event.title}
+              alt={displayTitle}
               fill
               className="object-cover"
               unoptimized
@@ -159,7 +162,7 @@ export default function EventDetailDrawer({ event, onClose }: EventDetailDrawerP
             className="text-xl font-black leading-snug"
             style={{ color: 'var(--text)' }}
           >
-            {event.title}
+            {displayTitle}
           </h2>
 
           {/* Meta info */}

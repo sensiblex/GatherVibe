@@ -4,6 +4,7 @@ import { memo, useState } from 'react';
 import Image from 'next/image';
 import { KudaGoEvent } from '../components/EventCard';
 import { translateCategory, shortMonth } from './utils';
+import { capitalizeFirstDisplayChar } from '../lib/text';
 
 interface MasonryEventCardProps {
   event: KudaGoEvent;
@@ -13,6 +14,7 @@ interface MasonryEventCardProps {
 
 function MasonryEventCardInner({ event, attendeeCount = 0, onClick }: MasonryEventCardProps) {
   const [hovered, setHovered] = useState(false);
+  const displayTitle = capitalizeFirstDisplayChar(event.title);
 
   const cats = (event.categories as (string | { slug?: string; name?: string })[])
     .map(c => {
@@ -57,7 +59,7 @@ function MasonryEventCardInner({ event, attendeeCount = 0, onClick }: MasonryEve
         <div style={{ position: 'relative', aspectRatio: '16/10', width: '100%', overflow: 'hidden' }}>
           <Image
             src={event.cover_url}
-            alt={event.title}
+            alt={displayTitle}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
             style={{ objectFit: 'cover', transition: 'transform 400ms ease' }}
@@ -182,7 +184,7 @@ function MasonryEventCardInner({ event, attendeeCount = 0, onClick }: MasonryEve
           className="font-bold leading-snug line-clamp-2 mb-2"
           style={{ color: 'var(--text)', fontSize: '0.9375rem' }}
         >
-          {event.title}
+          {displayTitle}
         </h3>
 
         {/* Meta rows */}

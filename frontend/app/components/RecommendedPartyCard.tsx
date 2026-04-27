@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import type { RecommendedParty } from '../hooks/useRecommendedParties';
+import { capitalizeFirstDisplayChar } from '../lib/text';
 
 function scoreColor(score: number): string {
   if (score >= 70) return '#16a34a';
@@ -20,6 +21,7 @@ export default function RecommendedPartyCard({ party }: { party: RecommendedPart
   const color = scoreColor(party.match_score);
   const dateLabel = formatDate(party.event_date_ts);
   const extra = Math.max(0, party.member_count - party.members_preview.length);
+  const displayEventTitle = capitalizeFirstDisplayChar(party.event_title);
 
   return (
     <Link
@@ -35,7 +37,7 @@ export default function RecommendedPartyCard({ party }: { party: RecommendedPart
         {party.event_image ? (
           <Image
             src={party.event_image}
-            alt={party.event_title}
+            alt={displayEventTitle}
             fill
             sizes="320px"
             className="object-cover"
@@ -58,7 +60,7 @@ export default function RecommendedPartyCard({ party }: { party: RecommendedPart
           className="text-base font-bold mb-1 line-clamp-2"
           style={{ color: 'var(--text)' }}
         >
-          {party.event_title}
+          {displayEventTitle}
         </h3>
 
         {dateLabel && (

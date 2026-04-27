@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { translateCategory } from '../events/utils';
+import { capitalizeFirstDisplayChar } from '../lib/text';
 
 
 export interface KudaGoEvent {
@@ -70,6 +71,7 @@ interface AttendeeBasic {
 // ──────────────────────────────────────────────────────────────────────
 export default function EventCard({ event, attendees = [] }: { event: KudaGoEvent; attendees?: AttendeeBasic[] }) {
   const ageLabel = event.age_restriction ? (typeof event.age_restriction === 'string' && event.age_restriction.endsWith('+') ? event.age_restriction : `${event.age_restriction}+`) : null;
+  const displayTitle = capitalizeFirstDisplayChar(event.title);
 
   return (
     <Link
@@ -88,7 +90,7 @@ export default function EventCard({ event, attendees = [] }: { event: KudaGoEven
         {event.cover_url ? (
           <Image
             src={event.cover_url}
-            alt={event.title}
+            alt={displayTitle}
             fill
             className="object-cover group-hover:scale-105 transition-transform duration-500"
             unoptimized
@@ -156,7 +158,7 @@ export default function EventCard({ event, attendees = [] }: { event: KudaGoEven
           className="font-bold text-base leading-snug line-clamp-2 transition-colors"
           style={{ color: 'var(--text)' }}
         >
-          {event.title}
+          {displayTitle}
         </h3>
 
         {event.place_title && (

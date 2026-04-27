@@ -4,6 +4,7 @@ import { memo, useState } from 'react';
 import Image from 'next/image';
 import { KudaGoEvent } from '../components/EventCard';
 import { translateCategory, shortMonth } from './utils';
+import { capitalizeFirstDisplayChar } from '../lib/text';
 
 interface FeaturedCardProps {
   event: KudaGoEvent;
@@ -13,6 +14,7 @@ interface FeaturedCardProps {
 
 function FeaturedCardInner({ event, attendeeCount = 0, onClick }: FeaturedCardProps) {
   const [hovered, setHovered] = useState(false);
+  const displayTitle = capitalizeFirstDisplayChar(event.title);
 
   const cats = (event.categories as (string | { slug?: string; name?: string })[])
     .map(c => {
@@ -56,7 +58,7 @@ function FeaturedCardInner({ event, attendeeCount = 0, onClick }: FeaturedCardPr
       {event.cover_url ? (
         <Image
           src={event.cover_url}
-          alt={event.title}
+          alt={displayTitle}
           fill
           priority
           sizes="100vw"
@@ -175,7 +177,7 @@ function FeaturedCardInner({ event, attendeeCount = 0, onClick }: FeaturedCardPr
               overflow: 'hidden',
             }}
           >
-            {event.title}
+            {displayTitle}
           </h2>
 
           {/* Location */}

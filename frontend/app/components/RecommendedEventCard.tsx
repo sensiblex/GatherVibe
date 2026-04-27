@@ -4,6 +4,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useState } from 'react';
 import type { RecommendedEvent } from '../hooks/useRecommendedEvents';
+import { capitalizeFirstDisplayChar } from '../lib/text';
 
 function scoreColor(score: number): string {
   if (score >= 70) return '#16a34a';
@@ -32,6 +33,7 @@ export default function RecommendedEventCard({ event, onDismiss, onLike }: Props
   const color = scoreColor(event.match_score);
   const dateLabel = formatDate(event.start_ts);
   const [liked, setLiked] = useState(false);
+  const displayTitle = capitalizeFirstDisplayChar(event.title);
 
   return (
     <div
@@ -47,7 +49,7 @@ export default function RecommendedEventCard({ event, onDismiss, onLike }: Props
           {event.cover_url ? (
             <Image
               src={event.cover_url}
-              alt={event.title}
+              alt={displayTitle}
               fill
               sizes="320px"
               className="object-cover"
@@ -69,7 +71,7 @@ export default function RecommendedEventCard({ event, onDismiss, onLike }: Props
             className="text-base font-bold mb-1 line-clamp-2"
             style={{ color: 'var(--text)' }}
           >
-            {event.title}
+            {displayTitle}
           </h3>
 
           {dateLabel && (

@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../lib/apiFetch';
 import { toast } from './Toast';
+import { capitalizeFirstDisplayChar } from '../lib/text';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const POLL_INTERVAL = 5000;
@@ -68,6 +69,7 @@ function JoinModal({
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const MAX = 100;
+  const displayTitle = capitalizeFirstDisplayChar(party.title);
 
   const handleSubmit = async () => {
     setLoading(true);
@@ -103,7 +105,7 @@ function JoinModal({
         <div className="px-6 py-5 flex flex-col gap-4">
           <p className="text-sm" style={{ color: 'var(--text)' }}>
             Вы хотите вступить в компанию{' '}
-            <span className="font-bold">{party.title}</span>.
+            <span className="font-bold">{displayTitle}</span>.
           </p>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
@@ -150,6 +152,7 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
   const myId = user?.id ?? null;
   const [loading, setLoading] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const displayTitle = capitalizeFirstDisplayChar(party.title);
 
   const isCreator = myId !== null && party.creator_id === myId;
   const myMembership = party.members.find(m => m.user_id === myId);
@@ -190,7 +193,7 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="font-bold text-sm" style={{ color: 'var(--text)' }}>{party.title}</h3>
+              <h3 className="font-bold text-sm" style={{ color: 'var(--text)' }}>{displayTitle}</h3>
               {isCreator && (
                 <span
                   className="text-xs px-2 py-0.5 rounded-full font-semibold"

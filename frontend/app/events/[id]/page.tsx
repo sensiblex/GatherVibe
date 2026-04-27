@@ -23,6 +23,7 @@ import {
   safeEventTimestamp,
 } from './event-utils';
 import { translateCategory } from '../utils';
+import { capitalizeFirstDisplayChar } from '../../lib/text';
 
 const EventMap = dynamic(() => import('../../components/EventMap'), { ssr: false });
 
@@ -310,10 +311,11 @@ export default function EventDetailPage() {
   })();
 
   const displayDate = event ? getDisplayDate(event) : '';
+  const displayTitle = event ? capitalizeFirstDisplayChar(event.title) : '';
   const chatEventId = event?.id ?? eventId;
 
   const eventMeta = event ? {
-    title:     event.title,
+    title:     displayTitle,
     date_ts:   event.date_time
       ? Math.floor(new Date(event.date_time).getTime() / 1000)
       : event.start_date
@@ -365,7 +367,7 @@ export default function EventDetailPage() {
                 <div className="w-full h-56 sm:h-72 overflow-hidden">
                   <img
                     src={event.image_url}
-                    alt={event.title}
+                    alt={displayTitle}
                     className="w-full h-full object-cover"
                     loading="lazy"
                   />
@@ -431,7 +433,7 @@ export default function EventDetailPage() {
 
                 {/* Title */}
                 <h1 className="text-2xl sm:text-3xl font-black mb-4 leading-tight" style={{ color: 'var(--text)' }}>
-                  {event.title}
+                  {displayTitle}
                 </h1>
 
                 {/* Meta row */}
@@ -487,7 +489,7 @@ export default function EventDetailPage() {
                 {mapQuery && !isVirtualAddress(mapQuery) && (
                   <EventMap
                     address={mapQuery}
-                    title={event.place_title || event.title}
+                    title={event.place_title || displayTitle}
                     height="220px"
                     className="rounded-2xl overflow-hidden mt-4 mb-2"
                     lat={mapLat}

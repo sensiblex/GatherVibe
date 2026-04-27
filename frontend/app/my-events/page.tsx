@@ -8,6 +8,7 @@ import Navbar from '../components/Navbar';
 import ReviewModal, { ReviewableUser } from '../components/ReviewModal';
 import { ToastContainer } from '../components/Toast';
 import { translateCategory } from '../events/utils';
+import { capitalizeFirstDisplayChar } from '../lib/text';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -168,6 +169,7 @@ export default function MyEventsPage() {
               const isPast = activeTab === 'past';
               const reviewable = isPast ? getReviewableForEvent(ev.event_id) : [];
               const hasUnreviewed = reviewable.length > 0;
+              const displayTitle = capitalizeFirstDisplayChar(ev.title);
 
               return (
                 <div
@@ -180,7 +182,7 @@ export default function MyEventsPage() {
                     className="flex gap-4 hover:opacity-80 transition-opacity"
                   >
                     {ev.image_url ? (
-                      <img src={ev.image_url} alt={ev.title}
+                      <img src={ev.image_url} alt={displayTitle}
                         className="w-20 h-20 rounded-2xl object-cover shrink-0" />
                     ) : (
                       <div className="w-20 h-20 rounded-2xl shrink-0 flex items-center justify-center text-3xl"
@@ -188,7 +190,7 @@ export default function MyEventsPage() {
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="font-bold text-base line-clamp-1" style={{ color: 'var(--text)' }}>
-                        {ev.title}
+                        {displayTitle}
                       </p>
                       <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
                         📅{' '}

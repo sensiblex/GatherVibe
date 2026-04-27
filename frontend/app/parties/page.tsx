@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../lib/apiFetch';
+import { capitalizeFirstDisplayChar } from '../lib/text';
 
 const PAGE_SIZE = 20;
 
@@ -38,6 +39,7 @@ function PartyCard({ party }: { party: PartyItem }) {
   const capacity = party.max_members;
   const pct = Math.min(100, Math.round((filled / capacity) * 100));
   const isFull = filled >= capacity;
+  const displayTitle = capitalizeFirstDisplayChar(party.title);
 
   return (
     <Link
@@ -98,7 +100,7 @@ function PartyCard({ party }: { party: PartyItem }) {
           className="font-bold text-base leading-snug mb-1.5 line-clamp-2"
           style={{ color: 'var(--text)' }}
         >
-          {party.title}
+          {displayTitle}
         </h3>
 
         {/* Description */}
