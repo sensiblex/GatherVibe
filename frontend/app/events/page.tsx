@@ -77,6 +77,7 @@ function MasonrySkeleton() {
 export default function EventsPage() {
   const [events, setEvents]       = useState<KudaGoEvent[]>([]);
   const [loading, setLoading]     = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError]         = useState<string | null>(null);
   const [total, setTotal]         = useState<number | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -119,6 +120,7 @@ export default function EventsPage() {
   const [todayStr, setTodayStr] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadingRef  = useRef(false);
+  const hasLoadedOnceRef = useRef(false);
   const router = useRouter();
 
   // SSR-safe today
@@ -196,7 +198,9 @@ export default function EventsPage() {
   ) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
-    setLoading(true);
+    const showInitialLoader = !hasLoadedOnceRef.current;
+    if (showInitialLoader) setLoading(true);
+    else setIsRefreshing(true);
     setError(null);
     try {
       // Quick-date preset overrides manual date range.
@@ -244,6 +248,7 @@ export default function EventsPage() {
       const incoming: KudaGoEvent[] = data.results || [];
       setTotal(data.count ?? null);
       setEvents(incoming);
+      hasLoadedOnceRef.current = true;
 
       // Fetch attendee counts in background
       if (incoming.length > 0) {
@@ -257,6 +262,7 @@ export default function EventsPage() {
       setError(e instanceof Error ? e.message : 'Неизвестная ошибка');
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
       loadingRef.current = false;
     }
   }, []);
@@ -281,15 +287,15 @@ export default function EventsPage() {
   ]);
 
   // Debounced place search
-  const onPlaceSearchChange = (v: string) => {
+  const onPlaceSearchChange = useCallback((v: string) => {
     setPlaceSearchInput(v);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!v.trim()) setPlaceSearch('');
     else debounceRef.current = setTimeout(() => setPlaceSearch(v.trim()), 500);
-  };
+  }, []);
 
   // Debounced search
-  const onSearchChange = (val: string) => {
+  const onSearchChange = useCallback((val: string) => {
     setSearchInput(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (!val.trim()) {
@@ -297,9 +303,9 @@ export default function EventsPage() {
     } else {
       debounceRef.current = setTimeout(() => setSearch(val), 500);
     }
-  };
+  }, []);
 
-  const clearFilters = () => {
+  const clearFilters = useCallback(() => {
     setSearchInput(''); setSearch(''); setSelectedCats([]);
     setPriceMode('all'); setDateFrom(''); setDateTo('');
     setSortBy('date'); setSelectedDate(null);
@@ -311,7 +317,7 @@ export default function EventsPage() {
     setHasSchedules(false); setOnlyVerifiedPlace(false);
     setFromHour(null); setToHour(null);
     setWeekdays([]); setHideStarted(false);
-  };
+  }, []);
 
   const hasActive = !!(
     search || selectedCats.length || priceMode !== 'all' || dateFrom || dateTo ||
@@ -322,6 +328,8 @@ export default function EventsPage() {
     fromHour !== null || toHour !== null ||
     weekdays.length > 0 || hideStarted
   );
+
+  const showInitialLoading = loading && !hasLoadedOnceRef.current;
 
   // Backend already handles sorting via order_by; keep a noop memo for downstream code.
   const sortedEvents = events;
@@ -357,7 +365,7 @@ export default function EventsPage() {
             <h1 className="t-display">
               События в {KUDAGO_CITIES.find(c => c.slug === city)?.locative ?? ''}
             </h1>
-            {total !== null && !loading && (
+            {total !== null && !showInitialLoading && (
               <p className="t-sm" style={{ marginTop: 8 }}>
                 {total.toLocaleString('ru-RU')} мероприятий
               </p>
@@ -547,7 +555,7 @@ export default function EventsPage() {
         )}
 
       {/* ── Events map: synced 1:1 with the filtered list below ── */}
-      {!error && !loading && (
+      {!error && (
         <EventsMap
           events={sortedEvents}
           city={city}
@@ -603,7 +611,7 @@ export default function EventsPage() {
             </div>
 
             {/* Date strip */}
-            {!loading && !error && (
+            {!error && (
               <div className="mb-8">
                 <DateStrip
                   selectedDate={selectedDate}
@@ -614,10 +622,10 @@ export default function EventsPage() {
             )}
 
             {/* Skeleton */}
-            {loading && <MasonrySkeleton />}
+            {showInitialLoading && <MasonrySkeleton />}
 
             {/* Featured + Masonry grid */}
-            {!loading && calendarEvents.length > 0 && (
+            {!showInitialLoading && calendarEvents.length > 0 && (
               <>
                 {/* Featured card — first event */}
                 <div className="mb-6">
@@ -644,8 +652,36 @@ export default function EventsPage() {
               </>
             )}
 
+            {isRefreshing && (
+              <div
+                aria-live="polite"
+                style={{
+                  position: 'sticky',
+                  top: 14,
+                  zIndex: 2,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '0.45rem 0.75rem',
+                  borderRadius: 'var(--r-full)',
+                  marginBottom: 12,
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-muted)',
+                  fontSize: '.8125rem',
+                  fontWeight: 600,
+                  pointerEvents: 'none',
+                }}
+              >
+                <span
+                  className="inline-block h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+                />
+                Updating...
+              </div>
+            )}
+
             {/* Empty masonry state */}
-            {!loading && calendarEvents.length === 0 && sortedEvents.length > 0 && (
+            {!showInitialLoading && calendarEvents.length === 0 && sortedEvents.length > 0 && (
               <div
                 className="flex flex-col items-center py-12 gap-3 rounded-2xl"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
@@ -665,7 +701,7 @@ export default function EventsPage() {
             )}
 
             {/* Global empty state */}
-            {!loading && sortedEvents.length === 0 && !error && (
+            {!showInitialLoading && sortedEvents.length === 0 && !error && (
               <div className="flex flex-col items-center py-20 gap-4 text-center">
                 <span className="text-6xl select-none">🎭</span>
                 <p className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Ничего не найдено</p>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import Image from 'next/image';
 import { KudaGoEvent } from '../components/EventCard';
 import { translateCategory, shortMonth } from './utils';
@@ -11,7 +11,7 @@ interface MasonryEventCardProps {
   onClick: (event: KudaGoEvent) => void;
 }
 
-export default function MasonryEventCard({ event, attendeeCount = 0, onClick }: MasonryEventCardProps) {
+function MasonryEventCardInner({ event, attendeeCount = 0, onClick }: MasonryEventCardProps) {
   const [hovered, setHovered] = useState(false);
 
   const cats = (event.categories as (string | { slug?: string; name?: string })[])
@@ -257,3 +257,5 @@ export default function MasonryEventCard({ event, attendeeCount = 0, onClick }: 
     </div>
   );
 }
+
+export default memo(MasonryEventCardInner);
