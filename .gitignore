@@ -33,19 +33,13 @@ backend/uploads/chat/
 backend/uploads/recap/
 backend/uploads/avatars/
 
-# Test output
-test-screenshots/
-start-claude.ps1
-
 # IDE
 .vscode/settings.json
 
 # Claude Code / AI settings
-.claude/
-CLAUDE.md
 hooks/
 scripts/
 pyproject.toml
 uv.lock
 .venv/
-.aider*
+
