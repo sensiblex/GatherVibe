@@ -21,7 +21,6 @@ from models.embedding import EntityEmbedding
 from services import embeddings
 
 
-# ─── Fixtures ────────────────────────────────────────────────────────────────
 
 
 @pytest.fixture
@@ -41,7 +40,6 @@ def fake_embed(monkeypatch):
     def _fake(text, *, is_query=False):
         import hashlib
         h = hashlib.sha256(text.encode("utf-8")).digest()
-        # 4 bytes → 4 floats in [-1, 1]
         raw = [(b - 128) / 128.0 for b in h[:4]]
         norm = sum(x * x for x in raw) ** 0.5 or 1.0
         return [x / norm for x in raw]
@@ -51,7 +49,6 @@ def fake_embed(monkeypatch):
     return _fake
 
 
-# ─── compose_user_text ───────────────────────────────────────────────────────
 
 
 def test_compose_user_text_combines_fields():
@@ -71,7 +68,6 @@ def test_compose_user_text_empty_user_falls_back_to_username():
     assert text == "alex"
 
 
-# ─── compose_event_text ──────────────────────────────────────────────────────
 
 
 def test_compose_event_text_with_json_fields():
@@ -99,12 +95,10 @@ def test_compose_event_text_handles_list_categories():
 def test_compose_event_text_survives_malformed_json():
     from types import SimpleNamespace
     ev = SimpleNamespace(title="T", description="D", categories="{not json", tags="also bad", kudago_id="1")
-    # Should not raise
     text = embeddings.compose_event_text(ev)
     assert "T" in text and "D" in text
 
 
-# ─── cosine similarity ──────────────────────────────────────────────────────
 
 
 def test_cosine_identical_vectors_is_one():
@@ -126,7 +120,6 @@ def test_cosine_empty_returns_zero():
     assert embeddings.cosine([], []) == 0.0
 
 
-# ─── upsert_embedding / get_embedding ───────────────────────────────────────
 
 
 def test_upsert_then_get(db):
@@ -153,14 +146,13 @@ def test_get_embedding_missing_returns_none(db):
 def test_load_embeddings_bulk(db):
     embeddings.upsert_embedding(db, "event", "a", [1.0, 0, 0, 0])
     embeddings.upsert_embedding(db, "event", "b", [0, 1.0, 0, 0])
-    embeddings.upsert_embedding(db, "user", "a", [0, 0, 1.0, 0])  # different type
+    embeddings.upsert_embedding(db, "user", "a", [0, 0, 1.0, 0])
     db.commit()
     result = embeddings.load_embeddings_bulk(db, "event", ["a", "b", "missing"])
     assert set(result.keys()) == {"a", "b"}
     assert result["a"] == [1.0, 0, 0, 0]
 
 
-# ─── find_similar ────────────────────────────────────────────────────────────
 
 
 def test_find_similar_ranks_by_cosine(db):
@@ -192,7 +184,6 @@ def test_find_similar_respects_limit(db):
     assert len(results) == 3
 
 
-# ─── refresh_user_embedding / refresh_event_embedding ────────────────────────
 
 
 def test_refresh_user_embedding_persists_vector(db, fake_embed):
@@ -222,7 +213,6 @@ def test_refresh_event_embedding_persists_vector(db, fake_embed):
 def test_refresh_event_skips_when_id_missing(db, fake_embed):
     from types import SimpleNamespace
     ev = SimpleNamespace(title="T", description="", categories="", tags="", kudago_id=None, id=None)
-    embeddings.refresh_event_embedding(db, ev)  # must not raise
+    embeddings.refresh_event_embedding(db, ev)
     db.commit()
-    # Nothing was inserted
     assert db.query(EntityEmbedding).count() == 0

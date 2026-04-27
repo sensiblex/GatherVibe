@@ -38,7 +38,6 @@ def _get_vapid() -> Vapid | None:
     if not raw:
         return None
 
-    # 1. Maybe it's a base64-encoded PEM
     pem: str | None = None
     try:
         decoded = base64.b64decode(raw).decode()
@@ -47,7 +46,6 @@ def _get_vapid() -> Vapid | None:
     except Exception:
         pass
 
-    # 2. Maybe it's already a raw PEM string
     if pem is None and "BEGIN" in raw:
         pem = raw
 
@@ -55,7 +53,6 @@ def _get_vapid() -> Vapid | None:
         if pem is not None:
             _vapid_instance = Vapid.from_pem(pem.encode())
         else:
-            # Fall back to raw base64url (32-byte EC private key)
             _vapid_instance = Vapid.from_string(raw)
         return _vapid_instance
     except Exception as exc:
@@ -84,7 +81,6 @@ def send_push(
 
     payload = json.dumps({"title": title, "body": body, "data": data or {}})
 
-    # Derive audience from endpoint origin
     aud = "{}://{}".format(*urlparse(endpoint)[:2])
     vapid_claims = {"sub": f"mailto:{VAPID_CLAIMS_EMAIL}", "aud": aud}
 

@@ -73,7 +73,6 @@ def get_recommended_parties(
     return full[offset : offset + limit]
 
 
-# ─── Event recommendations (Phase 3: event matching) ─────────────────────────
 
 _event_cache: dict[int, tuple[datetime, list[dict[str, Any]]]] = {}
 _event_lock = Lock()
@@ -112,7 +111,7 @@ def get_recommended_events(
 ) -> list[dict[str, Any]]:
     user = get_current_user_from_token(token, db)
 
-    if city is None:  # only cache default view
+    if city is None:
         cached = _get_cached_events(user.id)
         if cached is not None:
             return cached[offset : offset + limit]
@@ -124,7 +123,6 @@ def get_recommended_events(
     return full[offset : offset + limit]
 
 
-# ─── People recommendations (Phase 4) ────────────────────────────────────────
 
 
 @router.get("/users/me/similar-people")
@@ -151,7 +149,6 @@ def get_event_peers(
     return [serialize_user_rec(r) for r in recs]
 
 
-# ─── Feedback loop (Phase 5) ─────────────────────────────────────────────────
 
 _VALID_REC_TYPES = {"event", "person", "party"}
 _VALID_ACTIONS = {"shown", "clicked", "dismissed", "liked", "disliked", "converted"}
@@ -195,7 +192,6 @@ def post_feedback(
     db.add(row)
     db.commit()
 
-    # Invalidate caches so dismissed items drop out immediately.
     if payload.action in {"dismissed", "disliked", "converted"}:
         if payload.rec_type == "event":
             invalidate_user_event_cache(user.id)

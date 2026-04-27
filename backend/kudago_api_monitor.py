@@ -211,7 +211,6 @@ class PrometheusExporter:
         return "\n".join(lines)
 
 
-# ==================== Health Check ====================
 
 async def check_api_health() -> dict:
     """

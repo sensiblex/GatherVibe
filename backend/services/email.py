@@ -5,9 +5,6 @@ from core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Short timeout so Resend API hangs don't block workers for 30s.
-# We fire email sending from BackgroundTasks, so the user response is instant,
-# but we still don't want a worker sitting on a dead connection for half a minute.
 resend.default_http_client = RequestsClient(timeout=5)
 
 
@@ -44,7 +41,7 @@ def send_verification_email(to_email: str, username: str, token: str) -> None:
                     <p>Нажмите кнопку ниже, чтобы подтвердить email и начать пользоваться сервисом.</p>
                     <a href="{verify_url}"
                        style="display:inline-block;margin:24px 0;padding:14px 28px;
-                              background:#01696f;color:#fff;border-radius:10px;
+                              background:
                               text-decoration:none;font-weight:bold;">
                        Подтвердить email
                     </a>

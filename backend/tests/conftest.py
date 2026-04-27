@@ -6,7 +6,6 @@ Uses an in-memory SQLite database — completely isolated from production DB.
 import sys
 import os
 
-# Make sure the backend package root is on sys.path so imports resolve.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
@@ -22,11 +21,7 @@ from auth import hash_password
 from jwt_handler import create_access_token
 from datetime import timedelta
 
-# ── In-memory SQLite with StaticPool ─────────────────────────────────────────
-# StaticPool forces ALL connections (including TestClient's internal ones)
-# to reuse the SAME underlying SQLite connection, so tables created in the
-# fixture are visible to requests made by the TestClient.
-TEST_DB_URL = "sqlite://"  # in-memory
+TEST_DB_URL = "sqlite://"
 
 engine = create_engine(
     TEST_DB_URL,
@@ -87,7 +82,6 @@ def token_b(user_b):
     return _make_token(user_b)
 
 
-# ── FastAPI TestClient that uses our test DB ──────────────────────────────────
 @pytest.fixture
 def client(db):
     """
@@ -103,7 +97,7 @@ def client(db):
         try:
             yield db
         finally:
-            pass  # session lifecycle managed by the 'db' fixture
+            pass
 
     app_module.app.dependency_overrides[app_module.get_db] = override_get_db
     with TestClient(app_module.app) as c:

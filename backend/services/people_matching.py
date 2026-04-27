@@ -32,14 +32,12 @@ W_AGE = 0.10
 W_TRUST = 0.05
 
 
-# ─── Helpers ─────────────────────────────────────────────────────────────────
 
 
 def _age_score(a: int | None, b: int | None) -> float:
     if a is None or b is None:
         return 0.0
     diff = abs(a - b)
-    # gaussian decay: 1.0 @ 0 diff, ~0.6 @ 5y, ~0.1 @ 15y
     return math.exp(-(diff ** 2) / (2 * 5 * 5))
 
 
@@ -53,7 +51,6 @@ def _trust_score(other: User) -> float:
     ts = getattr(other, "trust_score", None)
     if ts is None:
         return 0.0
-    # trust_score is float; normalize to [0, 1] if it's already 0..1 or 0..5
     if ts > 1.0:
         return min(1.0, ts / 5.0)
     return max(0.0, min(1.0, ts))
@@ -78,7 +75,6 @@ def _mutual_events(db: Session, user_id_a: int, user_id_b: int) -> int:
     return cnt
 
 
-# ─── Dataclass ───────────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -90,7 +86,6 @@ class UserRecommendation:
     components: dict[str, float]
 
 
-# ─── Scoring ─────────────────────────────────────────────────────────────────
 
 
 def _score_pair(
@@ -114,7 +109,7 @@ def _score_pair(
             semantic = max(0.0, embeddings.cosine(me_embedding, other_vec))
 
     mutual_count = _mutual_events(db, me.id, other.id)
-    mutuals_score = min(1.0, mutual_count / 5.0)  # saturates at 5 mutuals
+    mutuals_score = min(1.0, mutual_count / 5.0)
 
     geo = _city_score(me, other)
 
@@ -167,7 +162,6 @@ def _score_pair(
     )
 
 
-# ─── Public API ──────────────────────────────────────────────────────────────
 
 
 def recommend_similar_users(

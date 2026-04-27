@@ -35,7 +35,6 @@ def _accept(db, party_id: int, user_id: int):
     db.commit()
 
 
-# ── Basic dispatch ───────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -67,7 +66,6 @@ async def test_sender_does_not_get_own_push(db, user_a, user_b):
             now_ts=1000,
         )
     assert user_b.id not in pushed
-    # Creator (user_a) should be the only recipient
     assert pushed == {user_a.id}
 
 
@@ -88,7 +86,6 @@ async def test_only_accepted_members_targeted(db, user_a, user_b, user_c):
     assert user_c.id not in pushed
 
 
-# ── Throttling ───────────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -107,7 +104,6 @@ async def test_second_message_within_5min_throttled(db, user_a, user_b):
         await chat_push.notify_chat_message(
             db, party, user_a.id, "user_a", "msg3", now_ts=1000 + 240,
         )
-    # Only the first push fires, others throttled within 5 min
     assert mock_push.call_count == 1
 
 
@@ -121,7 +117,6 @@ async def test_message_after_throttle_window_pushes_again(db, user_a, user_b):
         await chat_push.notify_chat_message(
             db, party, user_a.id, "user_a", "msg1", now_ts=1000,
         )
-        # 5 min + 1 second later
         await chat_push.notify_chat_message(
             db, party, user_a.id, "user_a", "msg2", now_ts=1000 + 5 * 60 + 1,
         )
@@ -147,11 +142,9 @@ async def test_throttle_independent_per_party(db, user_a, user_b):
         await chat_push.notify_chat_message(
             db, party2, user_a.id, "user_a", "p2msg", now_ts=1001,
         )
-    # Different parties → both fire
     assert mock_push.call_count == 2
 
 
-# ── Presence (online users skipped) ──────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -160,7 +153,6 @@ async def test_online_user_in_party_room_skipped(db, user_a, user_b):
     party = _make_party(db, user_a.id)
     _accept(db, party.id, user_b.id)
 
-    # Mark user_b as connected to party room
     chat_push.mark_join_party("sid_b", user_b.id, party.id)
 
     with patch("chat_push.push_helpers.send_push_to_user") as mock_push:
@@ -178,7 +170,6 @@ async def test_user_disconnect_resumes_push(db, user_a, user_b):
     _accept(db, party.id, user_b.id)
 
     chat_push.mark_join_party("sid_b", user_b.id, party.id)
-    # Then user_b disconnects
     chat_push.mark_disconnect("sid_b")
 
     with patch("chat_push.push_helpers.send_push_to_user") as mock_push:
@@ -215,18 +206,16 @@ async def test_multiple_tabs_only_disconnect_when_all_gone(db, user_a, user_b):
 
     chat_push.mark_join_party("sid_b1", user_b.id, party.id)
     chat_push.mark_join_party("sid_b2", user_b.id, party.id)
-    chat_push.mark_disconnect("sid_b1")  # one tab closed
+    chat_push.mark_disconnect("sid_b1")
 
     with patch("chat_push.push_helpers.send_push_to_user") as mock_push:
         pushed = await chat_push.notify_chat_message(
             db, party, user_a.id, "user_a", "hi", now_ts=1000,
         )
-    # Still online via sid_b2 → no push
     assert user_b.id not in pushed
     assert mock_push.call_count == 0
 
 
-# ── Push payload ─────────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -240,7 +229,6 @@ async def test_push_payload_carries_party_id_and_type(db, user_a, user_b):
             db, party, user_a.id, "user_a", "hello!", now_ts=1000,
         )
     args, kwargs = mock_push.call_args
-    # send_push_to_user(db, user_id, title, body, data)
     data_arg = args[4] if len(args) >= 5 else kwargs.get("data")
     assert data_arg["party_id"] == party.id
     assert data_arg["type"] == "chat_message"

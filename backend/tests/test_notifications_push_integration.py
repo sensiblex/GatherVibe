@@ -26,8 +26,6 @@ def test_create_notification_dispatches_push_when_subscribed(db, user_a):
         assert isinstance(n, Notification)
         mock_push.assert_called_once()
         args, kwargs = mock_push.call_args
-        # Expected call: send_push_to_user(db, user_id, title, body, data)
-        # Accept positional or keyword — verify user_id + title + body + data
         call_args = {**kwargs}
         positional = list(args)
         if len(positional) >= 2:
@@ -49,8 +47,6 @@ def test_create_notification_no_subscription_no_error(db, user_a):
     with patch("notification_helpers.send_push_to_user") as mock_push:
         create_notification(db, user_a.id, "test_type", "T", body="B")
         db.commit()
-        # push helper may still be invoked (it no-ops when no subs) OR skipped
-        # as optimization — both are acceptable. What matters is no exception.
     row = db.query(Notification).filter_by(user_id=user_a.id).first()
     assert row is not None
     assert row.title == "T"
@@ -63,7 +59,6 @@ def test_create_notification_push_failure_does_not_break_db(db, user_a):
         "notification_helpers.send_push_to_user",
         side_effect=RuntimeError("upstream down"),
     ):
-        # Must NOT raise — push is best-effort
         create_notification(db, user_a.id, "test_type", "T", body="B")
         db.commit()
     row = db.query(Notification).filter_by(user_id=user_a.id).first()

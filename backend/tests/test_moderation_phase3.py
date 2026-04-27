@@ -71,16 +71,13 @@ def mod_token(mod_user):
     return _make_token(mod_user)
 
 
-# ── 1. GDPR export ───────────────────────────────────────────────────────────
 
 def test_export_includes_profile_and_reviews(client, db, user_a, user_b, token_a):
-    # Seed review left by user_a
     party = EventParty(event_id="ev_ex1", title="P", description="d",
                        max_members=3, creator_id=user_b.id, is_open=True)
     db.add(party); db.commit(); db.refresh(party)
     db.add(PartyReview(reviewer_id=user_a.id, reviewed_id=user_b.id,
                        party_id=party.id, rating=4, text="good"))
-    # message
     db.add(ChatMessage(room=f"party_{party.id}", user_id=str(user_a.id),
                        username=user_a.username, message="hi",
                        timestamp=datetime.utcnow()))
@@ -102,10 +99,8 @@ def test_export_requires_auth(client):
     assert r.status_code == 401
 
 
-# ── 2. Admin delete user ─────────────────────────────────────────────────────
 
 def test_admin_can_delete_user(client, db, admin_token):
-    # Create throwaway user
     victim = _make_user(db, "victim", "victim@x.x")
     vid = victim.id
     r = client.delete(f"/admin/users/{vid}", headers=_auth(admin_token))
@@ -141,10 +136,8 @@ def test_delete_self_admin_forbidden_if_last(client, db, admin_user, admin_token
     assert r.status_code == 400
 
 
-# ── 3. Rate limit /reports ───────────────────────────────────────────────────
 
 def test_reports_rate_limit_after_5(client, db, user_a, token_a):
-    # Seed 5 targets (users)
     targets = [_make_user(db, f"rt{i}", f"rt{i}@x.x") for i in range(6)]
     ok_count = 0
     rate_limited = False
@@ -170,7 +163,6 @@ def test_moderator_not_rate_limited(client, db, mod_user, mod_token):
         assert r.status_code == 201, f"Moderator should bypass rate limit (iter {i})"
 
 
-# ── 4. Appeals ────────────────────────────────────────────────────────────────
 
 def test_banned_user_can_submit_appeal(client, db, user_a, token_a):
     user_a.is_banned = True
@@ -249,7 +241,6 @@ def test_one_active_appeal_per_user(client, db, user_a, token_a):
     assert r2.status_code == 409
 
 
-# ── 5. Bulk actions ───────────────────────────────────────────────────────────
 
 def test_admin_bulk_warn(client, db, admin_token):
     victims = [_make_user(db, f"bw{i}", f"bw{i}@x.x") for i in range(3)]

@@ -30,8 +30,6 @@ NOTIF_REVIEW_REMINDER = "post_event_review_reminder"
 NOTIF_RECAP_REMINDER = "post_event_recap_reminder"
 NOTIF_GATHER_AGAIN = "gather_again"
 
-# Look-back window per job. Wide enough to catch up if the worker was offline
-# for several days, narrow enough to avoid pinging users about ancient events.
 LOOKBACK_WINDOW_SECONDS = 7 * 24 * 3600
 
 
@@ -47,8 +45,6 @@ def _accepted_recipients(db: Session, party: EventParty) -> set[int]:
 
 
 def _already_sent(db: Session, user_id: int, notif_type: str, party_id: int) -> bool:
-    # Exact-match dedup on the JSON payload — avoids substring collisions
-    # that would happen with `LIKE '%party_id: 1%'` (matches 1, 10, 11, …).
     expected = json.dumps({"party_id": party_id})
     return (
         db.query(Notification)

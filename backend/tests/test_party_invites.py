@@ -11,7 +11,6 @@ from models.party import EventParty, PartyMember
 from models.user import User
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 def _make_party(
@@ -70,7 +69,6 @@ def token_c(user_c):
     )
 
 
-# ── Invite send ───────────────────────────────────────────────────────────────
 
 
 def test_invite_success(client: TestClient, db, user_a, user_b, token_a):
@@ -153,7 +151,6 @@ def test_invite_already_invited_forbidden(client: TestClient, db, user_a, user_b
 def test_invite_party_full_forbidden(client: TestClient, db, user_a, user_b, user_c, token_a):
     _make_discoverable(db, user_b)
     _make_discoverable(db, user_c)
-    # Party with max 2 (creator + 1 other)
     party = _make_party(db, user_a.id, max_members=2)
     db.add(PartyMember(party_id=party.id, user_id=user_b.id, status="accepted"))
     db.commit()
@@ -167,7 +164,6 @@ def test_invite_party_full_forbidden(client: TestClient, db, user_a, user_b, use
 
 
 def test_invite_non_discoverable_forbidden(client: TestClient, db, user_a, user_b, token_a):
-    # user_b.is_discoverable_on_events defaults to False
     party = _make_party(db, user_a.id)
 
     resp = client.post(
@@ -192,7 +188,6 @@ def test_invite_closed_party_forbidden(client: TestClient, db, user_a, user_b, t
     assert resp.status_code == 400
 
 
-# ── Invite accept ─────────────────────────────────────────────────────────────
 
 
 def test_accept_invite_success(client: TestClient, db, user_a, user_b, token_a, token_b):
@@ -258,7 +253,6 @@ def test_accept_closes_party_at_capacity(client: TestClient, db, user_a, user_b,
     assert party.is_open is False
 
 
-# ── Invite decline ────────────────────────────────────────────────────────────
 
 
 def test_decline_invite_success(client: TestClient, db, user_a, user_b, token_a, token_b):
@@ -283,7 +277,6 @@ def test_decline_invite_success(client: TestClient, db, user_a, user_b, token_a,
     assert invite.status == "declined"
 
 
-# ── Cancel invite ─────────────────────────────────────────────────────────────
 
 
 def test_cancel_invite_success(client: TestClient, db, user_a, user_b, token_a):
@@ -327,7 +320,6 @@ def test_cancel_non_creator_forbidden(client: TestClient, db, user_a, user_b, us
     assert resp.status_code == 403
 
 
-# ── List my invites ───────────────────────────────────────────────────────────
 
 
 def test_list_my_invites(client: TestClient, db, user_a, user_b, token_a, token_b):
@@ -365,7 +357,6 @@ def test_list_my_invites_excludes_non_invited(client: TestClient, db, user_a, us
     invite = db.query(PartyMember).filter(
         PartyMember.party_id == party.id, PartyMember.user_id == user_b.id,
     ).first()
-    # Decline it
     client.post(
         f"/parties/{party.id}/invites/{invite.id}/decline",
         headers=_auth_headers(token_b),
@@ -376,7 +367,6 @@ def test_list_my_invites_excludes_non_invited(client: TestClient, db, user_a, us
     assert resp.json() == []
 
 
-# ── Expiry helper ─────────────────────────────────────────────────────────────
 
 
 def test_expire_invites_before_event(db, user_a, user_b):
@@ -384,10 +374,8 @@ def test_expire_invites_before_event(db, user_a, user_b):
     from routers.parties import expire_pending_invites
 
     _make_discoverable(db, user_b)
-    # Party with event in 12 hours (within expiry window)
     soon_ts = int(time.time()) + 12 * 3600
     party_soon = _make_party(db, user_a.id, title="Soon", event_date_ts=soon_ts, event_id="es")
-    # Party with event in 48 hours (outside window)
     later_ts = int(time.time()) + 48 * 3600
     party_later = _make_party(db, user_a.id, title="Later", event_date_ts=later_ts, event_id="el")
 
@@ -412,7 +400,6 @@ def test_expire_invites_before_event(db, user_a, user_b):
     assert m_soon.id in expired_ids
 
 
-# ── Push notifications on accept/decline ──────────────────────────────────────
 
 
 def test_accept_sends_push_to_creator(
@@ -483,7 +470,6 @@ def test_decline_sends_push_to_creator(
     assert push_to_creator[0]["data"]["status"] == "declined"
 
 
-# ── Party deletion notifies invitees ──────────────────────────────────────────
 
 
 def test_party_deleted_notifies_invited_members(
@@ -494,13 +480,11 @@ def test_party_deleted_notifies_invited_members(
     _make_discoverable(db, user_c)
     party = _make_party(db, user_a.id, title="Going to delete")
 
-    # Invite bob (status=invited)
     client.post(
         f"/parties/{party.id}/invite",
         json={"user_id": user_b.id, "message": "Will be deleted"},
         headers=_auth_headers(token_a),
     )
-    # User_c also has pending (organic join)
     db.add(PartyMember(party_id=party.id, user_id=user_c.id, status="pending"))
     db.commit()
 
@@ -510,7 +494,6 @@ def test_party_deleted_notifies_invited_members(
     )
     assert resp.status_code == 200
 
-    # Both bob and user_c should have a notification
     notifs_b = db.query(Notification).filter(
         Notification.user_id == user_b.id,
         Notification.type == "party_deleted_for_user",
@@ -523,7 +506,6 @@ def test_party_deleted_notifies_invited_members(
     assert len(notifs_c) == 1
     assert "Going to delete" in notifs_b[0].body
 
-    # Party and members rows are gone
     assert db.query(EventParty).filter(EventParty.id == party.id).first() is None
     assert db.query(PartyMember).filter(PartyMember.party_id == party.id).count() == 0
 
@@ -547,7 +529,6 @@ def test_party_deleted_does_not_notify_creator(
     assert len(creator_notifs) == 0
 
 
-# ── Cancel idempotency ────────────────────────────────────────────────────────
 
 
 def test_cancel_then_accept_returns_404(
@@ -565,14 +546,12 @@ def test_cancel_then_accept_returns_404(
     ).first()
     invite_id = invite.id
 
-    # Creator cancels
     cancel = client.delete(
         f"/parties/{party.id}/invites/{invite_id}",
         headers=_auth_headers(token_a),
     )
     assert cancel.status_code == 200
 
-    # Invitee tries to accept — 404
     acc = client.post(
         f"/parties/{party.id}/invites/{invite_id}/accept",
         headers=_auth_headers(token_b),

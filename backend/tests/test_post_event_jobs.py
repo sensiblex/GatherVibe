@@ -49,7 +49,6 @@ def _accept(db, party_id: int, user_id: int):
     db.commit()
 
 
-# ── Review reminder (+2h) ────────────────────────────────────────────────────
 
 
 def test_review_reminder_sent_2h_after_event(db, user_a, user_b):
@@ -64,7 +63,7 @@ def test_review_reminder_sent_2h_after_event(db, user_a, user_b):
 
     counts = run_post_event_jobs(db, now)
 
-    assert counts[NOTIF_REVIEW_REMINDER] == 2  # creator + accepted member
+    assert counts[NOTIF_REVIEW_REMINDER] == 2
     notifs = db.query(Notification).filter(
         Notification.type == NOTIF_REVIEW_REMINDER,
     ).all()
@@ -74,7 +73,6 @@ def test_review_reminder_sent_2h_after_event(db, user_a, user_b):
 def test_review_reminder_not_sent_before_threshold(db, user_a):
     from post_event_jobs import run_post_event_jobs, NOTIF_REVIEW_REMINDER
     now = 2_000_000_000
-    # Event ended only 30 min ago — under 2h threshold
     _make_party(db, user_a.id, event_date_ts=now - 30 * 60)
 
     counts = run_post_event_jobs(db, now)
@@ -99,7 +97,6 @@ def test_review_reminder_idempotent(db, user_a):
     ).count() == 1
 
 
-# ── Recap reminder (+1d) ─────────────────────────────────────────────────────
 
 
 def test_recap_reminder_sent_1d_after_event(db, user_a, user_b):
@@ -121,7 +118,6 @@ def test_recap_reminder_sent_1d_after_event(db, user_a, user_b):
     assert {n.user_id for n in notifs} == {user_a.id, user_b.id}
 
 
-# ── Gather-again (+14d) ──────────────────────────────────────────────────────
 
 
 def test_gather_again_sent_14d_after_event(db, user_a, user_b):
@@ -142,7 +138,6 @@ def test_gather_again_sent_14d_after_event(db, user_a, user_b):
     assert "Боулинг" in n.body or "снова" in n.body.lower()
 
 
-# ── Targeting / edge cases ───────────────────────────────────────────────────
 
 
 def test_only_accepted_members_targeted(db, user_a, user_b, user_c):
@@ -154,7 +149,6 @@ def test_only_accepted_members_targeted(db, user_a, user_b, user_c):
     now = 2_000_000_000
     party = _make_party(db, user_a.id, event_date_ts=now - POST_EVENT_REVIEW_DELAY - 60)
     _accept(db, party.id, user_b.id)
-    # user_c is only pending → must NOT get a notif
     db.add(PartyMember(party_id=party.id, user_id=user_c.id, status="pending"))
     db.commit()
 
@@ -188,7 +182,6 @@ def test_dedup_no_substring_collision(db, user_a):
         NOTIF_REVIEW_REMINDER,
     )
     now = 2_000_000_000
-    # Create 11 parties so we get id=1..11 (worst case for substring match)
     parties = []
     for i in range(11):
         p = _make_party(
@@ -200,7 +193,6 @@ def test_dedup_no_substring_collision(db, user_a):
 
     run_post_event_jobs(db, now)
 
-    # Each party must have produced exactly one review_reminder for the creator
     notifs_count = (
         db.query(Notification)
         .filter(Notification.type == NOTIF_REVIEW_REMINDER, Notification.user_id == user_a.id)
@@ -238,15 +230,13 @@ def test_each_job_independent_dedup(db, user_a):
         NOTIF_REVIEW_REMINDER,
         NOTIF_RECAP_REMINDER,
     )
-    # First tick: 3h after event → only review reminder fires
     now1 = 2_000_000_000
     party = _make_party(db, user_a.id, event_date_ts=now1 - 3 * 3600)
     counts1 = run_post_event_jobs(db, now1)
     assert counts1[NOTIF_REVIEW_REMINDER] == 1
     assert counts1[NOTIF_RECAP_REMINDER] == 0
 
-    # Second tick: 25h after event → recap reminder fires, review stays deduped
-    now2 = now1 + (22 * 3600)  # 25h after event
+    now2 = now1 + (22 * 3600)
     counts2 = run_post_event_jobs(db, now2)
     assert counts2[NOTIF_REVIEW_REMINDER] == 0
     assert counts2[NOTIF_RECAP_REMINDER] == 1
@@ -265,7 +255,6 @@ def test_push_dispatched_to_each_recipient(db, user_a, user_b):
     with patch("notification_helpers.send_push_to_user") as mock_push:
         run_post_event_jobs(db, now)
 
-    # Two notifications were created → at least 2 push calls
     assert mock_push.call_count >= 2
     user_ids_pushed = {call.args[1] for call in mock_push.call_args_list}
     assert {user_a.id, user_b.id}.issubset(user_ids_pushed)

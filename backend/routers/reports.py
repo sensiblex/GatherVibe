@@ -94,7 +94,6 @@ def create_report(
                 detail=f"Слишком много жалоб. Максимум {REPORT_RATE_LIMIT_MAX} в час.",
             )
 
-    # duplicate check
     existing = db.query(Report).filter(
         Report.reporter_id == me.id,
         Report.target_type == payload.target_type,

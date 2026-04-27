@@ -41,7 +41,6 @@ def _get_party_or_404(db: Session, party_id: int) -> EventParty:
     return party
 
 
-# ─── Enums & schemas ────────────────────────────────────────────────────────
 
 
 class MemberStatus(str, Enum):
@@ -167,7 +166,6 @@ class PartyInvitePreviewOut(BaseModel):
     is_open: bool
 
 
-# ─── Helpers ────────────────────────────────────────────────────────────────
 
 
 def _ensure_invite_token(party: EventParty, db: Session) -> str:
@@ -258,7 +256,7 @@ def _check_and_close_party(party: EventParty, db: Session) -> bool:
             PartyMember.party_id == party.id,
             PartyMember.status == MemberStatus.accepted,
         ).count()
-        + 1  # +1 for creator who has no row in party_members
+        + 1
     )
 
     if accepted_total > party.max_members:
@@ -300,7 +298,6 @@ async def _notify_party_closed(party: EventParty, db: Session, exclude_user_ids:
         }, room=f"user_{user_id}")
 
 
-# ─── Routes ─────────────────────────────────────────────────────────────────
 
 
 @router.get("/users/me/parties", response_model=List[PartyOut])
@@ -359,8 +356,6 @@ def get_my_pending_requests(
     return result
 
 
-# ─── Party Search ─────────────────────────────────────────────────────────────
-# IMPORTANT: must be declared before /parties/{event_id} to avoid shadowing
 
 
 @router.get("/parties/search", response_model=PartySearchResponse)
@@ -380,7 +375,6 @@ def search_parties(
 ):
     get_current_user_from_token(token, db)
 
-    # Subquery: count accepted members per party (creator is not in party_members)
     member_count_sq = (
         db.query(
             PartyMember.party_id,
@@ -455,7 +449,7 @@ def search_parties(
         base_q = base_q.order_by(sa_func.coalesce(member_count_sq.c.member_count, 0).desc())
     elif sort_by == "date":
         base_q = base_q.order_by(EventParty.created_at.asc())
-    else:  # "new"
+    else:
         base_q = base_q.order_by(EventParty.created_at.desc())
 
     offset = (page - 1) * per_page
@@ -546,7 +540,6 @@ async def join_party_by_invite_token(
     if not party:
         raise HTTPException(status_code=404, detail="Приглашение не найдено")
 
-    # Creator opens own link → no-op
     if party.creator_id == user.id:
         return _build_party_out(party, db)
 
@@ -753,7 +746,6 @@ async def create_party(
     event_date_ts: Optional[int] = None
     event_image_url: Optional[str] = None
 
-    # First try local cache — fast and avoids external network call.
     from models.kudago_event import KudaGoEvent as KE
     try:
         eid_int = int(event_id)
@@ -768,8 +760,6 @@ async def create_party(
         event_date_ts = cached.start_ts
         event_image_url = cached.cover_url
     elif eid_int is not None:
-        # Fall back to async KudaGo API with a short timeout so party creation
-        # never blocks on slow external calls.
         try:
             raw = await asyncio.wait_for(
                 kudago_api_async.get_event_by_id(eid_int), timeout=3.0
@@ -854,7 +844,6 @@ async def delete_party(
         PartyMember.user_id != party.creator_id,
     ).all()
 
-    # Capture these before deletion so they remain available for socket payloads
     deleted_party_id = party.id
     deleted_party_title = party.title
 
@@ -1197,7 +1186,6 @@ async def close_party(
     return _build_party_out(party, db)
 
 
-# ─── Invite flow (creator → user) ────────────────────────────────────────────
 
 
 @router.get("/users/me/party-invites", response_model=List[PartyInviteOut])
@@ -1255,7 +1243,6 @@ async def invite_to_party(
     if not target.is_discoverable_on_events:
         raise HTTPException(status_code=403, detail="Пользователь скрыл себя от поиска по событиям")
 
-    # Capacity check: creator + accepted + invited < max_members
     used_slots = 1 + db.query(PartyMember).filter(
         PartyMember.party_id == party_id,
         PartyMember.status.in_([MemberStatus.accepted, MemberStatus.invited]),

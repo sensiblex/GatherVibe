@@ -52,7 +52,6 @@ def _attend(db, *, event_id: str, user_id: int):
     return a
 
 
-# ── has_party ─────────────────────────────────────────────────────────────────
 
 
 def test_has_party_true_returns_only_events_with_party(db, user_a, user_b):
@@ -75,7 +74,6 @@ def test_has_party_false_omitted_returns_all(db, user_a):
     assert res["count"] == 2
 
 
-# ── min_attendees ────────────────────────────────────────────────────────────
 
 
 def test_min_attendees_filters_by_count(db, user_a, user_b):
@@ -101,7 +99,6 @@ def test_min_attendees_zero_is_noop(db, user_a):
     assert res["count"] == 2
 
 
-# ── has_free_spots ───────────────────────────────────────────────────────────
 
 
 def test_has_free_spots_true_returns_only_parties_with_vacancy(db, user_a, user_b):
@@ -112,10 +109,10 @@ def test_has_free_spots_true_returns_only_parties_with_vacancy(db, user_a, user_
     _make(db, kid=3, title="NoParty",   start_ts=now + 3600)
 
     p_open = _party(db, event_id="1", creator_id=user_a.id, max_members=3)
-    _accepted(db, party_id=p_open.id, user_id=user_b.id)  # 1/3 — still has spots
+    _accepted(db, party_id=p_open.id, user_id=user_b.id)
 
     p_full = _party(db, event_id="2", creator_id=user_a.id, max_members=1)
-    _accepted(db, party_id=p_full.id, user_id=user_b.id)  # 1/1 — full
+    _accepted(db, party_id=p_full.id, user_id=user_b.id)
 
     res = kudago_cache.query_cache(db=db, location="msk", has_free_spots=True)
     assert [e["title"] for e in res["results"]] == ["OpenParty"]
@@ -125,12 +122,10 @@ def test_has_free_spots_ignores_closed_parties(db, user_a, user_b):
     now = int(time.time())
     _make(db, kid=1, title="ClosedParty", start_ts=now + 3600)
     _party(db, event_id="1", creator_id=user_a.id, max_members=5, is_open=False)
-    # Even though 0/5 accepted, is_open=False → treat as no free spots.
     res = kudago_cache.query_cache(db=db, location="msk", has_free_spots=True)
     assert res["count"] == 0
 
 
-# ── time_of_day (derived from start_time) ────────────────────────────────────
 
 
 def test_time_of_day_evening_matches_events_after_17(db):
@@ -164,7 +159,6 @@ def test_time_of_day_night_covers_22_to_06(db):
     assert {e["title"] for e in res["results"]} == {"Night22", "AfterMidnight"}
 
 
-# ── is_permanent toggle ──────────────────────────────────────────────────────
 
 
 def test_only_permanent_toggle(db):
@@ -185,7 +179,6 @@ def test_exclude_permanent_toggle(db):
     assert [e["title"] for e in res["results"]] == ["Concert"]
 
 
-# ── has_cover toggle ─────────────────────────────────────────────────────────
 
 
 def test_has_party_empty_table_returns_zero(db):
@@ -193,7 +186,6 @@ def test_has_party_empty_table_returns_zero(db):
     now = int(time.time())
     _make(db, kid=1, title="A", start_ts=now + 3600)
     _make(db, kid=2, title="B", start_ts=now + 3600)
-    # No parties in DB
     res = kudago_cache.query_cache(db=db, location="msk", has_party=True)
     assert res["count"] == 0
 

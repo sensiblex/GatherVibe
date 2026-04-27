@@ -13,14 +13,13 @@ class EventParty(Base):
     description = Column(Text, nullable=True)
     max_members = Column(Integer, default=4)
     creator_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    is_open = Column(Boolean, default=True)  # False = closed for new requests
+    is_open = Column(Boolean, default=True)
     city = Column(String(100), nullable=True, index=True)
     event_title = Column(String(200), nullable=True)
     event_date_ts = Column(BigInteger, nullable=True)
     event_image_url = Column(String(500), nullable=True)
     invite_token = Column(String(64), unique=True, nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    # Moderation
     is_hidden = Column(Boolean, default=False, nullable=False, server_default="false")
     hidden_reason = Column(String(200), nullable=True)
 
@@ -32,10 +31,9 @@ class PartyMember(Base):
     id = Column(Integer, primary_key=True, index=True)
     party_id = Column(Integer, ForeignKey("event_parties.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    # pending → user→creator request; invited → creator→user invite; accepted/rejected/left/declined terminal-ish
-    status = Column(String(10), default="pending")  # 'pending' | 'accepted' | 'rejected' | 'left' | 'invited' | 'declined'
+    status = Column(String(10), default="pending")
     joined_at = Column(DateTime(timezone=True), server_default=func.now())
-    message = Column(String(100), nullable=True)  # optional short message when joining
+    message = Column(String(100), nullable=True)
     invited_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     invite_message = Column(String(200), nullable=True)
 

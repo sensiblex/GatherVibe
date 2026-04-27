@@ -1,9 +1,3 @@
-"""
-Shared FastAPI dependencies for GatherVibe.
-
-Centralises get_db, auth helpers, and oauth2 schemes so routers
-can import from one place without circular imports.
-"""
 from datetime import datetime
 from typing import Optional
 
@@ -21,11 +15,13 @@ class OAuth2BearerOrCookie(OAuth2):
     """Accepts a JWT from Authorization: Bearer header OR an HttpOnly 'token' cookie."""
 
     def __init__(self, tokenUrl: str, auto_error: bool = True):
+        '''иниализирует схему авторизации с проверкой Bearer-токена или cookie'''
         flows = OAuthFlowsModel(password={"tokenUrl": tokenUrl, "scopes": {}})
         super().__init__(flows=flows, auto_error=auto_error)
         self._auto_error = auto_error
 
     async def __call__(self, request: Request) -> Optional[str]:
+        '''извлекает токен из заголовка Authorization или cookie'''
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             return auth_header[7:]
@@ -42,6 +38,7 @@ oauth2_scheme_optional = OAuth2BearerOrCookie(tokenUrl="login", auto_error=False
 
 
 def get_db():
+    '''возвращает сессию базы данных'''
     db = SessionLocal()
     try:
         yield db
@@ -50,12 +47,12 @@ def get_db():
 
 
 def _is_user_banned(user: User) -> bool:
-    """Возвращает True если пользователь активно забанен (с учётом истечения temp-бана)."""
+    '''возвращает True если пользователь активно забанен'''
     if not getattr(user, "is_banned", False):
         return False
     banned_until = getattr(user, "banned_until", None)
     if banned_until is None:
-        return True  # permanent ban
+        return True
     # temp ban: сравниваем naive-даты, SQLite хранит naive datetime
     now = datetime.utcnow()
     banned_until_naive = banned_until.replace(tzinfo=None) if getattr(banned_until, "tzinfo", None) else banned_until
@@ -63,13 +60,14 @@ def _is_user_banned(user: User) -> bool:
 
 
 def _is_token_revoked(db: Session, jti: Optional[str]) -> bool:
-    """True если jti не пустой и такая запись есть в RevokedToken."""
+    '''проверяет, отозван ли токен по jti'''
     if not jti:
         return False
     return db.query(RevokedToken).filter(RevokedToken.jti == jti).first() is not None
 
 
 def get_current_user_from_token(token: str, db: Session, *, allow_banned: bool = False) -> User:
+    '''получает текущего пользователя из JWT-токена'''
     from jwt_handler import verify_token
     payload = verify_token(token)
     if payload is None:
@@ -99,32 +97,31 @@ def get_current_user_from_token(token: str, db: Session, *, allow_banned: bool =
     return user
 
 
-# ── FastAPI dependency wrappers ──────────────────────────────────────────────
 
 def current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
-    """FastAPI dependency: залогиненный, не забаненный user."""
+    '''FastAPI dependency: получает залогиненного пользователя'''
     return get_current_user_from_token(token, db)
 
 
 def require_moderator(user: User = Depends(current_user)) -> User:
+    '''проверяет роль модератора'''
     if user.role not in ("moderator", "admin"):
         raise HTTPException(status_code=403, detail="Требуется роль модератора")
     return user
 
 
 def require_admin(user: User = Depends(current_user)) -> User:
+    '''проверяет роль администратора'''
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Требуется роль администратора")
     return user
 
 
 def get_user_from_socket_token(token: str, db: Session) -> User:
-    """Authentication helper for Socket.IO handlers.
-    Отказывает revoked jti, забаненным юзерам и неактивным — симметрично HTTP-варианту.
-    """
+    '''аутентифицирует пользователя по токену для Socket.IO'''
     from jwt_handler import verify_token
     payload = verify_token(token)
     if payload is None:

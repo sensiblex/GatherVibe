@@ -15,7 +15,6 @@ from services.email import send_verification_email
 
 router = APIRouter(tags=["auth"])
 
-# In-memory rate limit: email -> last_sent_timestamp
 # TTLCache с maxsize=10000 чтобы избежать unbounded роста словаря при публичном
 # трафике. TTL здесь больше cooldown'а (+30s) — просто чтобы не чистить вручную.
 try:
@@ -26,11 +25,11 @@ except ImportError:  # pragma: no cover — cachetools в requirements_docker.tx
     _resend_rate: dict[str, float] = {}
     _auth_attempts: dict[str, deque] = {}
 
-_RESEND_COOLDOWN = 60  # seconds
+_RESEND_COOLDOWN = 60
 
 # In-memory rate limit для /login и /register
 # Окно 60 сек, лимит 5 попыток. Процесс-локально; для multi-worker нужен Redis.
-_AUTH_WINDOW = 60  # seconds
+_AUTH_WINDOW = 60
 _AUTH_LIMIT = 5
 
 
@@ -39,7 +38,6 @@ def _rate_limit_auth(request: Request) -> None:
     ip = request.client.host if request.client else "unknown"
     now = time.time()
     q = _auth_attempts.setdefault(ip, deque())
-    # drop old
     while q and q[0] < now - _AUTH_WINDOW:
         q.popleft()
     if len(q) >= _AUTH_LIMIT:
@@ -117,7 +115,7 @@ def login(
         httponly=True,
         samesite="lax",
         secure=_secure,
-        max_age=604800,  # 7 days
+        max_age=604800,
         path="/",
     )
     return token_data
@@ -227,7 +225,6 @@ def update_profile(
             raise HTTPException(status_code=400, detail="avatar_url должен начинаться с https://")
         user.avatar_url = data.avatar_url or None
 
-    # Matching profile fields
     matching_text_changed = data.interests is not None or data.bio is not None or data.city is not None
     if data.birth_date is not None:
         user.birth_date = data.birth_date
@@ -261,7 +258,7 @@ def update_profile(
             invalidate_user_cache(user.id)
             invalidate_user_event_cache(user.id)
         except Exception:
-            pass  # best-effort
+            pass
 
     db.commit()
     db.refresh(user)

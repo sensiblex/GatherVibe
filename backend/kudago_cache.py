@@ -60,7 +60,6 @@ def _matches_hour_range(start_time: Optional[str], from_hour: int, to_hour: int)
         return False
     if from_hour <= to_hour:
         return from_hour <= h < to_hour
-    # overnight wrap, e.g. 22..4 → [22..24) ∪ [0..4)
     return h >= from_hour or h < to_hour
 
 import kudago_api
@@ -230,7 +229,7 @@ def location_has_cache_direct(location: str) -> bool:
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Great-circle distance between two points in kilometres."""
-    R = 6371.0  # earth radius in km
+    R = 6371.0
     p1 = math.radians(lat1)
     p2 = math.radians(lat2)
     dp = math.radians(lat2 - lat1)
@@ -257,25 +256,22 @@ def query_cache(
     lon: Optional[float] = None,
     radius_m: Optional[int] = None,
     order_by: Optional[str] = None,
-    # Social (GatherVibe-specific)
     has_party: Optional[bool] = None,
     min_attendees: Optional[int] = None,
     has_free_spots: Optional[bool] = None,
-    # Quality / derived
-    time_of_day: Optional[str] = None,  # morning | day | evening | night
+    time_of_day: Optional[str] = None,
     only_permanent: Optional[bool] = None,
     exclude_permanent: Optional[bool] = None,
     has_cover: Optional[bool] = None,
-    # Timing & schedule (new)
     starting_within_hours: Optional[int] = None,
     is_short: Optional[bool] = None,
     is_long: Optional[bool] = None,
     has_schedules: Optional[bool] = None,
     only_verified_place: Optional[bool] = None,
-    from_hour: Optional[int] = None,  # 0..24, inclusive lower
-    to_hour: Optional[int] = None,    # 0..24, exclusive upper; may wrap if from > to
-    weekdays: Optional[str] = None,   # CSV of 0..6 (Mon..Sun), Python weekday()
-    hide_started: Optional[bool] = None,  # strict: start_ts > now (permanent kept)
+    from_hour: Optional[int] = None,
+    to_hour: Optional[int] = None,
+    weekdays: Optional[str] = None,
+    hide_started: Optional[bool] = None,
 ) -> dict:
     """
     Читает события из кэша БД.
@@ -319,7 +315,6 @@ def query_cache(
             KudaGoEvent.start_ts <= horizon,
         )
 
-    # Duration filters require end_ts; permanent events are treated as "long" only.
     if is_short is True:
         q = q.filter(
             KudaGoEvent.is_permanent == False,  # noqa: E712
@@ -341,7 +336,6 @@ def query_cache(
         q = q.filter(KudaGoEvent.has_schedules == True)  # noqa: E712
 
     if hide_started is True:
-        # Strict: only events that haven't started yet; permanent stay visible.
         q = q.filter(
             (KudaGoEvent.is_permanent == True) |  # noqa: E712
             (KudaGoEvent.start_ts > now_ts)
@@ -350,7 +344,6 @@ def query_cache(
     if only_verified_place is True:
         q = q.filter(KudaGoEvent.place_is_stub == False)  # noqa: E712
 
-    # ── Social filters: resolve sets of event_ids from other tables ──
     social_event_ids: Optional[set[str]] = None
 
     def _intersect(ids: set[str]) -> None:
@@ -362,8 +355,6 @@ def query_cache(
         _intersect({r[0] for r in rows if r[0]})
 
     if has_free_spots is True:
-        # Party has free spots: is_open=True AND accepted_members_count < max_members
-        # Count accepted members per party (creator is not a PartyMember row).
         accepted_cnt = (
             db.query(PartyMember.party_id, func.count(PartyMember.id).label("c"))
             .filter(PartyMember.status == "accepted")
@@ -390,13 +381,11 @@ def query_cache(
 
     if social_event_ids is not None:
         if not social_event_ids:
-            # No event passes social filters → short-circuit to empty result.
             return {
                 "count": 0, "next": None, "previous": None,
                 "page": page, "page_size": page_size,
                 "results": [], "from_cache": True,
             }
-        # event_id stored as str in other tables; kudago_id is int here.
         int_ids = []
         for sid in social_event_ids:
             try:
@@ -416,7 +405,6 @@ def query_cache(
     search_trimmed = search.strip() if search else ""
     if search_trimmed:
         # title_lower хранит title.lower() из Python — работает с кириллицей в любой локали БД.
-        # Escape LIKE wildcards so '%' / '_' match literally, not as wildcards.
         pat = f"%{_escape_like(search_trimmed.lower())}%"
         q = q.filter(KudaGoEvent.title_lower.like(pat, escape="\\"))
 
@@ -433,15 +421,11 @@ def query_cache(
             tag_clauses = [KudaGoEvent.tags.ilike(f'%"{t}"%') for t in tag_list]
             q = q.filter(or_(*tag_clauses))
 
-    # Cyrillic-safe place search is applied in Python after SQL query (SQLite's
-    # LOWER is ASCII-only). Whitespace-only input is ignored.
     place_search_trimmed = place_search.strip() if place_search else ""
     place_search_lower = place_search_trimmed.lower() if place_search_trimmed else None
 
-    # Geo filter — narrow by bounding box in SQL, then exact haversine in Python.
     geo_active = lat is not None and lon is not None and radius_m is not None and radius_m > 0
     if geo_active:
-        # 1° lat ≈ 111 km; 1° lon ≈ 111*cos(lat) km
         km = radius_m / 1000.0
         dlat = km / 111.0
         dlon = km / (111.0 * max(math.cos(math.radians(lat)), 0.01))
@@ -452,7 +436,6 @@ def query_cache(
             KudaGoEvent.lon.between(lon - dlon, lon + dlon),
         )
 
-    # Sorting (SQL-side orderings; 'nearest' handled in Python post-filter below)
     if order_by == "popularity":
         q = q.order_by(KudaGoEvent.favorites_count.desc(), KudaGoEvent.start_ts.asc())
     elif order_by == "newest":
@@ -463,18 +446,16 @@ def query_cache(
         q = q.order_by(KudaGoEvent.comments_count.desc(), KudaGoEvent.start_ts.asc())
     elif order_by == "alphabetical":
         q = q.order_by(KudaGoEvent.title_lower.asc())
-    else:  # 'date', 'nearest' (applied in Python), or None
+    else:
         q = q.order_by(KudaGoEvent.is_permanent.asc(), KudaGoEvent.start_ts.asc())
 
     tod = (time_of_day or "").strip().lower() or None
-    # Hour range: active only when it's not the trivial full-day range [0, 24).
     hour_range_active = (
         from_hour is not None and to_hour is not None
         and not (from_hour == 0 and to_hour == 24)
     )
     sort_by_nearest = order_by == "nearest" and geo_active
 
-    # Parse weekdays CSV → set[int] of valid 0..6 values.
     weekday_set: set[int] = set()
     if weekdays:
         for raw in str(weekdays).split(","):
@@ -487,7 +468,6 @@ def query_cache(
                 continue
     weekday_active = bool(weekday_set)
 
-    # Python-side post-filters (Cyrillic-safe + exact haversine + time filters + nearest sort + weekday)
     if geo_active or place_search_lower or tod or hour_range_active or sort_by_nearest or weekday_active:
         all_rows = q.all()
         if geo_active:

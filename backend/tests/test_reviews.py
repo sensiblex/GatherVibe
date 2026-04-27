@@ -28,7 +28,6 @@ import models.message_reaction  # noqa: F401
 import models.party_recap  # noqa: F401
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 def _auth(token: str) -> dict:
@@ -71,7 +70,6 @@ def _make_past_party(
     db.commit()
     db.refresh(party)
 
-    # Mirror into EventAttendee so reviews.py can resolve event date.
     db.add(EventAttendee(
         event_id=event_id,
         user_id=creator_id,
@@ -138,7 +136,6 @@ def test_summary_computes_avg_and_distribution(client: TestClient, db, user_a, u
     assert resp.status_code == 200
     data = resp.json()
     assert data["total_reviews"] == 5
-    # avg = (5+4+5+3+1)/5 = 3.6
     assert data["avg_rating"] == 3.6
     assert data["stars_distribution"] == {"1": 1, "2": 0, "3": 1, "4": 1, "5": 2}
 
@@ -171,7 +168,7 @@ def test_summary_pagination(client: TestClient, db, user_a, user_b):
             reviewed_id=user_b.id,
             party_id=party.id,
             rating=3,
-            created_at=base - timedelta(minutes=i),  # newer first when DESC
+            created_at=base - timedelta(minutes=i),
         )
 
     r1 = client.get(f"/users/{user_b.id}/reviews?page=1&per_page=5").json()
@@ -183,16 +180,13 @@ def test_summary_pagination(client: TestClient, db, user_a, user_b):
     assert len(r1["reviews"]) == 5
     assert len(r2["reviews"]) == 5
     assert len(r3["reviews"]) == 5
-    # no overlap across pages
     all_ids = {rev["id"] for rev in (r1["reviews"] + r2["reviews"] + r3["reviews"])}
     assert len(all_ids) == 15
-    # stable DESC ordering: page 1 newer than page 2
-    assert r1["reviews"][0]["id"] > r2["reviews"][-1]["id"] or True  # id monotonic w/ created_at in this seed
+    assert r1["reviews"][0]["id"] > r2["reviews"][-1]["id"] or True
 
 
 def test_summary_avg_rounded_two_decimals(client: TestClient, db, user_a, user_b):
     party = _make_past_party(db, creator_id=user_a.id, members=[user_b.id])
-    # 5+5+4 = 14 / 3 = 4.666... → 4.67
     for i, rating in enumerate([5, 5, 4]):
         u = _make_user(db, f"rr{i}", f"rr{i}@x.x")
         _seed_review(db, reviewer_id=u.id, reviewed_id=user_b.id, party_id=party.id, rating=rating)

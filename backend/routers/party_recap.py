@@ -28,17 +28,15 @@ from models.party_recap import PartyRecap, PartyRecapItem, PartyRecapReaction
 router = APIRouter(tags=["party-recap"])
 
 
-# ── Constants ────────────────────────────────────────────────────────────────
-ACTIVE_WINDOW_SECONDS = 2 * 3600          # event "in progress" grace
-RECAP_WINDOW_SECONDS  = 48 * 3600         # post-event upload window
+ACTIVE_WINDOW_SECONDS = 2 * 3600
+RECAP_WINDOW_SECONDS  = 48 * 3600
 MAX_PINNED_HIGHLIGHTS = 5
-MAX_PHOTO_BYTES       = 10 * 1024 * 1024  # 10MB
+MAX_PHOTO_BYTES       = 10 * 1024 * 1024
 ALLOWED_PHOTO_MIME    = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 ALLOWED_PHOTO_EXTS    = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 FORBIDDEN_PHOTO_EXTS  = {".html", ".htm", ".svg", ".js", ".php", ".xml", ".xhtml"}
 
 
-# ── Schemas ──────────────────────────────────────────────────────────────────
 
 
 def _safe_url(v: Optional[str]) -> Optional[str]:
@@ -89,7 +87,7 @@ class RecapItemOut(BaseModel):
     caption: Optional[str] = None
     is_pinned_highlight: bool
     created_at: datetime
-    reactions: dict  # {emoji: count}
+    reactions: dict
     my_reactions: List[str] = []
 
     class Config:
@@ -105,7 +103,6 @@ class RecapOut(BaseModel):
     highlights: List[RecapItemOut]
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
 
 
 def _lifecycle(party: EventParty) -> str:
@@ -188,7 +185,6 @@ def _serialize_item(
     )
 
 
-# ── Routes ───────────────────────────────────────────────────────────────────
 
 
 @router.get("/parties/{party_id}/recap", response_model=RecapOut)

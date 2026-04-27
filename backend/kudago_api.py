@@ -52,7 +52,6 @@ def get_events(
         "fields": "id,title,short_title,description,body_text,categories,tags,price,is_free,age_restriction,images,dates,place,site_url,favorites_count,comments_count,publication_date",
         "expand": "images,place,dates",
         "order_by": "date",
-        # Always filter to show only upcoming / ongoing events
         "actual_since": actual_since if actual_since else now_ts,
     }
     if actual_until:
@@ -226,7 +225,6 @@ def parse_events(raw: dict, skip_date_filter: bool = False) -> list:
         raw_tags = e.get("tags") or []
         tag_list = [_safe_str(t) for t in raw_tags if _safe_str(t)]
 
-        # Derived timing fields for filtering.
         _raw_dates = e.get("dates") or []
         has_sched = any(bool(d.get("schedules")) for d in _raw_dates)
         nearest_end_ts = None

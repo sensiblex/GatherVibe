@@ -15,7 +15,7 @@ from models.user import User
 from models.kudago_event import KudaGoEvent
 from models.embedding import EntityEmbedding
 from services import embeddings
-from scripts import rebuild_embeddings  # module doesn't exist yet → red phase
+from scripts import rebuild_embeddings
 
 
 @pytest.fixture
@@ -66,7 +66,6 @@ def _mk_event(db, kid=1, **kw):
     db.add(ev); db.commit(); return ev
 
 
-# ─── rebuild_users ──────────────────────────────────────────────────────────
 
 
 def test_rebuild_users_creates_embeddings(db, stub_embed):
@@ -88,7 +87,6 @@ def test_rebuild_users_skips_if_unchanged(db, stub_embed):
     """If skip_fresh=True, already-embedded users are skipped."""
     _mk_user(db, 1, interests="concert")
     rebuild_embeddings.rebuild_users(db)
-    # 2nd call with skip_fresh=True should skip
     stats = rebuild_embeddings.rebuild_users(db, skip_fresh=True)
     assert stats["processed"] == 0
     assert stats["skipped"] == 1
@@ -97,12 +95,10 @@ def test_rebuild_users_skips_if_unchanged(db, stub_embed):
 def test_rebuild_users_force_reprocesses(db, stub_embed):
     _mk_user(db, 1, interests="concert")
     rebuild_embeddings.rebuild_users(db)
-    # force=True (skip_fresh=False) must reprocess all
     stats = rebuild_embeddings.rebuild_users(db, skip_fresh=False)
     assert stats["processed"] == 1
 
 
-# ─── rebuild_events ─────────────────────────────────────────────────────────
 
 
 def test_rebuild_events_creates_embeddings(db, stub_embed):
@@ -126,7 +122,6 @@ def test_rebuild_events_handles_empty_table(db, stub_embed):
     assert stats["processed"] == 0
 
 
-# ─── rebuild_all ────────────────────────────────────────────────────────────
 
 
 def test_rebuild_all_returns_combined_stats(db, stub_embed):
@@ -138,7 +133,6 @@ def test_rebuild_all_returns_combined_stats(db, stub_embed):
     assert stats["events"]["processed"] == 1
 
 
-# ─── CLI entry point ────────────────────────────────────────────────────────
 
 
 def test_main_accepts_entity_flag(monkeypatch, stub_embed):

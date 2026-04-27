@@ -10,7 +10,6 @@ if not DATABASE_URL:
         "e.g. postgresql://user:pass@host:5432/db"
     )
 
-# SQLite support retained only for in-memory unit tests that override DATABASE_URL explicitly.
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 
 engine = create_engine(DATABASE_URL, connect_args=connect_args)

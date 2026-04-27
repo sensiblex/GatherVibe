@@ -123,7 +123,7 @@ async def update_party_plan(
     landmark_part = f" ({plan.meet_landmark})" if plan.meet_landmark else ""
     system_msg = ChatMessage(
         room=f"party_{party_id}",
-        user_id="0",
+        user_id=None,
         username="system",
         message=f"📍 Точка встречи обновлена: {location_part}{landmark_part} в {time_part}",
         is_system=True,

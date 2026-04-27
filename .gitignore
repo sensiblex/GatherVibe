@@ -48,3 +48,4 @@ scripts/
 pyproject.toml
 uv.lock
 .venv/
+.aider*

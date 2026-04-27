@@ -158,7 +158,6 @@ def send_event_reminder_email(
         hours_before=hours_before,
     )
 
-    # Honour DEV_EMAIL_OVERRIDE when set (avoids sending to real addresses in dev)
     recipient = os.getenv("DEV_EMAIL_OVERRIDE") or to_email
 
     try:

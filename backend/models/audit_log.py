@@ -10,10 +10,10 @@ class AuditLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     actor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     actor_role = Column(String(16), nullable=False)  # snapshot на момент действия
-    action = Column(String(64), nullable=False)      # hide_chat_message|ban_user|resolve_report|...
+    action = Column(String(64), nullable=False)
     target_type = Column(String(32), nullable=False)
     target_id = Column(String(64), nullable=False)
-    extra = Column(JSON, nullable=True)              # reason / duration / before-after
+    extra = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
 
     __table_args__ = (

@@ -34,7 +34,6 @@ def _make(
     return e
 
 
-# ── Sort: newest (publication_ts DESC) ───────────────────────────────────────
 
 
 def test_sort_newest_orders_by_publication_desc(db):
@@ -47,7 +46,6 @@ def test_sort_newest_orders_by_publication_desc(db):
     assert [e["title"] for e in res["results"]] == ["Fresh", "Medium", "Old"]
 
 
-# ── Sort: ending_soon (end_ts ASC, skip NULL) ────────────────────────────────
 
 
 def test_sort_ending_soon_orders_by_end_ascending(db):
@@ -58,11 +56,9 @@ def test_sort_ending_soon_orders_by_end_ascending(db):
 
     res = kudago_cache.query_cache(db=db, location="msk", order_by="ending_soon")
     titles = [e["title"] for e in res["results"]]
-    # Events without end_ts are pushed to the bottom; all three here have end_ts.
     assert titles[:3] == ["EndsToday", "EndsSoon", "EndsLater"]
 
 
-# ── Sort: most_discussed (comments_count DESC) ───────────────────────────────
 
 
 def test_sort_most_discussed(db):
@@ -75,7 +71,6 @@ def test_sort_most_discussed(db):
     assert [e["title"] for e in res["results"]] == ["Loud", "Medium", "Quiet"]
 
 
-# ── Sort: alphabetical (title ASC, case-insensitive) ─────────────────────────
 
 
 def test_sort_alphabetical(db):
@@ -88,12 +83,10 @@ def test_sort_alphabetical(db):
     assert [e["title"] for e in res["results"]] == ["Арбуз", "Вишня", "Яблоко"]
 
 
-# ── Sort: nearest (only with geo active) ─────────────────────────────────────
 
 
 def test_sort_nearest_orders_by_distance(db):
     now = int(time.time())
-    # Moscow Kremlin reference point
     KREMLIN = (55.7520, 37.6175)
     _make(db, kid=1, title="Far",  lat=55.80, lon=37.80, start_ts=now + 3600)
     _make(db, kid=2, title="Near", lat=55.76, lon=37.62, start_ts=now + 3600)
@@ -107,7 +100,6 @@ def test_sort_nearest_orders_by_distance(db):
     assert [e["title"] for e in res["results"]] == ["Near", "Mid", "Far"]
 
 
-# ── Hour range filter (from_hour / to_hour) ──────────────────────────────────
 
 
 def test_hour_range_18_to_23(db):
@@ -120,7 +112,6 @@ def test_hour_range_18_to_23(db):
 
     res = kudago_cache.query_cache(db=db, location="msk", from_hour=18, to_hour=23)
     titles = {e["title"] for e in res["results"]}
-    # to_hour is exclusive upper (18 to 23 means hours in [18, 23))
     assert titles == {"AT18", "AT22"}
 
 
@@ -134,7 +125,6 @@ def test_hour_range_overnight_wraps(db):
 
     res = kudago_cache.query_cache(db=db, location="msk", from_hour=22, to_hour=4)
     titles = {e["title"] for e in res["results"]}
-    # [22..24) ∪ [0..4) → includes AT23 and AT02, excludes AT21 and AT05
     assert titles == {"AT23", "AT02"}
 
 
@@ -153,7 +143,5 @@ def test_hour_range_full_day_is_noop(db):
     _make(db, kid=2, title="B", start_time="15:00", start_ts=now + 3600)
     _make(db, kid=3, title="C", start_time=None,    start_ts=now + 3600)
 
-    # from=0, to=24 means whole day — should act as noop, i.e. don't filter
-    # out events that have no start_time.
     res = kudago_cache.query_cache(db=db, location="msk", from_hour=0, to_hour=24)
     assert res["count"] == 3

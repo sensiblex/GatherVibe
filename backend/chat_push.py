@@ -20,13 +20,10 @@ logger = logging.getLogger(__name__)
 
 CHAT_PUSH_THROTTLE_SECONDS = 5 * 60
 
-# (user_id, party_id) -> last_pushed_ts
 _last_pushed: dict[tuple[int, int], int] = {}
 
-# sid -> user_id  (set when a sid joins any party room)
 _sid_user: dict[str, int] = {}
 
-# (user_id, party_id) -> set[sid]  (presence; non-empty = user is online in that party)
 _presence: dict[tuple[int, int], set[str]] = {}
 
 

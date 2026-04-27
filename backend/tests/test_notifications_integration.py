@@ -58,7 +58,6 @@ def _get_pending_request_id(db, party_id: int, user_id: int) -> int:
     return m.id
 
 
-# ── 4.1 new_party_request notification ───────────────────────────────────────
 
 class TestJoinPartyCreatesNotification:
     def test_notification_created_for_creator(self, client, db, user_a, user_b, token_b):
@@ -96,7 +95,6 @@ class TestJoinPartyCreatesNotification:
         assert data["username"] == user_b.username
 
 
-# ── 4.2 request_status_changed (approved) ────────────────────────────────────
 
 class TestApproveRequestCreatesNotification:
     def test_notification_created_for_requester_on_approve(
@@ -135,7 +133,6 @@ class TestApproveRequestCreatesNotification:
         assert notif.is_read is False
 
 
-# ── 4.3 request_status_changed (rejected) ────────────────────────────────────
 
 class TestRejectRequestCreatesNotification:
     def test_notification_created_for_requester_on_reject(
@@ -159,7 +156,6 @@ class TestRejectRequestCreatesNotification:
         assert data["status"] == "rejected"
 
 
-# ── 4.4 kicked_from_party ────────────────────────────────────────────────────
 
 class TestKickCreatesNotification:
     def test_notification_created_for_kicked_member(
@@ -167,11 +163,9 @@ class TestKickCreatesNotification:
     ):
         party = _create_party(db, user_a.id, event_id="kudago-123")
         _join_party(client, party.id, token_b)
-        # Accept user_b
         request_id = _get_pending_request_id(db, party.id, user_b.id)
         client.post(f"/parties/requests/{request_id}/approve", headers=AUTH_HEADER(token_a))
 
-        # Kick user_b
         client.post(
             f"/parties/{party.id}/members/{user_b.id}/kick",
             json={"reason": "test"},
@@ -187,7 +181,6 @@ class TestKickCreatesNotification:
         assert data["party_id"] == party.id
 
 
-# ── 4.5 party_deleted — KNOWN IMPLEMENTATION GAP ─────────────────────────────
 
 class TestDeletePartyNotification:
     def test_delete_party_does_not_create_db_notification(
@@ -203,13 +196,11 @@ class TestDeletePartyNotification:
         request_id = _get_pending_request_id(db, party.id, user_b.id)
         client.post(f"/parties/requests/{request_id}/approve", headers=AUTH_HEADER(token_a))
 
-        # Clear all existing notifications (from join/accept)
         db.query(Notification).filter(Notification.user_id == user_b.id).delete()
         db.commit()
 
         client.delete(f"/parties/{party.id}", headers=AUTH_HEADER(token_a))
 
-        # No DB notification created for user_b
         count = db.query(Notification).filter(Notification.user_id == user_b.id).count()
         assert count == 0, (
             "Implementation gap: delete_party() should create DB notifications for members "
@@ -217,7 +208,6 @@ class TestDeletePartyNotification:
         )
 
 
-# ── Step 6: Edge Cases ────────────────────────────────────────────────────────
 
 class TestEdgeCases:
     def test_large_data_field_saved_correctly(self, db, user_a):
@@ -235,7 +225,6 @@ class TestEdgeCases:
         We enable it here; in PostgreSQL (production) it works automatically.
         """
         from sqlalchemy import text as sa_text
-        # Enable FK enforcement for this connection
         db.execute(sa_text("PRAGMA foreign_keys=ON"))
         db.commit()
 
@@ -295,11 +284,7 @@ class TestEdgeCases:
         assert notif.id > 0
 
 
-# ── Step 5: New endpoints from notification refactor ─────────────────────────
-# These endpoints were added in the refactor alongside the subscribe_notifications
-# room-name change (creator_{id} → user_{id}).
 
-# ── 5.1  POST /parties/{party_id}/members/{user_id}/accept ───────────────────
 
 class TestAcceptMemberCreatesNotification:
     """
@@ -318,18 +303,15 @@ class TestAcceptMemberCreatesNotification:
     def test_notification_created_for_accepted_member(
         self, client, db, user_a, user_b, token_a, token_b
     ):
-        # Arrange: party owned by user_a, user_b submits join request
         party = _create_party(db, user_a.id, event_id="kudago-accept-1")
         _join_party(client, party.id, token_b)
 
-        # Act: creator (user_a) accepts user_b via the new endpoint
         r = client.post(
             f"/parties/{party.id}/members/{user_b.id}/accept",
             headers=AUTH_HEADER(token_a),
         )
         assert r.status_code == 200
 
-        # Assert: notification created for user_b (the accepted member)
         notif = db.query(Notification).filter(
             Notification.user_id == user_b.id,
             Notification.type == "request_status_changed",
@@ -339,17 +321,14 @@ class TestAcceptMemberCreatesNotification:
     def test_notification_data_status_is_accepted(
         self, client, db, user_a, user_b, token_a, token_b
     ):
-        # Arrange
         party = _create_party(db, user_a.id, event_id="kudago-accept-2")
         _join_party(client, party.id, token_b)
 
-        # Act
         client.post(
             f"/parties/{party.id}/members/{user_b.id}/accept",
             headers=AUTH_HEADER(token_a),
         )
 
-        # Assert: payload carries status=accepted and correct party_id
         notif = db.query(Notification).filter(
             Notification.user_id == user_b.id,
             Notification.type == "request_status_changed",
@@ -362,17 +341,14 @@ class TestAcceptMemberCreatesNotification:
     def test_notification_is_unread_after_accept(
         self, client, db, user_a, user_b, token_a, token_b
     ):
-        # Arrange
         party = _create_party(db, user_a.id, event_id="kudago-accept-3")
         _join_party(client, party.id, token_b)
 
-        # Act
         client.post(
             f"/parties/{party.id}/members/{user_b.id}/accept",
             headers=AUTH_HEADER(token_a),
         )
 
-        # Assert: new notification is unread
         notif = db.query(Notification).filter(
             Notification.user_id == user_b.id,
             Notification.type == "request_status_changed",
@@ -383,17 +359,14 @@ class TestAcceptMemberCreatesNotification:
     def test_member_status_set_to_accepted_in_db(
         self, client, db, user_a, user_b, token_a, token_b
     ):
-        # Arrange
         party = _create_party(db, user_a.id, event_id="kudago-accept-4")
         _join_party(client, party.id, token_b)
 
-        # Act
         client.post(
             f"/parties/{party.id}/members/{user_b.id}/accept",
             headers=AUTH_HEADER(token_a),
         )
 
-        # Assert: PartyMember row is now accepted
         member = db.query(PartyMember).filter(
             PartyMember.party_id == party.id,
             PartyMember.user_id == user_b.id,
@@ -404,21 +377,17 @@ class TestAcceptMemberCreatesNotification:
     def test_non_creator_cannot_accept(
         self, client, db, user_a, user_b, token_b
     ):
-        # Arrange: user_a owns party, user_b tries to accept themselves
         party = _create_party(db, user_a.id, event_id="kudago-accept-5")
         _join_party(client, party.id, token_b)
 
-        # Act: user_b (not creator) tries to accept
         r = client.post(
             f"/parties/{party.id}/members/{user_b.id}/accept",
             headers=AUTH_HEADER(token_b),
         )
 
-        # Assert: forbidden
         assert r.status_code == 403
 
 
-# ── 5.2  POST /parties/{party_id}/members/{user_id}/reject ───────────────────
 
 class TestRejectMemberCreatesNotification:
     """
@@ -436,18 +405,15 @@ class TestRejectMemberCreatesNotification:
     def test_notification_created_for_rejected_member(
         self, client, db, user_a, user_b, token_a, token_b
     ):
-        # Arrange
         party = _create_party(db, user_a.id, event_id="kudago-reject-1")
         _join_party(client, party.id, token_b)
 
-        # Act: creator rejects user_b via new endpoint
         r = client.post(
             f"/parties/{party.id}/members/{user_b.id}/reject",
             headers=AUTH_HEADER(token_a),
         )
         assert r.status_code == 200
 
-        # Assert: notification created for user_b
         notif = db.query(Notification).filter(
             Notification.user_id == user_b.id,
             Notification.type == "request_status_changed",
@@ -457,17 +423,14 @@ class TestRejectMemberCreatesNotification:
     def test_notification_data_status_is_rejected(
         self, client, db, user_a, user_b, token_a, token_b
     ):
-        # Arrange
         party = _create_party(db, user_a.id, event_id="kudago-reject-2")
         _join_party(client, party.id, token_b)
 
-        # Act
         client.post(
             f"/parties/{party.id}/members/{user_b.id}/reject",
             headers=AUTH_HEADER(token_a),
         )
 
-        # Assert: data carries status=rejected
         notif = db.query(Notification).filter(
             Notification.user_id == user_b.id,
             Notification.type == "request_status_changed",
@@ -480,17 +443,14 @@ class TestRejectMemberCreatesNotification:
     def test_notification_is_unread_after_reject(
         self, client, db, user_a, user_b, token_a, token_b
     ):
-        # Arrange
         party = _create_party(db, user_a.id, event_id="kudago-reject-3")
         _join_party(client, party.id, token_b)
 
-        # Act
         client.post(
             f"/parties/{party.id}/members/{user_b.id}/reject",
             headers=AUTH_HEADER(token_a),
         )
 
-        # Assert
         notif = db.query(Notification).filter(
             Notification.user_id == user_b.id,
             Notification.type == "request_status_changed",
@@ -501,17 +461,14 @@ class TestRejectMemberCreatesNotification:
     def test_member_status_set_to_rejected_in_db(
         self, client, db, user_a, user_b, token_a, token_b
     ):
-        # Arrange
         party = _create_party(db, user_a.id, event_id="kudago-reject-4")
         _join_party(client, party.id, token_b)
 
-        # Act
         client.post(
             f"/parties/{party.id}/members/{user_b.id}/reject",
             headers=AUTH_HEADER(token_a),
         )
 
-        # Assert: PartyMember row is now rejected
         member = db.query(PartyMember).filter(
             PartyMember.party_id == party.id,
             PartyMember.user_id == user_b.id,
@@ -522,21 +479,17 @@ class TestRejectMemberCreatesNotification:
     def test_non_creator_cannot_reject(
         self, client, db, user_a, user_b, token_b
     ):
-        # Arrange: user_a owns party, user_b tries to reject themselves
         party = _create_party(db, user_a.id, event_id="kudago-reject-5")
         _join_party(client, party.id, token_b)
 
-        # Act: user_b (not creator) tries to reject
         r = client.post(
             f"/parties/{party.id}/members/{user_b.id}/reject",
             headers=AUTH_HEADER(token_b),
         )
 
-        # Assert: forbidden
         assert r.status_code == 403
 
 
-# ── 5.3  Socket.IO room-naming regression check ──────────────────────────────
 
 class TestSioRoomNaming:
     """
@@ -553,7 +506,6 @@ class TestSioRoomNaming:
         import inspect
         import main as app_module
 
-        # Retrieve the registered handler for 'subscribe_notifications'
         handler = app_module.sio.handlers.get("/", {}).get("subscribe_notifications")
         assert handler is not None, (
             "subscribe_notifications Socket.IO handler not found — was it renamed or removed?"
@@ -561,13 +513,11 @@ class TestSioRoomNaming:
 
         source = inspect.getsource(handler)
 
-        # Must contain user_{...} room entry
         assert "user_" in source, (
             "subscribe_notifications must use room 'user_{user.id}' (post-refactor). "
             "Found neither 'user_' substring. Check main.py."
         )
 
-        # Must NOT still reference the old creator_ room
         assert "creator_" not in source, (
             "subscribe_notifications still references old room 'creator_{id}'. "
             "The refactor should have changed this to 'user_{id}'."

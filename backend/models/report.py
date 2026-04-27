@@ -15,12 +15,12 @@ class Report(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     reporter_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    target_type = Column(String(32), nullable=False)   # chat_message|party|user|review|recap_item
+    target_type = Column(String(32), nullable=False)
     target_id   = Column(String(64), nullable=False)   # stringified (int id или составной)
-    reason      = Column(String(32), nullable=False)   # spam|harassment|nsfw|fake|other
+    reason      = Column(String(32), nullable=False)
     comment     = Column(Text, nullable=True)
     status      = Column(String(16), nullable=False, default="open", server_default="open")
-    resolution  = Column(String(16), nullable=True)    # warn|hide|delete|ban|none
+    resolution  = Column(String(16), nullable=True)
     resolved_by_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     resolved_at = Column(DateTime(timezone=True), nullable=True)
     resolution_reason = Column(String(500), nullable=True)

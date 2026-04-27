@@ -8,11 +8,10 @@ class EventAttendee(Base):
     __tablename__ = "event_attendees"
 
     id = Column(Integer, primary_key=True, index=True)
-    # kudago event id (string) or internal event id
     event_id = Column(String, nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    comment = Column(String, nullable=True)  # short message, up to 200 chars
-    is_looking = Column(Boolean, default=True)  # True = looking for company
+    comment = Column(String, nullable=True)
+    is_looking = Column(Boolean, default=True)
     # server_default для БД + python default для in-memory объекта до refresh
     created_at = Column(
         DateTime(timezone=True),

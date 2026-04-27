@@ -30,7 +30,6 @@ def _get_user_or_404(db: Session, user_id: int) -> User:
     return u
 
 
-# ── Schemas ──────────────────────────────────────────────────────────────────
 
 class ReportOut(BaseModel):
     id: int
@@ -48,7 +47,7 @@ class ReportOut(BaseModel):
 
 
 class ResolvePayload(BaseModel):
-    resolution: str  # warn|hide|delete|ban|none
+    resolution: str
     reason: Optional[str] = Field(default=None, max_length=500)
     # опциональные параметры для ban-резолюции
     ban_duration_hours: Optional[int] = None
@@ -72,12 +71,12 @@ class MutePayload(BaseModel):
 
 
 class BanPayload(BaseModel):
-    duration_hours: Optional[int] = Field(default=None, ge=1, le=24 * 365)  # None = permanent
+    duration_hours: Optional[int] = Field(default=None, ge=1, le=24 * 365)
     reason: Optional[str] = Field(default=None, max_length=500)
 
 
 class RolePayload(BaseModel):
-    role: str  # user|moderator|admin
+    role: str
 
 
 class AuditOut(BaseModel):
@@ -108,7 +107,6 @@ def _report_to_out(r: Report) -> dict:
     }
 
 
-# ── Reports inbox ────────────────────────────────────────────────────────────
 
 @router.get("/reports")
 def list_reports(
@@ -324,7 +322,6 @@ def reject_report(
     return _report_to_out(report)
 
 
-# ── Content actions ──────────────────────────────────────────────────────────
 
 @router.post("/chat-messages/{msg_id}/hide")
 def hide_chat_message(
@@ -402,7 +399,6 @@ def unhide_party(
     return {"ok": True, "is_hidden": False}
 
 
-# ── User sanctions ───────────────────────────────────────────────────────────
 
 def _ensure_can_sanction(actor: User, target: User) -> None:
     """Нельзя санкционировать admin/moderator (кроме как admin → moderator)."""
@@ -507,7 +503,6 @@ def unmute_user(
     return {"ok": True, "muted_until": None}
 
 
-# ── Hard delete user (admin-only) ────────────────────────────────────────────
 
 _ANONYMOUS_USERNAME = "[удалён]"
 
@@ -537,7 +532,6 @@ def admin_delete_user(
     return {"ok": True, "deleted_user_id": user_id}
 
 
-# ── Bulk actions ─────────────────────────────────────────────────────────────
 
 class BulkPayload(BaseModel):
     # Ограничиваем батч 50 (раньше было 200) — снижаем blast radius
@@ -613,7 +607,6 @@ def bulk_user_action(
     return {"succeeded": succeeded, "skipped": skipped, "skipped_details": skipped_reasons}
 
 
-# ── Appeals inbox ────────────────────────────────────────────────────────────
 
 class AppealResolvePayload(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=500)
@@ -725,7 +718,6 @@ def set_user_role(
     return {"ok": True, "role": u.role}
 
 
-# ── Users listing ────────────────────────────────────────────────────────────
 
 @router.get("/users")
 def admin_list_users(
@@ -768,7 +760,6 @@ def admin_user_detail(
     _: User = Depends(require_moderator),
 ):
     u = _get_user_or_404(db, user_id)
-    # Reports on this user
     against = db.query(Report).filter(
         Report.target_type == "user",
         Report.target_id == str(user_id),
@@ -796,7 +787,6 @@ def admin_user_detail(
     }
 
 
-# ── Audit log (admin only) ───────────────────────────────────────────────────
 
 @router.get("/audit")
 def get_audit_log(
@@ -827,7 +817,6 @@ def get_audit_log(
     ]
 
 
-# ── Feature flags ────────────────────────────────────────────────────────────
 
 class FlagToggle(BaseModel):
     enabled: bool
@@ -869,7 +858,6 @@ def toggle_flag(
     return {"key": row.key, "enabled": row.enabled}
 
 
-# ── Banned words ─────────────────────────────────────────────────────────────
 
 class BannedWordPayload(BaseModel):
     pattern: str = Field(..., max_length=200)
@@ -933,7 +921,6 @@ def delete_banned_word(
     db.commit()
 
 
-# ── Broadcast ────────────────────────────────────────────────────────────────
 
 class BroadcastPayload(BaseModel):
     title: str = Field(..., max_length=120)

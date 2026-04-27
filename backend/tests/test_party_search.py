@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 from models.party import EventParty, PartyMember
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 def _make_party(
@@ -51,7 +50,6 @@ def _auth_headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-# ── Tests ─────────────────────────────────────────────────────────────────────
 
 
 def test_search_by_title(client: TestClient, db, user_a, user_b, token_a):
@@ -93,7 +91,6 @@ def test_filter_by_date_range(client: TestClient, db, user_a, token_a):
     _make_party(db, user_a.id, title="Recent party", created_at=now - timedelta(days=1))
     _make_party(db, user_a.id, title="Future party", created_at=now + timedelta(days=5))
 
-    # Use naive ISO format (no tz offset) for SQLite compatibility
     date_from = (now - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%S")
     date_to = (now + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
     resp = client.get(
@@ -121,20 +118,18 @@ def test_pagination(client: TestClient, db, user_a, token_a):
     resp2 = client.get("/parties/search?page=3&per_page=2", headers=_auth_headers(token_a))
     assert resp2.status_code == 200
     data2 = resp2.json()
-    assert len(data2["items"]) == 1  # last page has 1 item
+    assert len(data2["items"]) == 1
 
 
 def test_sort_by_popular(client: TestClient, db, user_a, user_b, token_a):
     lonely = _make_party(db, user_a.id, title="Lonely party")
     popular = _make_party(db, user_a.id, title="Popular party")
-    # Add user_b as accepted member to popular party only
     _accept_member(db, popular.id, user_b.id)
 
     resp = client.get("/parties/search?sort_by=popular", headers=_auth_headers(token_a))
     assert resp.status_code == 200
     items = resp.json()["items"]
     assert len(items) == 2
-    # Popular party (1 accepted member) should come first
     assert items[0]["title"] == "Popular party"
     assert items[0]["member_count"] == 1
     assert items[1]["title"] == "Lonely party"
@@ -181,7 +176,7 @@ def test_requires_auth(client: TestClient, db, user_a):
 
 def test_per_page_max_100(client: TestClient, db, user_a, token_a):
     resp = client.get("/parties/search?per_page=200", headers=_auth_headers(token_a))
-    assert resp.status_code == 422  # validation error
+    assert resp.status_code == 422
 
 
 def test_page_zero_rejected(client: TestClient, db, user_a, token_a):

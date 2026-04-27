@@ -38,8 +38,6 @@ from sio_instance import sio
 
 router = APIRouter(tags=["party_coordination"])
 
-# In-memory rate-limit: suppress system chat message if changed < 5 min ago
-# key: (party_id, user_id) → last system message timestamp.
 # Ограничиваем размер и TTL, чтобы не утекала память на долгоживущих воркерах.
 try:
     from cachetools import TTLCache
@@ -49,7 +47,6 @@ except ImportError:  # pragma: no cover — cachetools в requirements_docker.tx
 ATTENDANCE_RATE_LIMIT_SECONDS = 300
 
 
-# ─── Access helpers ──────────────────────────────────────────────────────────
 
 
 def _check_party_access(
@@ -87,7 +84,7 @@ async def _send_system_message(
     now = datetime.utcnow()
     msg = ChatMessage(
         room=f"party_{party_id}",
-        user_id="0",
+        user_id=None,
         username="Система",
         message=text,
         timestamp=now,
@@ -95,12 +92,12 @@ async def _send_system_message(
         event_type=event_type,
     )
     db.add(msg)
-    db.flush()  # assign id without committing
+    db.flush()
     await sio.emit(
         "receive_party_message",
         {
             "message": text,
-            "userId": "0",
+            "userId": None,
             "username": "Система",
             "avatarUrl": None,
             "timestamp": now.isoformat(),
@@ -112,7 +109,6 @@ async def _send_system_message(
     )
 
 
-# ─── Pydantic schemas ────────────────────────────────────────────────────────
 
 
 class PollOptionOut(BaseModel):
@@ -175,7 +171,7 @@ class PinnedBlockBody(BaseModel):
 
 
 class AttendanceStatusBody(BaseModel):
-    status: Optional[str] = None  # 'going' | 'late' | 'cant' | null to clear
+    status: Optional[str] = None
 
 
 class AttendanceOut(BaseModel):
@@ -188,7 +184,6 @@ class AttendanceOut(BaseModel):
         from_attributes = True
 
 
-# ─── Helpers ─────────────────────────────────────────────────────────────────
 
 
 def _build_poll_out(poll: PartyPoll, db: Session, user_id: int) -> PollOut:
@@ -214,7 +209,6 @@ def _build_poll_out(poll: PartyPoll, db: Session, user_id: int) -> PollOut:
     )
 
 
-# ─── Poll endpoints ───────────────────────────────────────────────────────────
 
 
 @router.post("/parties/{party_id}/polls", response_model=PollOut)
@@ -227,7 +221,6 @@ async def create_poll(
     user = get_current_user_from_token(token, db)
     _check_party_access(party_id, user.id, db, require_creator=True)
 
-    # Validate and deduplicate options
     options = list(dict.fromkeys(
         opt.strip() for opt in body.options if opt.strip()
     ))
@@ -354,7 +347,6 @@ async def close_poll(
     poll.closed_at = datetime.utcnow()
     db.flush()
 
-    # Find winner
     options = db.query(PollOption).filter(PollOption.poll_id == poll_id).all()
     winner = max(options, key=lambda o: o.vote_count) if options else None
 
@@ -381,7 +373,6 @@ async def close_poll(
     return _build_poll_out(poll, db, user.id)
 
 
-# ─── Pinned block endpoints ───────────────────────────────────────────────────
 
 
 @router.get("/parties/{party_id}/pinned", response_model=PinnedBlockEnvelope)
@@ -444,7 +435,6 @@ async def upsert_pinned(
     return pinned
 
 
-# ─── Attendance endpoints ─────────────────────────────────────────────────────
 
 
 @router.patch("/parties/{party_id}/attendance/me")
@@ -496,7 +486,6 @@ async def set_attendance(
         room=f"party_{party_id}",
     )
 
-    # Rate-limit system message: max 1 per 5 minutes per (party, user)
     cache_key = (party_id, user.id)
     now = datetime.utcnow()
     last_msg = _attendance_msg_cache.get(cache_key)

@@ -261,7 +261,6 @@ def generate_variants(query: str) -> list[str]:
     return variants
 
 
-# ─── 6. Fuzzy re-ranking ──────────────────────────────────────────────────────
 
 def _text_similarity(a: str, b: str) -> float:
     """SequenceMatcher ratio между двумя строками."""

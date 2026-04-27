@@ -9,8 +9,8 @@ class EntityEmbedding(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    entity_type = Column(String(20), nullable=False, index=True)  # 'user' | 'event' | 'party'
+    entity_type = Column(String(20), nullable=False, index=True)
     entity_id = Column(String(64), nullable=False)
-    embedding_json = Column(Text, nullable=False)  # JSON array of floats (pgvector upgrade path)
+    embedding_json = Column(Text, nullable=False)
     model_version = Column(String(50), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

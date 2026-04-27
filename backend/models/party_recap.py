@@ -28,10 +28,10 @@ class PartyRecapItem(Base):
                                   nullable=False, index=True)
     author_id            = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
                                   nullable=False, index=True)
-    kind                 = Column(String(16), nullable=False)  # 'photo' | 'note'
+    kind                 = Column(String(16), nullable=False)
     media_url            = Column(String(500), nullable=True)
     caption              = Column(String(500), nullable=True)
-    is_pinned_highlight  = Column(Boolean, nullable=False, default=False, server_default="0")
+    is_pinned_highlight  = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at           = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (

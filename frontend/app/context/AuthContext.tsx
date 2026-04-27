@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     // cleanup legacy localStorage (старые версии клали токен туда)
     try { localStorage.removeItem('token'); } catch { /* ignore */ }
-    apiFetch('/users/me')
+    apiFetch('/users/me', { skipAuthRedirect: true })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (cancelled || !data) return;

@@ -52,7 +52,6 @@ def _create_party(client: TestClient, token: str, body: dict | None = None) -> d
     return r.json()
 
 
-# ── Token generation ─────────────────────────────────────────────────────────
 
 
 def test_party_create_returns_invite_token(client: TestClient, db, user_a, token_a):
@@ -77,7 +76,6 @@ def test_existing_party_without_token_gets_one_lazily(client: TestClient, db, us
     db.add(party)
     db.commit()
     db.refresh(party)
-    # No invite_token set initially
     assert getattr(party, "invite_token", None) in (None, "")
 
     r = client.get(f"/parties/by-id/{party.id}", headers=_auth(token_a))
@@ -85,20 +83,19 @@ def test_existing_party_without_token_gets_one_lazily(client: TestClient, db, us
     assert r.json()["invite_token"]
 
 
-# ── Public preview ───────────────────────────────────────────────────────────
 
 
 def test_get_by_token_public_preview_no_auth(client: TestClient, db, user_a, token_a):
     p = _create_party(client, token_a, {"title": "Bowling", "max_members": 5})
     token = p["invite_token"]
 
-    r = client.get(f"/parties/by-token/{token}")  # NO Authorization header
+    r = client.get(f"/parties/by-token/{token}")
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["title"] == "Bowling"
     assert body["max_members"] == 5
     assert body["creator_username"] == "user_a"
-    assert body["member_count"] >= 1  # at least creator
+    assert body["member_count"] >= 1
 
 
 def test_get_by_token_404_for_unknown(client: TestClient):
@@ -106,7 +103,6 @@ def test_get_by_token_404_for_unknown(client: TestClient):
     assert r.status_code == 404
 
 
-# ── Join via token ───────────────────────────────────────────────────────────
 
 
 def test_join_by_token_requires_auth(client: TestClient, db, user_a, token_a):
@@ -144,7 +140,6 @@ def test_join_by_token_idempotent_when_already_member(
     r2 = client.post(
         f"/parties/by-token/{p['invite_token']}/join", headers=_auth(token_b)
     )
-    # Already joined → 200 no-op (return current party state)
     assert r2.status_code == 200
     rows = db.query(PartyMember).filter(
         PartyMember.party_id == p["id"],
@@ -166,19 +161,17 @@ def test_join_by_token_creator_self_no_op(
         PartyMember.party_id == p["id"],
         PartyMember.user_id == user_a.id,
     ).count()
-    assert rows == 0  # creator has no PartyMember row
+    assert rows == 0
 
 
 def test_join_by_token_full_party_400(
     client: TestClient, db, user_a, user_b, user_c, token_a, token_b, token_c,
 ):
     p = _create_party(client, token_a, {"title": "Tiny", "max_members": 2})
-    # user_b joins first → fills capacity (creator + 1)
     r1 = client.post(
         f"/parties/by-token/{p['invite_token']}/join", headers=_auth(token_b)
     )
     assert r1.status_code == 200
-    # user_c can't join — full
     r2 = client.post(
         f"/parties/by-token/{p['invite_token']}/join", headers=_auth(token_c)
     )
@@ -189,7 +182,6 @@ def test_join_by_token_closed_party_400(
     client: TestClient, db, user_a, user_b, token_a, token_b,
 ):
     p = _create_party(client, token_a)
-    # Manually close the party
     party_row = db.query(EventParty).filter(EventParty.id == p["id"]).first()
     party_row.is_open = False
     db.commit()

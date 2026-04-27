@@ -21,10 +21,9 @@ from models.user import User
 from models.kudago_event import KudaGoEvent
 from models.attendee import EventAttendee
 from models.recommendation_impression import RecommendationImpression
-from services import embeddings, event_matching  # event_matching doesn't exist yet → test fails
+from services import embeddings, event_matching
 
 
-# ─── Fixtures ────────────────────────────────────────────────────────────────
 
 
 @pytest.fixture
@@ -77,7 +76,6 @@ def _mk_event(db, kid: int, *, title="Event", categories=None, tags=None,
     db.add(ev); db.commit(); return ev
 
 
-# ─── Core scoring contract ──────────────────────────────────────────────────
 
 
 def test_recommend_returns_empty_for_no_events(db, stub_embed):
@@ -88,8 +86,8 @@ def test_recommend_returns_empty_for_no_events(db, stub_embed):
 
 def test_recommend_excludes_past_events(db, stub_embed):
     u = _mk_user(db)
-    _mk_event(db, 1, start_offset_days=-1)  # past
-    _mk_event(db, 2, start_offset_days=2)   # future
+    _mk_event(db, 1, start_offset_days=-1)
+    _mk_event(db, 2, start_offset_days=2)
     result = event_matching.recommend_events(db, u, limit=10)
     ids = [r.event_id for r in result]
     assert "1" not in ids
@@ -121,11 +119,10 @@ def test_recommend_respects_limit(db, stub_embed):
     assert len(result) == 3
 
 
-# ─── Age restriction (hard filter) ──────────────────────────────────────────
 
 
 def test_recommend_blocks_underage_user(db, stub_embed):
-    u = _mk_user(db, birth_date=date(2015, 1, 1))  # ~10 years old in 2026
+    u = _mk_user(db, birth_date=date(2015, 1, 1))
     _mk_event(db, 1, age_restriction=18, start_offset_days=3)
     _mk_event(db, 2, age_restriction=0, start_offset_days=3)
     result = event_matching.recommend_events(db, u, limit=10)
@@ -142,7 +139,6 @@ def test_recommend_without_birthdate_does_not_block_18plus(db, stub_embed):
     assert len(result) == 1
 
 
-# ─── Interest/category matching boosts score ─────────────────────────────────
 
 
 def test_matching_categories_beat_non_matching(db, stub_embed):
@@ -154,7 +150,6 @@ def test_matching_categories_beat_non_matching(db, stub_embed):
     assert scores["1"] > scores["2"]
 
 
-# ─── City filter ────────────────────────────────────────────────────────────
 
 
 def test_city_filter_excludes_other_cities(db, stub_embed):
@@ -166,7 +161,6 @@ def test_city_filter_excludes_other_cities(db, stub_embed):
     assert ids == ["1"]
 
 
-# ─── Reasons (human-readable) ───────────────────────────────────────────────
 
 
 def test_reasons_include_interest_hit(db, stub_embed):
@@ -193,14 +187,12 @@ def test_reasons_max_three(db, stub_embed):
     assert len(result[0].reasons) <= 3
 
 
-# ─── Feedback suppression ──────────────────────────────────────────────────
 
 
 def test_dismissed_events_are_excluded(db, stub_embed):
     u = _mk_user(db)
     _mk_event(db, 1, categories=["concert"], start_offset_days=3)
     _mk_event(db, 2, categories=["concert"], start_offset_days=3)
-    # user dismissed event 1
     db.add(RecommendationImpression(
         user_id=u.id, rec_type="event", target_id="1", action="dismissed"))
     db.commit()
@@ -221,12 +213,10 @@ def test_attended_events_are_excluded(db, stub_embed):
     assert "1" not in ids
 
 
-# ─── History affinity boost ─────────────────────────────────────────────────
 
 
 def test_history_boost_favors_previously_attended_category(db, stub_embed):
-    u = _mk_user(db, interests="")  # no explicit interests
-    # User historically attended concerts
+    u = _mk_user(db, interests="")
     db.add(EventAttendee(event_id="old1", user_id=u.id, event_category="concert"))
     db.add(EventAttendee(event_id="old2", user_id=u.id, event_category="concert"))
     db.commit()
@@ -237,7 +227,6 @@ def test_history_boost_favors_previously_attended_category(db, stub_embed):
     assert scores["1"] > scores["2"]
 
 
-# ─── Serialization ──────────────────────────────────────────────────────────
 
 
 def test_recommendation_has_all_required_fields(db, stub_embed):
@@ -249,4 +238,4 @@ def test_recommendation_has_all_required_fields(db, stub_embed):
     assert r.event_id == "1"
     assert isinstance(r.score, int)
     assert isinstance(r.reasons, list)
-    assert r.event is not None  # raw KudaGoEvent attached for serialization
+    assert r.event is not None

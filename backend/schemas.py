@@ -58,7 +58,6 @@ class UserResponse(BaseModel):
     preferred_days: Optional[str] = None
     preferred_time: Optional[str] = None
     budget_max: Optional[int] = None
-    # Moderation
     role: Optional[str] = "user"
     is_banned: Optional[bool] = False
     banned_until: Optional[datetime] = None
@@ -78,7 +77,6 @@ class UserUpdate(BaseModel):
     new_password: Optional[str] = None
     avatar_url: Optional[str] = None
 
-    # Matching profile
     birth_date: Optional[date] = None
     latitude: Optional[float] = Field(default=None, ge=-90.0, le=90.0)
     longitude: Optional[float] = Field(default=None, ge=-180.0, le=180.0)
@@ -124,7 +122,7 @@ class ReviewCreate(BaseModel):
     party_id: int
     rating: int = Field(..., ge=1, le=5)
     text: Optional[str] = Field(None, max_length=2000)
-    tags: Optional[List[str]] = None  # max 3 from ALLOWED_REVIEW_TAGS
+    tags: Optional[List[str]] = None
 
     _sanitize_text = field_validator("text", mode="before")(_sanitize_optional)
 
@@ -156,10 +154,10 @@ class ReviewSummary(BaseModel):
     avg_rating: Optional[float]
     total_reviews: int
     reviews: List[ReviewOut]
-    stars_distribution: Dict[int, int]  # {1: count, 2: count, ...}
-    top_tags: List[str]                  # up to 5 most frequent tags (mixed polarity)
-    top_positive_tags: List[str] = []    # up to 5 most frequent positive tags
-    top_negative_tags: List[str] = []    # up to 5 most frequent negative tags
+    stars_distribution: Dict[int, int]
+    top_tags: List[str]
+    top_positive_tags: List[str] = []
+    top_negative_tags: List[str] = []
     page: int = 1
     per_page: int = 10
     total_pages: int = 1
@@ -224,7 +222,6 @@ class EventResponse(EventBase):
         from_attributes = True
 
 
-# ─── Party Search ────────────────────────────────────────────────────────────
 
 
 class PartySearchParams(BaseModel):
@@ -278,7 +275,6 @@ class PartySearchResponse(BaseModel):
         return cls(items=items, total=total, page=page, per_page=per_page, pages=pages)
 
 
-# ─── Meeting Plan ─────────────────────────────────────────────────────────────
 
 
 class MeetingPlanUpdate(BaseModel):

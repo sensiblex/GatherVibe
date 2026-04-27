@@ -11,7 +11,6 @@ class Appeal(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     message = Column(Text, nullable=False)
     status = Column(String(16), nullable=False, default="open", server_default="open")
-    # open | approved | rejected
     reviewer_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     review_reason = Column(String(500), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)

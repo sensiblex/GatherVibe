@@ -29,7 +29,6 @@ def _make(
     return e
 
 
-# ── starting_within_hours ────────────────────────────────────────────────────
 
 
 def test_starting_soon_within_2h(db):
@@ -63,7 +62,6 @@ def test_starting_soon_excludes_permanent(db):
     assert [e["title"] for e in res["results"]] == ["Live"]
 
 
-# ── Duration: short (<2h) / long (>24h) ─────────────────────────────────────
 
 
 def test_is_short_filter_selects_under_2_hours(db):
@@ -83,7 +81,6 @@ def test_is_long_filter_selects_over_24_hours(db):
 
     res = kudago_cache.query_cache(db=db, location="msk", is_long=True)
     titles = {e["title"] for e in res["results"]}
-    # Permanent events are effectively "very long" — include by default.
     assert titles == {"Festival3d", "Expo"}
 
 
@@ -117,7 +114,6 @@ def test_has_schedules_true_only_recurring(db):
     assert [e["title"] for e in res["results"]] == ["EverySat"]
 
 
-# ── only_verified_place (place_is_stub = false) ─────────────────────────────
 
 
 def test_only_verified_place_excludes_stub_venues(db):
@@ -130,7 +126,6 @@ def test_only_verified_place_excludes_stub_venues(db):
     assert [e["title"] for e in res["results"]] == ["Verified"]
 
 
-# ── Combinations ─────────────────────────────────────────────────────────────
 
 
 def test_combo_starting_soon_and_short(db):

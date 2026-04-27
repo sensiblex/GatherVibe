@@ -18,7 +18,6 @@ from notification_helpers import create_notification, mark_as_read
 AUTH_HEADER = lambda token: {"Authorization": f"Bearer {token}"}
 
 
-# ── 3.1 GET /notifications/ ───────────────────────────────────────────────────
 
 class TestListNotifications:
     def test_no_auth_returns_401(self, client):
@@ -54,14 +53,13 @@ class TestListNotifications:
         import time
         n1 = create_notification(db, user_a.id, "t", "first")
         db.commit()
-        time.sleep(1.05)  # force a 1-second gap so SQLite timestamps differ
+        time.sleep(1.05)
         n2 = create_notification(db, user_a.id, "t", "second")
         db.commit()
 
         r = client.get("/notifications/", headers=AUTH_HEADER(token_a))
         data = r.json()
         assert len(data) == 2
-        # n2 (newer) should come first
         assert data[0]["id"] == n2.id
         assert data[1]["id"] == n1.id
 
@@ -108,7 +106,6 @@ class TestListNotifications:
             assert field in data, f"Missing field: {field}"
 
 
-# ── 3.2 POST /notifications/read ─────────────────────────────────────────────
 
 class TestReadNotification:
     def test_no_auth_returns_401(self, client):
@@ -152,7 +149,7 @@ class TestReadNotification:
         )
         assert r.status_code == 404
         db.refresh(n)
-        assert n.is_read is False  # unchanged
+        assert n.is_read is False
 
     def test_already_read_returns_404(self, client, db, user_a, token_a):
         """Once marked read, marking again should still return ok (idempotent)
@@ -162,20 +159,14 @@ class TestReadNotification:
         mark_as_read(db, n.id, user_a.id)
         db.commit()
 
-        # The endpoint calls mark_as_read which returns False if already read
-        # because is_read=True — actually the helper sets is_read=True again and returns True
-        # Let's check: in notification_helpers.mark_as_read, it fetches and sets is_read=True.
-        # It returns False only if not found. So calling again should work (returns True again).
         r = client.post(
             "/notifications/read",
             json={"notification_id": n.id},
             headers=AUTH_HEADER(token_a),
         )
-        # Idempotent — already read notifications can be "marked read" again
         assert r.status_code == 200
 
 
-# ── 3.3 POST /notifications/read-all ─────────────────────────────────────────
 
 class TestReadAllNotifications:
     def test_no_auth_returns_401(self, client):
@@ -219,7 +210,6 @@ class TestReadAllNotifications:
         assert r.json()["count"] == 0
 
 
-# ── 3.4 GET /notifications/unread-count ──────────────────────────────────────
 
 class TestUnreadCount:
     def test_no_auth_returns_401(self, client):

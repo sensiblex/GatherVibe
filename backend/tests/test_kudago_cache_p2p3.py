@@ -55,7 +55,6 @@ def _make(
     return e
 
 
-# ── Age restriction ──────────────────────────────────────────────────────────
 
 
 def test_max_age_filters_out_stricter_events(db):
@@ -79,14 +78,10 @@ def test_max_age_includes_events_with_null_age(db):
     assert [e["title"] for e in res["results"]] == ["Unknown"]
 
 
-# ── Geolocation + radius (Haversine) ─────────────────────────────────────────
 
 
-# Moscow centre
 MSK_LAT, MSK_LON = 55.7536, 37.6199
-# ~2.5 km north of centre
 NEAR_LAT, NEAR_LON = 55.776, 37.619
-# ~30 km south-west (Vnukovo area)
 FAR_LAT, FAR_LON = 55.59, 37.28
 
 
@@ -125,7 +120,6 @@ def test_geo_not_applied_when_params_missing(db):
     assert titles == {"HasCoords", "NoCoords"}
 
 
-# ── Tags (OR semantics) ──────────────────────────────────────────────────────
 
 
 def test_tags_or_filter(db):
@@ -149,7 +143,6 @@ def test_single_tag_filter(db):
     assert [e["title"] for e in res["results"]] == ["Has"]
 
 
-# ── Place / subway text search ───────────────────────────────────────────────
 
 
 def test_place_search_matches_title_or_subway(db):
@@ -158,16 +151,13 @@ def test_place_search_matches_title_or_subway(db):
     _make(db, kid=2, title="B", place_title="Парк Горького",         place_subway="Октябрьская",         start_ts=now + 3600)
     _make(db, kid=3, title="C", place_title="Другой зал",            place_subway="Тверская, Пушкинская", start_ts=now + 3600)
 
-    # Match by subway
     r1 = kudago_cache.query_cache(db=db, location="msk", place_search="тверская")
     assert [e["title"] for e in r1["results"]] == ["C"]
 
-    # Match by place_title
     r2 = kudago_cache.query_cache(db=db, location="msk", place_search="парк")
     assert [e["title"] for e in r2["results"]] == ["B"]
 
 
-# ── Sorting ───────────────────────────────────────────────────────────────────
 
 
 def test_sort_by_popularity(db):
@@ -185,14 +175,12 @@ def test_sort_by_date_default(db):
     _make(db, kid=1, title="Later", favorites=100, start_ts=now + 10 * 3600)
     _make(db, kid=2, title="Soon",  favorites=1,   start_ts=now + 1 * 3600)
 
-    res = kudago_cache.query_cache(db=db, location="msk")  # default
+    res = kudago_cache.query_cache(db=db, location="msk")
     assert [e["title"] for e in res["results"]] == ["Soon", "Later"]
 
 
-# ── Combined realistic scenario ──────────────────────────────────────────────
 
 
-# ── Edge cases & hardening ────────────────────────────────────────────────────
 
 
 def test_search_like_wildcard_percent_does_not_match_everything(db):
@@ -225,7 +213,6 @@ def test_place_search_whitespace_only_is_ignored(db):
     _make(db, kid=2, title="B", place_title="Парк Горького", start_ts=now + 3600)
 
     res = kudago_cache.query_cache(db=db, location="msk", place_search="   ")
-    # Whitespace-only search must behave like "no search" — all events visible.
     assert res["count"] == 2
 
 

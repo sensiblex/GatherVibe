@@ -9,9 +9,9 @@ class Notification(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    type = Column(String, nullable=False)   # request_status_changed | kicked_from_party | new_party_request
+    type = Column(String, nullable=False)
     title = Column(String, nullable=False)
     body = Column(Text, nullable=True)
-    data = Column(Text, nullable=True)      # JSON string
+    data = Column(Text, nullable=True)
     is_read = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow, server_default=func.now())

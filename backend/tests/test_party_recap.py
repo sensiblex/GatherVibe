@@ -20,7 +20,6 @@ from models.party import EventParty, PartyMember
 from models.user import User
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 def _auth(token: str) -> dict:
@@ -76,7 +75,6 @@ def _ts_archived() -> int:
     return int(time.time()) - 5 * 24 * 3600
 
 
-# ── Fixtures ──────────────────────────────────────────────────────────────────
 
 
 @pytest.fixture
@@ -98,7 +96,6 @@ def token_c(user_c):
     )
 
 
-# ── Lifecycle status ──────────────────────────────────────────────────────────
 
 
 def test_lifecycle_status_planned(client: TestClient, db, user_a, token_a):
@@ -129,7 +126,6 @@ def test_lifecycle_status_archived(client: TestClient, db, user_a, token_a):
     assert r.json()["lifecycle_status"] == "archived"
 
 
-# ── Auto-create on first GET ──────────────────────────────────────────────────
 
 
 def test_recap_auto_created_on_first_get(client: TestClient, db, user_a, token_a):
@@ -143,7 +139,6 @@ def test_recap_auto_created_on_first_get(client: TestClient, db, user_a, token_a
     assert body["cover_url"] is None
 
 
-# ── Visibility / permissions ──────────────────────────────────────────────────
 
 
 def test_non_member_cannot_view_recap(client: TestClient, db, user_a, user_b, token_b):
@@ -166,7 +161,6 @@ def test_accepted_member_can_view_recap(client: TestClient, db, user_a, user_b, 
     assert r.status_code == 200
 
 
-# ── Posting items ─────────────────────────────────────────────────────────────
 
 
 def test_non_member_cannot_post_item(client: TestClient, db, user_a, user_b, token_b):
@@ -225,7 +219,6 @@ def test_caption_too_long_rejected(client: TestClient, db, user_a, token_a):
     assert r.status_code == 422
 
 
-# ── Photo upload ──────────────────────────────────────────────────────────────
 
 
 def test_photo_upload_creates_item(client: TestClient, db, user_a, token_a):
@@ -245,7 +238,6 @@ def test_photo_upload_creates_item(client: TestClient, db, user_a, token_a):
     assert item["caption"] == "selfie"
 
 
-# ── Listing items ─────────────────────────────────────────────────────────────
 
 
 def test_recap_lists_items_chronologically(client: TestClient, db, user_a, user_b, token_a, token_b):
@@ -264,7 +256,6 @@ def test_recap_lists_items_chronologically(client: TestClient, db, user_a, user_
     assert "first" in captions and "second" in captions
 
 
-# ── Pin highlights ────────────────────────────────────────────────────────────
 
 
 def test_creator_can_pin_highlight(client: TestClient, db, user_a, token_a):
@@ -303,19 +294,16 @@ def test_pin_limit_is_5(client: TestClient, db, user_a, token_a):
                         json={"kind": "note", "caption": f"n{i}"}, headers=_auth(token_a))
         item_ids.append(r.json()["id"])
 
-    # Pin first 5 — OK
     for iid in item_ids[:5]:
         r = client.post(f"/parties/{party.id}/recap/items/{iid}/pin",
                         headers=_auth(token_a))
         assert r.status_code == 200, r.text
 
-    # 6th pin — rejected
     r = client.post(f"/parties/{party.id}/recap/items/{item_ids[5]}/pin",
                     headers=_auth(token_a))
     assert r.status_code == 400
 
 
-# ── Cover ─────────────────────────────────────────────────────────────────────
 
 
 def test_creator_can_set_cover(client: TestClient, db, user_a, token_a):
@@ -336,7 +324,6 @@ def test_non_creator_cannot_set_cover(client: TestClient, db, user_a, user_b, to
     assert r.status_code == 403
 
 
-# ── Delete item ───────────────────────────────────────────────────────────────
 
 
 def test_author_can_delete_own_item(client: TestClient, db, user_a, user_b, token_b):
@@ -376,7 +363,6 @@ def test_other_member_cannot_delete_item(client: TestClient, db, user_a, user_b,
     assert r.status_code == 403
 
 
-# ── Reactions ─────────────────────────────────────────────────────────────────
 
 
 def test_react_increments_count(client: TestClient, db, user_a, user_b, token_a, token_b):

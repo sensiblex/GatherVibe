@@ -65,7 +65,7 @@ class PartyAttendance(Base):
     id = Column(Integer, primary_key=True, index=True)
     party_id = Column(Integer, ForeignKey("event_parties.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    status = Column(String(10), nullable=False)  # 'going' | 'late' | 'cant'
+    status = Column(String(10), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (

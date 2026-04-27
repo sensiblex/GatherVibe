@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from database import Base
 from models.user import User
 from models.attendee import EventAttendee
-from services import embeddings, people_matching  # module doesn't exist yet
+from services import embeddings, people_matching
 
 
 @pytest.fixture
@@ -47,7 +47,6 @@ def _mk(db, uid, *, interests="", city="msk", birth_date=None,
     db.add(u); db.commit(); return u
 
 
-# ─── similar_users ──────────────────────────────────────────────────────────
 
 
 def test_recommend_similar_excludes_self(db, stub_embed):
@@ -61,13 +60,12 @@ def test_recommend_similar_excludes_self(db, stub_embed):
 
 def test_recommend_similar_ranks_by_interest_overlap(db, stub_embed):
     me = _mk(db, 1, interests="concert,cinema,yoga")
-    _mk(db, 2, interests="concert,cinema,yoga")   # full overlap
-    _mk(db, 3, interests="concert")                # partial
-    _mk(db, 4, interests="sport,business")         # no overlap
+    _mk(db, 2, interests="concert,cinema,yoga")
+    _mk(db, 3, interests="concert")
+    _mk(db, 4, interests="sport,business")
     results = people_matching.recommend_similar_users(db, me, limit=10, city_only=False)
     scores = {r.user_id: r.score for r in results}
     assert scores[2] > scores[3]
-    # user 4 likely not returned (score 0 or very low) — ok either way
     assert scores.get(4, 0) <= scores[3]
 
 
@@ -104,7 +102,6 @@ def test_respects_limit(db, stub_embed):
     assert len(results) == 3
 
 
-# ─── event_peers ────────────────────────────────────────────────────────────
 
 
 def test_peers_require_opt_in(db, stub_embed):
@@ -124,7 +121,7 @@ def test_peers_require_opt_in(db, stub_embed):
     ids = [r.user_id for r in results]
     assert 2 in ids
     assert 3 not in ids
-    assert 1 not in ids  # self excluded
+    assert 1 not in ids
 
 
 def test_peers_only_from_same_event(db, stub_embed):
@@ -149,7 +146,6 @@ def test_peers_empty_when_no_attendees(db, stub_embed):
     assert results == []
 
 
-# ─── Serialization / reasons ────────────────────────────────────────────────
 
 
 def test_result_has_required_fields(db, stub_embed):

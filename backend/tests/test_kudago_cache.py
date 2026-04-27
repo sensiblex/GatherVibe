@@ -38,17 +38,16 @@ def _make_event(
     return e
 
 
-# ── Date range ────────────────────────────────────────────────────────────────
 
 
 def test_query_cache_actual_since_filters_out_earlier_events(db):
     now = int(time.time())
-    _make_event(db, kid=1, title="Early", start_ts=now + 3600)           # +1h
-    _make_event(db, kid=2, title="Late",  start_ts=now + 7 * 86400)      # +7d
+    _make_event(db, kid=1, title="Early", start_ts=now + 3600)
+    _make_event(db, kid=2, title="Late",  start_ts=now + 7 * 86400)
 
     res = kudago_cache.query_cache(
         db=db, location="kzn",
-        actual_since=now + 2 * 86400,  # show only events starting 2+ days from now
+        actual_since=now + 2 * 86400,
     )
     titles = [e["title"] for e in res["results"]]
     assert titles == ["Late"]
@@ -75,14 +74,13 @@ def test_query_cache_date_range_includes_permanent_events(db):
 
     res = kudago_cache.query_cache(
         db=db, location="kzn",
-        actual_since=now + 2 * 86400,  # dated won't match
+        actual_since=now + 2 * 86400,
     )
     titles = {e["title"] for e in res["results"]}
     assert "Permanent Expo" in titles
     assert "Dated" not in titles
 
 
-# ── Multi-category (OR logic) ─────────────────────────────────────────────────
 
 
 def test_query_cache_multi_category_uses_or_not_and(db):
@@ -109,7 +107,6 @@ def test_query_cache_single_category_still_works(db):
     assert titles == ["A"]
 
 
-# ── Existing filters still work ──────────────────────────────────────────────
 
 
 def test_query_cache_is_free_filter(db):

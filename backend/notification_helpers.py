@@ -32,7 +32,7 @@ def create_notification(
         is_read=False,
     )
     db.add(n)
-    db.flush()  # populate n.id before commit
+    db.flush()
 
     try:
         send_push_to_user(db, user_id, title, body or "", data)

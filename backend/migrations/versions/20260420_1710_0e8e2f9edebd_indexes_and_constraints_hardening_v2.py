@@ -25,65 +25,86 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _has_table(name: str) -> bool:
+    bind = op.get_bind()
+    return name in sa.inspect(bind).get_table_names()
+
+
 def upgrade() -> None:
     # ── events ────────────────────────────────────────────────────────────────
-    with op.batch_alter_table('events', schema=None) as batch_op:
-        batch_op.alter_column('date_time',
-                              existing_type=sa.DateTime(),
-                              type_=sa.DateTime(timezone=True),
-                              existing_nullable=False)
-        batch_op.alter_column('created_at',
-                              existing_type=sa.DateTime(),
-                              type_=sa.DateTime(timezone=True),
-                              existing_nullable=True)
-        batch_op.alter_column('updated_at',
-                              existing_type=sa.DateTime(),
-                              type_=sa.DateTime(timezone=True),
-                              existing_nullable=True)
-    op.create_index('ix_events_active_date', 'events', ['is_active', 'date_time'], unique=False)
+    if _has_table('events'):
+        with op.batch_alter_table('events', schema=None) as batch_op:
+            batch_op.alter_column('date_time',
+                                  existing_type=sa.DateTime(),
+                                  type_=sa.DateTime(timezone=True),
+                                  existing_nullable=False)
+            batch_op.alter_column('created_at',
+                                  existing_type=sa.DateTime(),
+                                  type_=sa.DateTime(timezone=True),
+                                  existing_nullable=True)
+            batch_op.alter_column('updated_at',
+                                  existing_type=sa.DateTime(),
+                                  type_=sa.DateTime(timezone=True),
+                                  existing_nullable=True)
+        op.execute("CREATE INDEX IF NOT EXISTS ix_events_active_date ON events (is_active, date_time)")
 
     # ── party_members (party_id, status) ──────────────────────────────────────
-    op.create_index(
-        'ix_party_members_party_status', 'party_members', ['party_id', 'status'], unique=False
-    )
+    if _has_table('party_members'):
+        op.execute("CREATE INDEX IF NOT EXISTS ix_party_members_party_status ON party_members (party_id, status)")
 
     # ── chat_messages (room, timestamp) ───────────────────────────────────────
-    op.create_index(
-        'ix_chat_messages_room_timestamp', 'chat_messages', ['room', 'timestamp'], unique=False
-    )
+    if _has_table('chat_messages'):
+        op.execute("CREATE INDEX IF NOT EXISTS ix_chat_messages_room_timestamp ON chat_messages (room, timestamp)")
 
     # ── poll_votes.user_id index ──────────────────────────────────────────────
-    op.create_index('ix_poll_votes_user_id', 'poll_votes', ['user_id'], unique=False)
+    if _has_table('poll_votes'):
+        op.execute("CREATE INDEX IF NOT EXISTS ix_poll_votes_user_id ON poll_votes (user_id)")
 
     # ── party_attendance ──────────────────────────────────────────────────────
-    op.create_index('ix_party_attendance_user_id', 'party_attendance', ['user_id'], unique=False)
-    op.execute(
-        "DELETE FROM party_attendance WHERE status IS NULL OR status NOT IN ('going','late','cant')"
-    )
-    op.create_check_constraint(
-        'ck_party_attendance_status', 'party_attendance',
-        "status IN ('going','late','cant')"
-    )
+    if _has_table('party_attendance'):
+        op.execute("CREATE INDEX IF NOT EXISTS ix_party_attendance_user_id ON party_attendance (user_id)")
+        op.execute(
+            "DELETE FROM party_attendance WHERE status IS NULL OR status NOT IN ('going','late','cant')"
+        )
+        op.execute("""
+            DO $$ BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'ck_party_attendance_status'
+                ) THEN
+                    ALTER TABLE party_attendance ADD CONSTRAINT ck_party_attendance_status
+                    CHECK (status IN ('going','late','cant'));
+                END IF;
+            END $$
+        """)
 
     # ── party_polls.status ────────────────────────────────────────────────────
-    op.execute("UPDATE party_polls SET status='active' WHERE status IS NULL")
-    op.execute("UPDATE party_polls SET status='active' WHERE status NOT IN ('active','closed')")
-    with op.batch_alter_table('party_polls', schema=None) as batch_op:
-        batch_op.alter_column('status',
-                              existing_type=sa.String(length=10),
-                              nullable=False,
-                              server_default='active')
-    op.create_check_constraint(
-        'ck_party_poll_status', 'party_polls', "status IN ('active','closed')"
-    )
+    if _has_table('party_polls'):
+        op.execute("UPDATE party_polls SET status='active' WHERE status IS NULL")
+        op.execute("UPDATE party_polls SET status='active' WHERE status NOT IN ('active','closed')")
+        with op.batch_alter_table('party_polls', schema=None) as batch_op:
+            batch_op.alter_column('status',
+                                  existing_type=sa.String(length=10),
+                                  nullable=False,
+                                  server_default='active')
+        op.execute("""
+            DO $$ BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'ck_party_poll_status'
+                ) THEN
+                    ALTER TABLE party_polls ADD CONSTRAINT ck_party_poll_status
+                    CHECK (status IN ('active','closed'));
+                END IF;
+            END $$
+        """)
 
     # ── poll_options.vote_count ───────────────────────────────────────────────
-    op.execute("UPDATE poll_options SET vote_count=0 WHERE vote_count IS NULL")
-    with op.batch_alter_table('poll_options', schema=None) as batch_op:
-        batch_op.alter_column('vote_count',
-                              existing_type=sa.Integer(),
-                              nullable=False,
-                              server_default=sa.text('0'))
+    if _has_table('poll_options'):
+        op.execute("UPDATE poll_options SET vote_count=0 WHERE vote_count IS NULL")
+        with op.batch_alter_table('poll_options', schema=None) as batch_op:
+            batch_op.alter_column('vote_count',
+                                  existing_type=sa.Integer(),
+                                  nullable=False,
+                                  server_default=sa.text('0'))
 
 
 def downgrade() -> None:

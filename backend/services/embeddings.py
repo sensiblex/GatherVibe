@@ -38,7 +38,6 @@ def _load_model():
     return _model
 
 
-# ─── Core embedding API ──────────────────────────────────────────────────────
 
 
 def embed_text(text: str, *, is_query: bool = False) -> list[float]:
@@ -58,11 +57,9 @@ def cosine(a: list[float], b: list[float]) -> float:
     """Cosine similarity. Vectors are normalized by encode(), so dot product suffices."""
     if len(a) != len(b) or not a:
         return 0.0
-    # normalize_embeddings=True → dot product == cosine
     return sum(x * y for x, y in zip(a, b))
 
 
-# ─── User / Event text composition ───────────────────────────────────────────
 
 
 def compose_user_text(user) -> str:
@@ -108,7 +105,6 @@ def compose_event_text(event) -> str:
     return " | ".join(p for p in parts if p)
 
 
-# ─── Persistence ─────────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -232,7 +228,6 @@ def find_similar(
     return scored[:limit]
 
 
-# ─── High-level helpers ──────────────────────────────────────────────────────
 
 
 def refresh_user_embedding(db: Session, user) -> None:

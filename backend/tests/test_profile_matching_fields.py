@@ -42,7 +42,7 @@ def test_patch_accepts_geo(client, user_a, token_a, db):
 def test_patch_rejects_invalid_lat_lon(client, token_a):
     r = client.patch(
         "/users/me",
-        json={"latitude": 200.0, "longitude": 0.0},  # out of [-90, 90]
+        json={"latitude": 200.0, "longitude": 0.0},
         headers={"Authorization": f"Bearer {token_a}"},
     )
     assert r.status_code in (400, 422)

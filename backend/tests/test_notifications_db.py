@@ -17,7 +17,6 @@ from notification_helpers import (
 )
 
 
-# ── 2.1 Model creation ────────────────────────────────────────────────────────
 
 class TestNotificationModel:
     def test_create_directly_all_fields_saved(self, db, user_a):
@@ -79,7 +78,6 @@ class TestNotificationModel:
         assert json.loads(n.data) == payload
 
 
-# ── 2.2 create_notification() ─────────────────────────────────────────────────
 
 class TestCreateNotification:
     def test_returns_notification_with_correct_fields(self, db, user_a):
@@ -119,7 +117,6 @@ class TestCreateNotification:
             assert n.type == t
 
 
-# ── 2.3 get_user_notifications() ─────────────────────────────────────────────
 
 class TestGetUserNotifications:
     def test_returns_only_requesting_user_notifications(self, db, user_a, user_b):
@@ -137,7 +134,6 @@ class TestGetUserNotifications:
         for i in range(3):
             create_notification(db, user_a.id, "t", f"n{i}")
             db.commit()
-            # small delay to ensure distinct created_at values
             time.sleep(0.01)
 
         results = get_user_notifications(db, user_a.id)
@@ -176,7 +172,6 @@ class TestGetUserNotifications:
         assert results == []
 
 
-# ── 2.4 mark_as_read() ───────────────────────────────────────────────────────
 
 class TestMarkAsRead:
     def test_marks_own_notification_as_read(self, db, user_a):
@@ -203,10 +198,9 @@ class TestMarkAsRead:
 
         assert result is False
         db.refresh(n)
-        assert n.is_read is False  # unchanged
+        assert n.is_read is False
 
 
-# ── 2.5 mark_all_as_read() ───────────────────────────────────────────────────
 
 class TestMarkAllAsRead:
     def test_marks_all_unread_for_user(self, db, user_a):
@@ -234,7 +228,6 @@ class TestMarkAllAsRead:
     def test_returns_correct_count(self, db, user_a):
         for _ in range(4):
             create_notification(db, user_a.id, "t", "T")
-        # mark one as already read
         n = create_notification(db, user_a.id, "t", "T")
         db.commit()
         mark_as_read(db, n.id, user_a.id)
@@ -242,7 +235,7 @@ class TestMarkAllAsRead:
 
         count = mark_all_as_read(db, user_a.id)
         db.commit()
-        assert count == 4  # only the 4 unread ones
+        assert count == 4
 
     def test_zero_unread_returns_zero(self, db, user_a):
         count = mark_all_as_read(db, user_a.id)
@@ -250,7 +243,6 @@ class TestMarkAllAsRead:
         assert count == 0
 
 
-# ── 2.6 get_unread_count() ───────────────────────────────────────────────────
 
 class TestGetUnreadCount:
     def test_correct_count_with_mixed_state(self, db, user_a):

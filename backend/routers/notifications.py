@@ -19,7 +19,6 @@ router = APIRouter(tags=["notifications"])
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
 
 
-# ─── Pydantic schemas ────────────────────────────────────────────────────────
 
 
 class NotificationOut(BaseModel):
@@ -53,7 +52,6 @@ class NotificationSettingsBody(BaseModel):
     email_notifications: bool
 
 
-# ─── In-app notification endpoints ──────────────────────────────────────────
 
 
 @router.get("/notifications", response_model=list[NotificationOut])
@@ -101,7 +99,6 @@ def read_all_notifications(
     return {"ok": True, "marked": count}
 
 
-# ─── Web Push endpoints ──────────────────────────────────────────────────────
 
 
 @router.get("/notifications/vapid-public-key")
@@ -130,7 +127,6 @@ def subscribe_push(
     )
 
     if existing:
-        # Refresh keys in case the browser rotated them
         existing.p256dh = body.p256dh
         existing.auth = body.auth
     else:
@@ -171,7 +167,6 @@ def unsubscribe_push(
     return {"ok": True}
 
 
-# ─── Push test ──────────────────────────────────────────────────────────────
 
 
 @router.post("/notifications/push/test", status_code=200)
@@ -192,7 +187,6 @@ def test_push(
     return {"ok": True}
 
 
-# ─── Notification settings ───────────────────────────────────────────────────
 
 
 @router.patch("/notifications/settings")

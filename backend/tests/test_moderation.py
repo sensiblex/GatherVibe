@@ -37,7 +37,6 @@ import models.party_recap  # noqa: F401
 import models.notification  # noqa: F401
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
@@ -150,7 +149,6 @@ def test_jwt_payload_includes_role(admin_user):
     assert payload["role"] == "admin"
 
 
-# ── 3. Dependency require_moderator / require_admin ──────────────────────────
 
 def test_admin_endpoint_forbids_regular_user(client, user_a, token_a):
     resp = client.get("/admin/reports", headers=_auth(token_a))
@@ -456,7 +454,7 @@ def test_perm_ban_only_admin(client, db, user_a, mod_token, admin_token):
     assert resp2.status_code == 200
     db.refresh(user_a)
     assert user_a.is_banned is True
-    assert user_a.banned_until is None  # permanent
+    assert user_a.banned_until is None
 
 
 def test_unban_user(client, db, user_a, mod_token):
@@ -524,7 +522,6 @@ def test_role_invalid_value_rejected(client, user_a, admin_token):
     assert resp.status_code == 400
 
 
-# ── 11. Audit log ─────────────────────────────────────────────────────────────
 
 def test_audit_log_on_ban(client, db, user_a, mod_token, mod_user):
     client.post(
@@ -577,7 +574,6 @@ def test_hidden_party_excluded_from_search(client, db, user_b, mod_token, token_
 
     resp = client.get(f"/parties/search?event_id=ev_2", headers=_auth(token_a))
     if resp.status_code == 200:
-        # If the endpoint returns list, hidden must not appear
         data = resp.json()
         items = data if isinstance(data, list) else data.get("items", [])
         assert not any(p.get("id") == party_hidden.id for p in items)

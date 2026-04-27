@@ -23,16 +23,14 @@ from services.scoring_utils import (
 )
 
 
-# ─── Weights ──────────────────────────────────────────────────────────────────
 
 W_INTEREST = 0.40
-W_CITY = 0.25          # substitutes age_compatibility (no age field on User)
+W_CITY = 0.25
 W_REVIEW_TAGS = 0.20
 W_ACTIVITY = 0.10
 W_FILL = 0.05
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
 def _top_review_tags(db: Session, user_id: int, n: int = 3) -> set[str]:
@@ -68,7 +66,6 @@ def _activity_score(event_date_ts: int | None, now_ts: int) -> float:
     return 0.2
 
 
-# ─── Context ──────────────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -88,7 +85,6 @@ def build_user_context(db: Session, user: User) -> UserContext:
     )
 
 
-# ─── Scoring ──────────────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -186,7 +182,6 @@ def score_party(
     )
 
 
-# ─── Candidate fetch ──────────────────────────────────────────────────────────
 
 
 def fetch_candidate_parties(db: Session, user_id: int) -> list[EventParty]:
@@ -248,7 +243,6 @@ def collect_members(
     return out
 
 
-# ─── Public API ───────────────────────────────────────────────────────────────
 
 
 def compute_recommendations(
@@ -276,7 +270,6 @@ def compute_recommendations(
             )
         )
 
-    # Hide parties that are already full or scored zero
     scored = [s for s in scored if s.score > 0 and s.member_count < (s.party.max_members or 4)]
     scored.sort(key=lambda s: s.score, reverse=True)
     page = scored[offset : offset + limit]

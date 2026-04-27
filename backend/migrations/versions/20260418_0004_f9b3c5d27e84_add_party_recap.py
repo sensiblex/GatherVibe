@@ -51,7 +51,7 @@ def upgrade() -> None:
             sa.Column("media_url", sa.String(length=500), nullable=True),
             sa.Column("caption", sa.String(length=500), nullable=True),
             sa.Column("is_pinned_highlight", sa.Boolean(), nullable=False,
-                      server_default=sa.text("0")),
+                      server_default=sa.text("false")),
             sa.Column("created_at", sa.DateTime(timezone=True),
                       server_default=sa.func.now()),
         )

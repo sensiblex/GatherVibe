@@ -104,7 +104,6 @@ def rebuild_all(db: Session, *, skip_fresh: bool = True, batch: int = 200) -> di
     }
 
 
-# ─── CLI ─────────────────────────────────────────────────────────────────────
 
 
 def main(argv: list[str] | None = None) -> int:

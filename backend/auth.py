@@ -6,14 +6,17 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:
+    '''хэширует пароль'''
     return pwd_context.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    '''проверяет пароль по хешу'''
     return pwd_context.verify(plain_password, hashed_password)
 
 
 def authenticate_user(email: str, password: str, db):
+    '''аутентифицирует пользователя по email и паролю'''
     from models.user import User
 
     user = db.query(User).filter(User.email == email).first()
@@ -25,6 +28,7 @@ def authenticate_user(email: str, password: str, db):
 
 
 def create_user_token(user):
+    '''генерирует токен для пользователя'''
     token = create_access_token(
         data={
             "sub": user.email,

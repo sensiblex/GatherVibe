@@ -34,7 +34,6 @@ def _kudago(db, kid, **kw):
     db.add(ev); db.commit(); return ev
 
 
-# ─── POST /recommendations/feedback ─────────────────────────────────────────
 
 
 def test_feedback_requires_auth(client):
@@ -72,7 +71,6 @@ def test_dismissal_removes_from_recommendations(client, db, user_a, token_a):
     _kudago(db, 1, categories=["concert"])
     _kudago(db, 2, categories=["concert"])
 
-    # Dismiss event 1
     client.post(
         "/recommendations/feedback",
         json={"rec_type": "event", "target_id": "1", "action": "dismissed"},
@@ -88,7 +86,6 @@ def test_dismissal_removes_from_recommendations(client, db, user_a, token_a):
     assert "2" in ids
 
 
-# ─── POST /recommendations/impressions (batch) ─────────────────────────────
 
 
 def test_impressions_batch_records_all(client, db, user_a, token_a):
@@ -118,7 +115,6 @@ def test_impressions_empty_batch_is_noop(client, db, token_a):
     assert db.query(RecommendationImpression).count() == 0
 
 
-# ─── GET /users/me/similar-people ──────────────────────────────────────────
 
 
 def test_similar_people_requires_auth(client):
@@ -137,11 +133,9 @@ def test_similar_people_returns_sorted(client, db, user_a, user_b, token_a):
     assert r.status_code == 200
     data = r.json()
     assert any(it["user_id"] == user_b.id for it in data)
-    # user_a should NOT appear in own results
     assert not any(it["user_id"] == user_a.id for it in data)
 
 
-# ─── GET /events/{event_id}/peers ──────────────────────────────────────────
 
 
 def test_event_peers_requires_auth(client):

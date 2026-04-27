@@ -72,11 +72,9 @@ async def create_review(
     if not party:
         raise HTTPException(status_code=404, detail="Пати не найдена")
 
-    event_ts = party.event_date_ts  # use DB value, not KudaGo
+    event_ts = party.event_date_ts
     if event_ts and event_ts > datetime.now(timezone.utc).timestamp():
         raise HTTPException(status_code=400, detail="Событие ещё не прошло")
-        # window_deadline = event_ts + REVIEW_WINDOW_DAYS * 24 * 3600
-        # if now_ts > window_deadline:
         #     raise HTTPException(status_code=400, detail="Окно для отзыва (30 дней) истекло")
 
     def _is_party_participant(user_id: int) -> bool:
@@ -270,7 +268,6 @@ def get_user_reviews(
         & (PartyReview.is_deleted == False)  # noqa: E712
     )
 
-    # Aggregates in SQL: one roundtrip for avg+count and one for distribution.
     agg = db.query(
         func.count(PartyReview.id),
         func.avg(PartyReview.rating),
@@ -292,7 +289,6 @@ def get_user_reviews(
 
     total_pages = math.ceil(total / per_page) if total > 0 else 1
 
-    # Page slice via SQL offset/limit — not in memory.
     offset = (page - 1) * per_page
     page_rows = (
         db.query(PartyReview)
@@ -303,8 +299,6 @@ def get_user_reviews(
         .all()
     )
 
-    # Tag aggregation: JSON column rules out pure-SQL counting portably,
-    # so stream only the `tags` column for visible reviews.
     top_tags: list[str] = []
     top_positive_tags: list[str] = []
     top_negative_tags: list[str] = []

@@ -25,7 +25,6 @@ import models.feature_flag  # noqa: F401
 import models.banned_word  # noqa: F401
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
@@ -68,7 +67,6 @@ def mod_token(mod_user):
     return _make_token(mod_user)
 
 
-# ── 1. FeatureFlag ───────────────────────────────────────────────────────────
 
 def test_admin_can_list_flags(client, admin_token):
     resp = client.get("/admin/flags", headers=_auth(admin_token))
@@ -141,7 +139,6 @@ def test_file_upload_blocked_when_flag_off(client, db, admin_token, user_a, toke
     assert r.status_code == 403
 
 
-# ── 2. BannedWord ─────────────────────────────────────────────────────────────
 
 def test_admin_can_add_banned_word(client, admin_token):
     r = client.post("/admin/banned-words",
@@ -249,7 +246,6 @@ def test_timeseries_moderator_denied(client, mod_token):
     assert r.status_code == 403
 
 
-# ── 5. Broadcast ──────────────────────────────────────────────────────────────
 
 def test_broadcast_creates_notifications_for_all(client, db, admin_token, user_a, user_b):
     r = client.post(

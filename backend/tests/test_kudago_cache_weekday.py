@@ -29,12 +29,11 @@ def _ts_on_weekday(target_weekday: int, hour: int = 12) -> int:
     now = datetime.now()
     days_ahead = (target_weekday - now.weekday()) % 7
     if days_ahead == 0:
-        days_ahead = 7  # ensure future, not today
+        days_ahead = 7
     d = (now + timedelta(days=days_ahead)).replace(hour=hour, minute=0, second=0, microsecond=0)
     return int(d.timestamp())
 
 
-# ── weekdays ─────────────────────────────────────────────────────────────────
 
 
 def test_weekdays_single_monday(db):
@@ -77,20 +76,18 @@ def test_weekdays_invalid_values_ignored(db):
     _make(db, kid=1, title="Mon", start_ts=_ts_on_weekday(0))
     _make(db, kid=2, title="Wed", start_ts=_ts_on_weekday(2))
 
-    # "7" and "abc" are invalid; "0" is valid
     res = kudago_cache.query_cache(db=db, location="msk", weekdays="0,7,abc,-1")
     assert [e["title"] for e in res["results"]] == ["Mon"]
 
 
-# ── hide_started ─────────────────────────────────────────────────────────────
 
 
 def test_hide_started_excludes_events_with_start_in_past(db):
     """Hide_started: event must have start_ts > now (strict)."""
     now = int(time.time())
-    _make(db, kid=1, title="Past",    start_ts=now - 3600)   # already started
-    _make(db, kid=2, title="Future",  start_ts=now + 3600)   # not yet
-    _make(db, kid=3, title="JustNow", start_ts=now)          # edge: started exactly now
+    _make(db, kid=1, title="Past",    start_ts=now - 3600)
+    _make(db, kid=2, title="Future",  start_ts=now + 3600)
+    _make(db, kid=3, title="JustNow", start_ts=now)
 
     res = kudago_cache.query_cache(db=db, location="msk", hide_started=True)
     titles = [e["title"] for e in res["results"]]
@@ -114,25 +111,23 @@ def test_hide_started_off_by_default_shows_past_events(db):
     ongoing (start <= now <= end) dated events may leak through the default filter.
     Check hide_started=False doesn't further restrict."""
     now = int(time.time())
-    # Equal to now boundary — without hide_started, included
     _make(db, kid=1, title="Edge", start_ts=now)
 
     res = kudago_cache.query_cache(db=db, location="msk", hide_started=False)
     assert res["count"] == 1
 
 
-# ── Combined ─────────────────────────────────────────────────────────────────
 
 
 def test_weekdays_and_hide_started_combined(db):
     now = int(time.time())
     _make(db, kid=1, title="MonFuture", start_ts=_ts_on_weekday(0))
-    _make(db, kid=2, title="PastMon",   start_ts=now - 86400)  # already started (any weekday)
+    _make(db, kid=2, title="PastMon",   start_ts=now - 86400)
     _make(db, kid=3, title="SunFuture", start_ts=_ts_on_weekday(6))
 
     res = kudago_cache.query_cache(
         db=db, location="msk",
-        weekdays="0,6",  # Mon + Sun
+        weekdays="0,6",
         hide_started=True,
     )
     titles = {e["title"] for e in res["results"]}

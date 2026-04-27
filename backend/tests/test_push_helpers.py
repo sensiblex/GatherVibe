@@ -20,7 +20,6 @@ def _mock_vapid():
         yield fake
 
 
-# ── send_push() ──────────────────────────────────────────────────────────────
 
 
 def test_send_push_success_returns_true():
@@ -36,7 +35,6 @@ def test_send_push_success_returns_true():
         )
         assert alive is True
         mock_webpush.assert_called_once()
-        # Verify VAPID claims use endpoint origin
         _, kwargs = mock_webpush.call_args
         assert kwargs["vapid_claims"]["aud"] == "https://fcm.googleapis.com"
 
@@ -102,7 +100,6 @@ def test_send_push_unexpected_exception_returns_true():
         assert alive is True
 
 
-# ── send_push_to_user() ──────────────────────────────────────────────────────
 
 
 def _add_sub(db, user_id: int, endpoint: str) -> PushSubscription:

@@ -22,21 +22,19 @@ class User(Base):
     verification_token = Column(String(64), nullable=True, index=True)
     email_notifications = Column(Boolean, default=True, nullable=False, server_default='true')
 
-    # Matching fields (migration b1d3a7f94e21)
     birth_date = Column(Date, nullable=True)
     latitude = Column(Float, nullable=True)
     longitude = Column(Float, nullable=True)
-    geo_precision = Column(String(10), nullable=True)  # 'city' | 'district' | 'exact'
+    geo_precision = Column(String(10), nullable=True)
     show_age = Column(Boolean, default=True, nullable=False, server_default='true')
     is_discoverable_on_events = Column(Boolean, default=False, nullable=False, server_default='false')
-    preferred_categories = Column(Text, nullable=True)  # CSV KudaGo categories
-    preferred_days = Column(String(20), nullable=True)  # 'weekends' | 'weekdays' | 'any'
-    preferred_time = Column(String(20), nullable=True)  # 'morning' | 'evening' | 'any'
+    preferred_categories = Column(Text, nullable=True)
+    preferred_days = Column(String(20), nullable=True)
+    preferred_time = Column(String(20), nullable=True)
     budget_max = Column(Integer, nullable=True)
     embedding_updated_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Moderation fields
-    role = Column(String(16), default="user", nullable=False, server_default="user")  # user|moderator|admin
+    role = Column(String(16), default="user", nullable=False, server_default="user")
     is_banned = Column(Boolean, default=False, nullable=False, server_default="false")
     banned_until = Column(DateTime(timezone=True), nullable=True)
     ban_reason = Column(String(500), nullable=True)

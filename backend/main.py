@@ -10,7 +10,6 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-# ── Database ──────────────────────────────────────────────────────────────────
 from database import engine
 import models.user
 import models.event
@@ -80,7 +79,6 @@ def _run_column_migrations():
             conn.execute(text(
                 "ALTER TABLE event_parties ADD COLUMN invite_token VARCHAR(64)"
             ))
-            # Backfill existing rows with uuid4 tokens
             import uuid as _uuid
             existing_ids = [r[0] for r in conn.execute(text("SELECT id FROM event_parties")).fetchall()]
             for pid in existing_ids:
@@ -105,7 +103,6 @@ def _run_column_migrations():
                 "ALTER TABLE party_members ADD COLUMN invite_message VARCHAR(200)"
             ))
 
-        # Moderation columns on users
         users_cols = {c["name"] for c in insp.get_columns("users")}
         if "role" not in users_cols:
             conn.execute(text(
@@ -130,7 +127,6 @@ def _run_column_migrations():
                 "ALTER TABLE users ADD COLUMN created_at TIMESTAMPTZ DEFAULT NOW()"
             ))
 
-        # Moderation columns on chat_messages
         chat_cols_now = {c["name"] for c in insp.get_columns("chat_messages")}
         if "is_deleted" not in chat_cols_now:
             conn.execute(text(
@@ -145,7 +141,6 @@ def _run_column_migrations():
         if "delete_reason" not in chat_cols_now:
             conn.execute(text("ALTER TABLE chat_messages ADD COLUMN delete_reason VARCHAR(200)"))
 
-        # Moderation columns on event_parties
         ep_cols = {c["name"] for c in insp.get_columns("event_parties")}
         if "is_hidden" not in ep_cols:
             conn.execute(text(
@@ -165,7 +160,6 @@ except Exception:
     import logging as _lg
     _lg.getLogger(__name__).exception("Column migration failed — continuing, schema may be partial")
 
-# ── Shared dependencies (re-exported so tests can override via main.get_db) ──
 from deps import (  # noqa: E402
     get_db,
     get_current_user_from_token,
@@ -174,7 +168,6 @@ from deps import (  # noqa: E402
     oauth2_scheme_optional,
 )
 
-# ── Socket.IO ─────────────────────────────────────────────────────────────────
 from sio_instance import sio  # noqa: E402
 from database import SessionLocal  # noqa: E402
 from models.chat_message import ChatMessage  # noqa: E402
@@ -184,7 +177,6 @@ from models.party import EventParty, PartyMember  # noqa: E402
 from routers.parties import MemberStatus  # noqa: E402
 import chat_push  # noqa: E402
 
-# ── KudaGo cache sync ─────────────────────────────────────────────────────────
 import kudago_cache  # noqa: E402
 
 CACHE_SYNC_INTERVAL = 3600  # секунды между синками (1 час)
@@ -264,7 +256,6 @@ async def _reminder_loop():
                             .all()
                         )
                         member_usernames = [u.username for u in member_users]
-                        # Build lookup dict to avoid N+1 queries per recipient
                         user_by_id = {u.id: u for u in member_users}
                         event_date = datetime.utcfromtimestamp(party.event_date_ts)
                         hours_before = delta_secs // 3600
@@ -290,7 +281,6 @@ async def _reminder_loop():
                             if not user:
                                 continue
 
-                            # Commit dedup record BEFORE sending email to prevent duplicates on crash
                             create_notification(
                                 db,
                                 uid,
@@ -398,7 +388,7 @@ async def _db_cleanup_loop():
     from sqlalchemy import delete as sa_delete
     while True:
         try:
-            await asyncio.sleep(3600)  # 1 hour
+            await asyncio.sleep(3600)
             db = SessionLocal()
             try:
                 now = datetime.utcnow()
@@ -450,7 +440,6 @@ async def lifespan(app: FastAPI):
     db_cleanup_task.cancel()
 
 
-# ── FastAPI app ───────────────────────────────────────────────────────────────
 app = FastAPI(title="GatherVibe API", lifespan=lifespan)
 
 from fastapi.staticfiles import StaticFiles  # noqa: E402
@@ -473,7 +462,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Routers ───────────────────────────────────────────────────────────────────
 from routers import auth, users, events, parties, reviews, notifications, party_coordination  # noqa: E402
 from routers.party_plan import router as party_plan_router  # noqa: E402
 from routers.recommendations import router as recommendations_router  # noqa: E402
@@ -482,23 +470,21 @@ from routers.admin import router as admin_router  # noqa: E402
 from routers.reports import router as reports_router  # noqa: E402
 from routers.appeals import router as appeals_router  # noqa: E402
 
-# Order matters: specific /users/me/* routes before wildcard /users/{user_id}
 app.include_router(auth.router)
-app.include_router(admin_router)            # /admin/* — must precede users (admin has /admin/users/{id})
-app.include_router(reports_router)          # public POST /reports
-app.include_router(appeals_router)          # public POST /appeals (for banned users)
-app.include_router(parties.router)          # has /users/me/parties — must precede users
+app.include_router(admin_router)
+app.include_router(reports_router)
+app.include_router(appeals_router)
+app.include_router(parties.router)
 app.include_router(party_coordination.router)
 app.include_router(party_plan_router)
 app.include_router(party_recap_router)
-app.include_router(reviews.router)          # has /users/me/reviewable — must precede users
-app.include_router(recommendations_router)  # has /users/me/recommended-parties — must precede users
-app.include_router(users.router)            # has /users/{user_id} — must be last of users/*
+app.include_router(reviews.router)
+app.include_router(recommendations_router)
+app.include_router(users.router)
 app.include_router(events.router)
 app.include_router(notifications.router)
 
 
-# ── System endpoints ──────────────────────────────────────────────────────────
 @app.get("/")
 def read_root():
     return {"message": "GatherVibe API работает!"}
@@ -509,7 +495,6 @@ def health_check():
     return {"status": "ok", "service": "gathervibe-backend"}
 
 
-# ── Socket.IO event handlers ──────────────────────────────────────────────────
 
 def _extract_token_from_environ(environ: dict) -> str | None:
     """Читаем JWT из cookie (HttpOnly или non-HttpOnly) в handshake headers.
@@ -577,7 +562,6 @@ async def disconnect(sid):
     chat_push.mark_disconnect(sid)
 
 
-# -- Event chat --
 
 @sio.on('join_event_chat')
 async def join_event_chat(sid, data):
@@ -713,7 +697,6 @@ async def leave_event_chat(sid, event_id: str):
     await sio.leave_room(sid, f'event_{event_id}')
 
 
-# -- Party chat --
 
 @sio.on('join_party_chat')
 async def join_party_chat(sid, data: dict):
@@ -793,7 +776,6 @@ async def send_party_message(sid, data: dict):
             await sio.emit('error', {'message': 'file_url должен быть /uploads/... или https://...'}, room=sid)
             db.close()
             return
-    # file_type whitelist
     ALLOWED_FILE_TYPES = {'image', 'document', 'video', 'audio'}
     if file_type and (not isinstance(file_type, str) or file_type not in ALLOWED_FILE_TYPES):
         await sio.emit('error', {'message': 'Некорректный file_type'}, room=sid)
@@ -868,7 +850,6 @@ async def send_party_message(sid, data: dict):
     }
     await sio.emit('receive_party_message', msg, room=f'party_{party_id}')
 
-    # Throttled push to offline party members (best-effort, never fails the broadcast)
     try:
         push_db = SessionLocal()
         try:
@@ -973,7 +954,6 @@ async def add_party_reaction(sid, data: dict):
     )
 
 
-# -- Notifications --
 
 @sio.on('subscribe_notifications')
 async def subscribe_notifications(sid, data: dict):
@@ -992,5 +972,4 @@ async def subscribe_notifications(sid, data: dict):
     logger.info(f"[notifications] {sid} subscribed to user_{user.id}")
 
 
-# ── ASGI app (entry point for uvicorn) ───────────────────────────────────────
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app)

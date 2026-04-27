@@ -12,6 +12,5 @@ class MessageReaction(Base):
     emoji      = Column(String(10), nullable=False)
 
     __table_args__ = (
-        # One user can apply each emoji to a given message only once
         UniqueConstraint("message_id", "user_id", "emoji", name="uq_reaction_message_user_emoji"),
     )

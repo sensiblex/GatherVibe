@@ -34,7 +34,6 @@ from services.scoring_utils import (
 )
 
 
-# ─── Weights (sum ~= 1.0) ─────────────────────────────────────────────────────
 
 W_SEMANTIC = 0.30
 W_CATEGORY = 0.25
@@ -46,7 +45,6 @@ W_TIME = 0.10
 DISMISS_COOLDOWN_DAYS = 14
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
 
 
 def _decode_json_list(raw) -> list[str]:
@@ -81,7 +79,6 @@ def _time_score(start_ts: int | None, now_ts: int) -> float:
 def _popularity_score(favorites: int | None) -> float:
     if not favorites or favorites < 0:
         return 0.0
-    # log scale → saturates around 10K favs
     return min(1.0, math.log10(favorites + 1) / 4.0)
 
 
@@ -97,15 +94,12 @@ def _haversine_km(lat1, lon1, lat2, lon2) -> float:
 def _geo_score(user: User, ev: KudaGoEvent) -> float:
     if user.latitude is not None and user.longitude is not None and ev.lat is not None and ev.lon is not None:
         km = _haversine_km(user.latitude, user.longitude, ev.lat, ev.lon)
-        # gaussian decay: 1.0 @ 0km, ~0.5 @ 5km, ~0.1 @ 15km
         return math.exp(-(km ** 2) / (2 * 5 * 5))
-    # Fallback: same city?
     if user.city and ev.location and user.city.strip().lower() == ev.location.strip().lower():
         return 0.7
     return 0.0
 
 
-# Basic interest → KudaGo category aliases (extend as needed)
 _INTEREST_ALIASES = {
     "concert": {"concert", "concerts", "music", "concerts-music"},
     "cinema": {"cinema", "movies", "films", "film"},
@@ -127,7 +121,6 @@ def _expand_interests_to_categories(interests: set[str]) -> set[str]:
     return out
 
 
-# ─── Context ─────────────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -136,7 +129,7 @@ class EventRecommendation:
     score: int
     reasons: list[str]
     event: KudaGoEvent
-    components: dict[str, float]  # for debugging
+    components: dict[str, float]
 
 
 @dataclass
@@ -157,7 +150,6 @@ def _build_ctx(db: Session, user: User) -> _UserCtx:
     interests_plus_prefs = interests | pref
     expanded = _expand_interests_to_categories(interests_plus_prefs)
 
-    # History from attendees
     attendee_rows = (
         db.query(EventAttendee.event_id, EventAttendee.event_category)
         .filter(EventAttendee.user_id == user.id)
@@ -170,7 +162,6 @@ def _build_ctx(db: Session, user: User) -> _UserCtx:
         if cat:
             history_counter[cat.strip().lower()] += 1
 
-    # Dismissals (rolling 14 days)
     cutoff = datetime.now(timezone.utc) - timedelta(days=DISMISS_COOLDOWN_DAYS)
     dismiss_rows = (
         db.query(RecommendationImpression.target_id)
@@ -200,13 +191,11 @@ def _build_ctx(db: Session, user: User) -> _UserCtx:
     )
 
 
-# ─── Scoring one event ───────────────────────────────────────────────────────
 
 
 def _score_event(
     db: Session, ctx: _UserCtx, ev: KudaGoEvent, now_ts: int
 ) -> EventRecommendation | None:
-    # Hard filters
     if ev.start_ts is not None and ev.start_ts < now_ts:
         return None
     str_id = str(ev.kudago_id)
@@ -218,18 +207,15 @@ def _score_event(
     ev_categories = {c.lower() for c in _decode_json_list(ev.categories)}
     ev_tags = {t.lower() for t in _decode_json_list(ev.tags)}
 
-    # Component 1: semantic
     semantic = 0.0
     if ctx.embedding is not None:
         ev_vec = embeddings.get_embedding(db, "event", str_id)
         if ev_vec:
             semantic = max(0.0, embeddings.cosine(ctx.embedding, ev_vec))
 
-    # Component 2: category match
     category_overlap = _jaccard(ctx.interest_categories, ev_categories | ev_tags)
     category_hits = len(ctx.interest_categories & (ev_categories | ev_tags))
 
-    # Component 3: history affinity
     history = 0.0
     total_hist = sum(ctx.history_category_freq.values())
     if total_hist > 0:
@@ -238,13 +224,10 @@ def _score_event(
         )
         history = matching_hist / total_hist
 
-    # Component 4: geo
     geo = _geo_score(ctx.user, ev)
 
-    # Component 5: popularity
     popularity = _popularity_score(ev.favorites_count)
 
-    # Component 6: time
     time_fit = _time_score(ev.start_ts, now_ts)
 
     raw = (
@@ -312,7 +295,6 @@ def _build_reasons(
     return out[:3]
 
 
-# ─── Public API ──────────────────────────────────────────────────────────────
 
 
 def recommend_events(
@@ -329,7 +311,6 @@ def recommend_events(
     if city:
         q = q.filter(KudaGoEvent.location == city)
     elif user.city:
-        # Default to user's city if they have one set (string match on KudaGo code)
         q = q.filter(KudaGoEvent.location == user.city.strip().lower())
     candidates = q.all()
 
