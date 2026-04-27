@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -115,6 +115,7 @@ export default function EventsPage() {
   // Calendar & drawer state
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<KudaGoEvent | null>(null);
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [attendeeCounts, setAttendeeCounts] = useState<Record<string, number>>({});
 
   const [todayStr, setTodayStr] = useState('');
@@ -127,6 +128,29 @@ export default function EventsPage() {
   useEffect(() => {
     setTodayStr(localIsoDate(new Date()));
   }, []);
+  useEffect(() => {
+    if (!filterDrawerOpen || typeof window === 'undefined') return;
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFilterDrawerOpen(false);
+    };
+
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const prevOverflow = document.body.style.overflow;
+    const prevPaddingRight = document.body.style.paddingRight;
+
+    document.addEventListener('keydown', handleKey);
+    document.body.style.overflow = 'hidden';
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = prevOverflow;
+      document.body.style.paddingRight = prevPaddingRight;
+    };
+  }, [filterDrawerOpen]);
 
   // Read initial filters from URL
   useEffect(() => {
@@ -328,6 +352,38 @@ export default function EventsPage() {
     fromHour !== null || toHour !== null ||
     weekdays.length > 0 || hideStarted
   );
+  const activeFilterCount = useMemo(() => {
+    return [
+      city !== 'kzn',
+      selectedCats.length > 0,
+      priceMode !== 'all',
+      !!dateFrom || !!dateTo,
+      sortBy !== 'date',
+      maxAge !== null,
+      tags.length > 0,
+      !!placeSearch,
+      !!geo,
+      !!quickDate,
+      !!timeOfDay,
+      permanence !== 'all',
+      hasCover,
+      hasParty,
+      hasFreeSpots,
+      minAttendees !== null,
+      startingWithinHours !== null,
+      durationMode !== null,
+      hasSchedules,
+      onlyVerifiedPlace,
+      fromHour !== null || toHour !== null,
+      weekdays.length > 0,
+      hideStarted,
+    ].filter(Boolean).length;
+  }, [
+    city, selectedCats.length, priceMode, dateFrom, dateTo, sortBy, maxAge,
+    tags.length, placeSearch, geo, quickDate, timeOfDay, permanence, hasCover,
+    hasParty, hasFreeSpots, minAttendees, startingWithinHours, durationMode,
+    hasSchedules, onlyVerifiedPlace, fromHour, toHour, weekdays.length, hideStarted,
+  ]);
 
   const showInitialLoading = loading && !hasLoadedOnceRef.current;
 
@@ -371,31 +427,6 @@ export default function EventsPage() {
               </p>
             )}
           </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <CityFilter value={city} onChange={setCity} />
-            {hasActive && (
-              <button onClick={clearFilters} className="btn btn-ghost btn-sm">
-                Сбросить ×
-              </button>
-            )}
-            <select
-              value={sortBy}
-              onChange={e => setSortBy(e.target.value as SortMode)}
-              className="input"
-              style={{ width: 'auto', padding: '.5rem 1.125rem', fontSize: '.8125rem' }}
-              aria-label="Сортировка"
-            >
-              {SORT_OPTIONS.map(o => (
-                <option
-                  key={o.value}
-                  value={o.value}
-                  disabled={o.value === 'nearest' && !geo}
-                >
-                  {o.label}{o.value === 'nearest' && !geo ? ' (нужна геолокация)' : ''}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
 
         {/* Search */}
@@ -412,146 +443,287 @@ export default function EventsPage() {
               className="input input-padl"
             />
           </div>
-          <PriceToggle value={priceMode} onChange={setPriceMode} />
-        </div>
-
-        {/* Filters: date range + categories */}
-        <div className="events-controls">
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input
-              type="date"
-              value={dateFrom}
-              min={todayStr}
-              suppressHydrationWarning
-              onChange={e => {
-                setDateFrom(e.target.value);
-                if (dateTo && e.target.value > dateTo) setDateTo(e.target.value);
-              }}
-              className="input"
-              style={{ width: 'auto', padding: '.5rem 1rem', fontSize: '.8125rem' }}
-            />
-            <span className="t-xs" style={{ color: 'var(--text-dim)' }}>—</span>
-            <input
-              type="date"
-              value={dateTo}
-              min={dateFrom || todayStr}
-              suppressHydrationWarning
-              onChange={e => setDateTo(e.target.value)}
-              className="input"
-              style={{ width: 'auto', padding: '.5rem 1rem', fontSize: '.8125rem' }}
-            />
-          </div>
-
-          {(dateFrom || dateTo) && (
-            <span className="badge badge-ink" style={{ gap: 6 }}>
-              {dateFrom && dateTo && dateFrom === dateTo
-                ? displayDate(dateFrom, { day: 'numeric', month: 'long' })
-                : [
-                    dateFrom && `с ${displayDate(dateFrom, { day: 'numeric', month: 'short' })}`,
-                    dateTo   && `по ${displayDate(dateTo, { day: 'numeric', month: 'short' })}`,
-                  ].filter(Boolean).join(' ')}
-              <button
-                onClick={() => { setDateFrom(''); setDateTo(''); }}
-                style={{ marginLeft: 4, background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, lineHeight: 1 }}
-              >×</button>
-            </span>
-          )}
-
-          <AgeFilter value={maxAge} onChange={setMaxAge} />
-          <PlaceSearchInput value={placeSearchInput} onChange={onPlaceSearchChange} />
-          <GeoFilter value={geo} onChange={setGeo} />
-        </div>
-
-        <div
-          style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px 8px', width: '100%', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}
-        >
-          <QuickDateChips active={quickDate} onSelect={setQuickDate} />
-          <TimeOfDayFilter value={timeOfDay} onChange={setTimeOfDay} />
-        </div>
-
-        <div
-          style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px 8px', width: '100%' }}
-        >
-          <SocialFilters
-            hasParty={hasParty}
-            hasFreeSpots={hasFreeSpots}
-            minAttendees={minAttendees}
-            onChange={(patch) => {
-              if (patch.hasParty !== undefined) setHasParty(patch.hasParty);
-              if (patch.hasFreeSpots !== undefined) setHasFreeSpots(patch.hasFreeSpots);
-              if (patch.minAttendees !== undefined) setMinAttendees(patch.minAttendees);
-            }}
-          />
-        </div>
-
-        <div
-          style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px 8px', width: '100%' }}
-        >
-          <QualityFilters
-            permanence={permanence}
-            hasCover={hasCover}
-            onChange={(patch) => {
-              if (patch.permanence !== undefined) setPermanence(patch.permanence);
-              if (patch.hasCover !== undefined) setHasCover(patch.hasCover);
-            }}
-          />
-        </div>
-
-        <div
-          style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px 8px', width: '100%' }}
-        >
-          <TimingFilters
-            startingWithinHours={startingWithinHours}
-            durationMode={durationMode}
-            hasSchedules={hasSchedules}
-            onlyVerifiedPlace={onlyVerifiedPlace}
-            onChange={(patch) => {
-              if (patch.startingWithinHours !== undefined) setStartingWithinHours(patch.startingWithinHours);
-              if (patch.durationMode !== undefined) setDurationMode(patch.durationMode);
-              if (patch.hasSchedules !== undefined) setHasSchedules(patch.hasSchedules);
-              if (patch.onlyVerifiedPlace !== undefined) setOnlyVerifiedPlace(patch.onlyVerifiedPlace);
-            }}
-          />
-        </div>
-
-        <div
-          style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px 8px', width: '100%', display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}
-        >
-          <TimeRangeSlider from={fromHour} to={toHour} onChange={(f, t) => { setFromHour(f); setToHour(t); }} />
-          <WeekdayPicker selected={weekdays} onChange={setWeekdays} />
           <button
-            aria-pressed={hideStarted}
-            onClick={() => setHideStarted(v => !v)}
+            type="button"
+            onClick={() => setFilterDrawerOpen(true)}
+            className="btn"
             style={{
-              padding: '0.4rem 0.9rem',
+              position: 'relative',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '.65rem 1rem',
               borderRadius: 'var(--r-full)',
-              fontSize: '.8125rem',
-              background: hideStarted ? 'var(--primary)' : 'var(--surface-2)',
-              color: hideStarted ? 'var(--text-inverse)' : 'var(--text-muted)',
-              border: `1px solid ${hideStarted ? 'var(--primary)' : 'var(--border)'}`,
-              cursor: 'pointer',
-              fontWeight: 600,
-              boxShadow: hideStarted ? '0 2px 8px var(--primary-ring)' : 'none',
+              background: activeFilterCount > 0 ? 'var(--primary)' : 'var(--surface)',
+              color: activeFilterCount > 0 ? 'var(--text-inverse)' : 'var(--text)',
+              border: `1px solid ${activeFilterCount > 0 ? 'var(--primary)' : 'var(--border)'}`,
+              boxShadow: activeFilterCount > 0 ? '0 6px 18px var(--primary-ring)' : 'var(--shadow-sm)',
+              fontWeight: 800,
+              whiteSpace: 'nowrap',
             }}
+            aria-haspopup="dialog"
+            aria-expanded={filterDrawerOpen}
           >
-            ⏭ Ещё не начались
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M22 3H2l8 9.46V19l4 2v-8.54z" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Фильтр
+            {activeFilterCount > 0 && (
+              <span
+                className="inline-flex items-center justify-center"
+                style={{
+                  minWidth: 20,
+                  height: 20,
+                  padding: '0 6px',
+                  borderRadius: 'var(--r-full)',
+                  background: 'rgba(255,255,255,0.24)',
+                  color: 'inherit',
+                  fontSize: 11,
+                  fontWeight: 900,
+                  lineHeight: 1,
+                }}
+              >
+                {activeFilterCount}
+              </span>
+            )}
           </button>
         </div>
 
-        <div
-          style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px 16px', width: '100%' }}
-        >
-          <TagPills selected={tags} onChange={setTags} />
-        </div>
-
-        {categories.length > 0 && (
-          <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 40px 40px', width: '100%', overflow: 'hidden' }}>
-            <CategoryPills
-              categories={categories}
-              selected={selectedCats}
-              onToggle={(slug) => setSelectedCats(cur => toggleCategory(cur, slug))}
+        {filterDrawerOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)' }}
+              onClick={() => setFilterDrawerOpen(false)}
+              aria-hidden="true"
             />
-          </div>
+
+            <aside
+              className="events-filter-drawer fixed top-0 right-0 z-50 h-full overflow-y-auto flex flex-col"
+              style={{
+                width: 460,
+                maxWidth: '100vw',
+                background: 'var(--surface)',
+                borderLeft: '1px solid var(--border)',
+                boxShadow: 'var(--shadow-lg)',
+                animation: 'filterDrawerSlideIn 0.25s cubic-bezier(0.16,1,0.3,1) forwards',
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Фильтры"
+            >
+              <div
+                className="sticky top-0 z-10 flex items-center justify-between gap-3"
+                style={{
+                  padding: '1rem 1.25rem',
+                  background: 'var(--surface)',
+                  borderBottom: '1px solid var(--divider)',
+                }}
+              >
+                <div>
+                  <h2 className="text-xl font-black" style={{ color: 'var(--text)' }}>Фильтры</h2>
+                  {activeFilterCount > 0 && (
+                    <p className="t-xs" style={{ marginTop: 2, color: 'var(--text-muted)' }}>
+                      Активно: {activeFilterCount}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => setFilterDrawerOpen(false)}
+                  className="flex items-center justify-center w-9 h-9 rounded-full transition"
+                  style={{
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-muted)',
+                  }}
+                  aria-label="Закрыть фильтры"
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                    <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-5" style={{ padding: '1.25rem' }}>
+                <section className="flex flex-col gap-3">
+                  <h3 className="t-label">Основное</h3>
+                  <CityFilter value={city} onChange={setCity} />
+                  <PriceToggle value={priceMode} onChange={setPriceMode} />
+                  <select
+                    value={sortBy}
+                    onChange={e => setSortBy(e.target.value as SortMode)}
+                    className="input"
+                    style={{ width: '100%', padding: '.65rem 1rem', fontSize: '.875rem' }}
+                    aria-label="Сортировка"
+                  >
+                    {SORT_OPTIONS.map(o => (
+                      <option
+                        key={o.value}
+                        value={o.value}
+                        disabled={o.value === 'nearest' && !geo}
+                      >
+                        {o.label}{o.value === 'nearest' && !geo ? ' (нужна геолокация)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </section>
+
+                <section className="flex flex-col gap-3">
+                  <h3 className="t-label">Дата и время</h3>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      min={todayStr}
+                      suppressHydrationWarning
+                      onChange={e => {
+                        setDateFrom(e.target.value);
+                        if (dateTo && e.target.value > dateTo) setDateTo(e.target.value);
+                      }}
+                      className="input"
+                      style={{ width: '100%', padding: '.65rem 1rem', fontSize: '.875rem' }}
+                    />
+                    <span className="t-xs" style={{ color: 'var(--text-dim)' }}>-</span>
+                    <input
+                      type="date"
+                      value={dateTo}
+                      min={dateFrom || todayStr}
+                      suppressHydrationWarning
+                      onChange={e => setDateTo(e.target.value)}
+                      className="input"
+                      style={{ width: '100%', padding: '.65rem 1rem', fontSize: '.875rem' }}
+                    />
+                  </div>
+
+                  {(dateFrom || dateTo) && (
+                    <span className="badge badge-ink" style={{ gap: 6, width: 'fit-content' }}>
+                      {dateFrom && dateTo && dateFrom === dateTo
+                        ? displayDate(dateFrom, { day: 'numeric', month: 'long' })
+                        : [
+                            dateFrom && `с ${displayDate(dateFrom, { day: 'numeric', month: 'short' })}`,
+                            dateTo   && `по ${displayDate(dateTo, { day: 'numeric', month: 'short' })}`,
+                          ].filter(Boolean).join(' ')}
+                      <button
+                        onClick={() => { setDateFrom(''); setDateTo(''); }}
+                        style={{ marginLeft: 4, background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, lineHeight: 1 }}
+                        aria-label="Сбросить даты"
+                      >x</button>
+                    </span>
+                  )}
+
+                  <QuickDateChips active={quickDate} onSelect={setQuickDate} />
+                  <TimeOfDayFilter value={timeOfDay} onChange={setTimeOfDay} />
+                  <TimeRangeSlider from={fromHour} to={toHour} onChange={(f, t) => { setFromHour(f); setToHour(t); }} />
+                  <WeekdayPicker selected={weekdays} onChange={setWeekdays} />
+                  <button
+                    aria-pressed={hideStarted}
+                    onClick={() => setHideStarted(v => !v)}
+                    style={{
+                      width: 'fit-content',
+                      padding: '0.4rem 0.9rem',
+                      borderRadius: 'var(--r-full)',
+                      fontSize: '.8125rem',
+                      background: hideStarted ? 'var(--primary)' : 'var(--surface-2)',
+                      color: hideStarted ? 'var(--text-inverse)' : 'var(--text-muted)',
+                      border: `1px solid ${hideStarted ? 'var(--primary)' : 'var(--border)'}`,
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      boxShadow: hideStarted ? '0 2px 8px var(--primary-ring)' : 'none',
+                    }}
+                  >
+                    Еще не начались
+                  </button>
+                </section>
+
+                <section className="flex flex-col gap-3">
+                  <h3 className="t-label">Место и возраст</h3>
+                  <AgeFilter value={maxAge} onChange={setMaxAge} />
+                  <PlaceSearchInput value={placeSearchInput} onChange={onPlaceSearchChange} />
+                  <GeoFilter value={geo} onChange={setGeo} />
+                </section>
+
+                <section className="flex flex-col gap-3">
+                  <h3 className="t-label">Социальные и качество</h3>
+                  <SocialFilters
+                    hasParty={hasParty}
+                    hasFreeSpots={hasFreeSpots}
+                    minAttendees={minAttendees}
+                    onChange={(patch) => {
+                      if (patch.hasParty !== undefined) setHasParty(patch.hasParty);
+                      if (patch.hasFreeSpots !== undefined) setHasFreeSpots(patch.hasFreeSpots);
+                      if (patch.minAttendees !== undefined) setMinAttendees(patch.minAttendees);
+                    }}
+                  />
+                  <QualityFilters
+                    permanence={permanence}
+                    hasCover={hasCover}
+                    onChange={(patch) => {
+                      if (patch.permanence !== undefined) setPermanence(patch.permanence);
+                      if (patch.hasCover !== undefined) setHasCover(patch.hasCover);
+                    }}
+                  />
+                  <TimingFilters
+                    startingWithinHours={startingWithinHours}
+                    durationMode={durationMode}
+                    hasSchedules={hasSchedules}
+                    onlyVerifiedPlace={onlyVerifiedPlace}
+                    onChange={(patch) => {
+                      if (patch.startingWithinHours !== undefined) setStartingWithinHours(patch.startingWithinHours);
+                      if (patch.durationMode !== undefined) setDurationMode(patch.durationMode);
+                      if (patch.hasSchedules !== undefined) setHasSchedules(patch.hasSchedules);
+                      if (patch.onlyVerifiedPlace !== undefined) setOnlyVerifiedPlace(patch.onlyVerifiedPlace);
+                    }}
+                  />
+                </section>
+
+                <section className="flex flex-col gap-3">
+                  <h3 className="t-label">Теги и категории</h3>
+                  <TagPills selected={tags} onChange={setTags} />
+                  {categories.length > 0 && (
+                    <div style={{ overflow: 'hidden' }}>
+                      <CategoryPills
+                        categories={categories}
+                        selected={selectedCats}
+                        onToggle={(slug) => setSelectedCats(cur => toggleCategory(cur, slug))}
+                      />
+                    </div>
+                  )}
+                </section>
+              </div>
+
+              <div
+                className="sticky bottom-0 flex gap-3"
+                style={{
+                  padding: '1rem 1.25rem',
+                  background: 'var(--surface)',
+                  borderTop: '1px solid var(--divider)',
+                }}
+              >
+                {hasActive && (
+                  <button onClick={clearFilters} className="btn btn-ghost" style={{ flex: 1 }}>
+                    Сбросить
+                  </button>
+                )}
+                <button onClick={() => setFilterDrawerOpen(false)} className="gv-btn-primary" style={{ flex: 1 }}>
+                  Применить
+                </button>
+              </div>
+            </aside>
+
+            <style>{`
+              @keyframes filterDrawerSlideIn {
+                from { transform: translateX(100%); opacity: 0.6; }
+                to   { transform: translateX(0);    opacity: 1; }
+              }
+
+              @media (max-width: 640px) {
+                .events-filter-drawer {
+                  width: 100vw !important;
+                  border-left: none !important;
+                }
+              }
+            `}</style>
+          </>
         )}
 
       {/* ── Events map: synced 1:1 with the filtered list below ── */}
