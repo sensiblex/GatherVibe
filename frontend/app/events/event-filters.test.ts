@@ -76,6 +76,24 @@ describe('buildKudaGoQuery', () => {
     expect(all.get('is_free')).toBeNull();
   });
 
+  it('emits price range filters and normalizes reversed bounds', () => {
+    const range = new URLSearchParams(buildKudaGoQuery({ location: 'msk', minPrice: 500, maxPrice: 1200 }));
+    expect(range.get('min_price')).toBe('500');
+    expect(range.get('max_price')).toBe('1200');
+
+    const minOnly = new URLSearchParams(buildKudaGoQuery({ location: 'msk', minPrice: 700 }));
+    expect(minOnly.get('min_price')).toBe('700');
+    expect(minOnly.get('max_price')).toBeNull();
+
+    const maxOnly = new URLSearchParams(buildKudaGoQuery({ location: 'msk', maxPrice: 900 }));
+    expect(maxOnly.get('min_price')).toBeNull();
+    expect(maxOnly.get('max_price')).toBe('900');
+
+    const reversed = new URLSearchParams(buildKudaGoQuery({ location: 'msk', minPrice: 1200, maxPrice: 500 }));
+    expect(reversed.get('min_price')).toBe('500');
+    expect(reversed.get('max_price')).toBe('1200');
+  });
+
   it('passes actual_since and actual_until as unix seconds', () => {
     const qs = buildKudaGoQuery({
       location: 'msk',

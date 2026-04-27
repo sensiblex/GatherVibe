@@ -18,6 +18,7 @@ def _make_event(
     is_free: bool = False,
     start_ts: int | None = None,
     is_permanent: bool = False,
+    price: str = "",
 ) -> KudaGoEvent:
     e = KudaGoEvent(
         kudago_id=kid,
@@ -28,7 +29,7 @@ def _make_event(
         is_free=is_free,
         start_ts=start_ts,
         is_permanent=is_permanent,
-        price="",
+        price=price,
         cached_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
@@ -119,6 +120,38 @@ def test_query_cache_is_free_filter(db):
 
     res_paid = kudago_cache.query_cache(db=db, location="kzn", is_free=False)
     assert [e["title"] for e in res_paid["results"]] == ["Paid"]
+
+
+def test_query_cache_min_price_filters_string_prices(db):
+    now = int(time.time())
+    _make_event(db, kid=1, title="Cheap", start_ts=now + 3600, price="500 ₽")
+    _make_event(db, kid=2, title="Formatted", start_ts=now + 3600, price="1 200 ₽")
+    _make_event(db, kid=3, title="Unknown", start_ts=now + 3600, price="")
+
+    res = kudago_cache.query_cache(db=db, location="kzn", min_price=1000)
+    assert [e["title"] for e in res["results"]] == ["Formatted"]
+
+
+def test_query_cache_max_price_and_range_are_inclusive(db):
+    now = int(time.time())
+    _make_event(db, kid=1, title="Low", start_ts=now + 3600, price="500")
+    _make_event(db, kid=2, title="Mid", start_ts=now + 3600, price="1 000 ₽")
+    _make_event(db, kid=3, title="High", start_ts=now + 3600, price="1500")
+
+    max_only = kudago_cache.query_cache(db=db, location="kzn", max_price=1000)
+    assert [e["title"] for e in max_only["results"]] == ["Low", "Mid"]
+
+    in_range = kudago_cache.query_cache(db=db, location="kzn", min_price=500, max_price=1000)
+    assert [e["title"] for e in in_range["results"]] == ["Low", "Mid"]
+
+
+def test_query_cache_price_range_swaps_reversed_bounds(db):
+    now = int(time.time())
+    _make_event(db, kid=1, title="Inside", start_ts=now + 3600, price="1 000")
+    _make_event(db, kid=2, title="Outside", start_ts=now + 3600, price="2 000")
+
+    res = kudago_cache.query_cache(db=db, location="kzn", min_price=1500, max_price=500)
+    assert [e["title"] for e in res["results"]] == ["Inside"]
 
 
 def test_query_cache_location_isolation(db):

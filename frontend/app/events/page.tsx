@@ -48,6 +48,19 @@ const PAGE_SIZE = 60;
 
 interface Category { slug: string; name: string; }
 
+function parsePriceInput(value: string): number | null {
+  if (!value.trim()) return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+function normalizePriceInputValue(value: string): string {
+  if (value === '') return '';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '';
+  return n < 0 ? '0' : value;
+}
+
 // ─── Masonry skeleton ────────────────────────────────────────────────────────
 function MasonrySkeleton() {
   const heights = [180, 260, 220, 310, 200, 250, 190, 280, 240, 170, 300, 210];
@@ -88,6 +101,8 @@ export default function EventsPage() {
   const [search, setSearch]           = useState('');
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
   const [priceMode, setPriceMode]     = useState<PriceMode>('all');
+  const [minPrice, setMinPrice]       = useState('');
+  const [maxPrice, setMaxPrice]       = useState('');
   const [dateFrom, setDateFrom]       = useState('');
   const [dateTo, setDateTo]           = useState('');
   const [sortBy, setSortBy]           = useState<SortMode>('date');
@@ -164,6 +179,10 @@ export default function EventsPage() {
     if (cats) setSelectedCats(cats.split(',').filter(Boolean));
     const priceParam = p.get('price');
     if (priceParam === 'free' || priceParam === 'paid') setPriceMode(priceParam);
+    const minPriceParam = p.get('min_price');
+    if (minPriceParam !== null && parsePriceInput(minPriceParam) !== null) setMinPrice(minPriceParam);
+    const maxPriceParam = p.get('max_price');
+    if (maxPriceParam !== null && parsePriceInput(maxPriceParam) !== null) setMaxPrice(maxPriceParam);
     if (p.get('date_from')) setDateFrom(p.get('date_from')!);
     if (p.get('date_to'))   setDateTo(p.get('date_to')!);
     if (p.get('sort_by') === 'popularity') setSortBy('popularity');
@@ -194,6 +213,15 @@ export default function EventsPage() {
     if (search)   p.set('search',     search);
     if (selectedCats.length) p.set('categories', selectedCats.join(','));
     if (priceMode !== 'all') p.set('price', priceMode);
+    const minPriceValue = parsePriceInput(minPrice);
+    const maxPriceValue = parsePriceInput(maxPrice);
+    if (minPriceValue !== null && maxPriceValue !== null) {
+      p.set('min_price', String(Math.min(minPriceValue, maxPriceValue)));
+      p.set('max_price', String(Math.max(minPriceValue, maxPriceValue)));
+    } else {
+      if (minPriceValue !== null) p.set('min_price', String(minPriceValue));
+      if (maxPriceValue !== null) p.set('max_price', String(maxPriceValue));
+    }
     if (dateFrom) p.set('date_from',  dateFrom);
     if (dateTo)   p.set('date_to',    dateTo);
     if (sortBy !== 'date') p.set('sort_by', sortBy);
@@ -208,11 +236,11 @@ export default function EventsPage() {
     const qs = p.toString();
     router.replace(qs ? `/events?${qs}` : '/events', { scroll: false });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [city, search, selectedCats, priceMode, dateFrom, dateTo, sortBy, maxAge, tags, placeSearch, geo]);
+  }, [city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo, sortBy, maxAge, tags, placeSearch, geo]);
 
   // Load events from API
   const load = useCallback(async (
-    loc: CitySlug, s: string, cats: string[], price: PriceMode, from: string, to: string,
+    loc: CitySlug, s: string, cats: string[], price: PriceMode, minP: string, maxP: string, from: string, to: string,
     age: number | null, ts: string[], ps: string, gp: GeoPoint | null, sort: SortMode,
     qd: QuickDate | null, tod: TimeOfDay | null, perm: PermanenceMode,
     hc: boolean, hp: boolean, hfs: boolean, mna: number | null,
@@ -241,6 +269,8 @@ export default function EventsPage() {
         search: s,
         categories: cats,
         priceMode: price,
+        minPrice: parsePriceInput(minP),
+        maxPrice: parsePriceInput(maxP),
         actualSince: sinceTs,
         actualUntil: untilTs,
         maxAge: age,
@@ -294,7 +324,7 @@ export default function EventsPage() {
   useEffect(() => {
     loadingRef.current = false;
     load(
-      city, search, selectedCats, priceMode, dateFrom, dateTo,
+      city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
       maxAge, tags, placeSearch, geo, sortBy,
       quickDate, timeOfDay, permanence, hasCover, hasParty, hasFreeSpots, minAttendees,
       startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace,
@@ -302,7 +332,7 @@ export default function EventsPage() {
       weekdays, hideStarted,
     );
   }, [
-    city, search, selectedCats, priceMode, dateFrom, dateTo,
+    city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
     maxAge, tags, placeSearch, geo, sortBy,
     quickDate, timeOfDay, permanence, hasCover, hasParty, hasFreeSpots, minAttendees,
     startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace,
@@ -331,7 +361,7 @@ export default function EventsPage() {
 
   const clearFilters = useCallback(() => {
     setSearchInput(''); setSearch(''); setSelectedCats([]);
-    setPriceMode('all'); setDateFrom(''); setDateTo('');
+    setPriceMode('all'); setMinPrice(''); setMaxPrice(''); setDateFrom(''); setDateTo('');
     setSortBy('date'); setSelectedDate(null);
     setMaxAge(null); setTags([]);
     setPlaceSearchInput(''); setPlaceSearch(''); setGeo(null);
@@ -344,7 +374,7 @@ export default function EventsPage() {
   }, []);
 
   const hasActive = !!(
-    search || selectedCats.length || priceMode !== 'all' || dateFrom || dateTo ||
+    search || selectedCats.length || priceMode !== 'all' || minPrice || maxPrice || dateFrom || dateTo ||
     sortBy !== 'date' || maxAge !== null || tags.length || placeSearch || geo ||
     quickDate || timeOfDay || permanence !== 'all' ||
     hasCover || hasParty || hasFreeSpots || minAttendees ||
@@ -357,6 +387,8 @@ export default function EventsPage() {
       city !== 'kzn',
       selectedCats.length > 0,
       priceMode !== 'all',
+      !!minPrice,
+      !!maxPrice,
       !!dateFrom || !!dateTo,
       sortBy !== 'date',
       maxAge !== null,
@@ -379,7 +411,7 @@ export default function EventsPage() {
       hideStarted,
     ].filter(Boolean).length;
   }, [
-    city, selectedCats.length, priceMode, dateFrom, dateTo, sortBy, maxAge,
+    city, selectedCats.length, priceMode, minPrice, maxPrice, dateFrom, dateTo, sortBy, maxAge,
     tags.length, placeSearch, geo, quickDate, timeOfDay, permanence, hasCover,
     hasParty, hasFreeSpots, minAttendees, startingWithinHours, durationMode,
     hasSchedules, onlyVerifiedPlace, fromHour, toHour, weekdays.length, hideStarted,
@@ -549,6 +581,33 @@ export default function EventsPage() {
                   <h3 className="t-label">Основное</h3>
                   <CityFilter value={city} onChange={setCity} />
                   <PriceToggle value={priceMode} onChange={setPriceMode} />
+                  <div className="flex flex-col gap-2">
+                    <span className="t-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Цена</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 8 }}>
+                      <input
+                        type="number"
+                        min="0"
+                        inputMode="numeric"
+                        value={minPrice}
+                        onChange={e => setMinPrice(normalizePriceInputValue(e.target.value))}
+                        placeholder="от"
+                        aria-label="Цена от"
+                        className="input"
+                        style={{ width: '100%', padding: '.65rem 1rem', fontSize: '.875rem' }}
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        inputMode="numeric"
+                        value={maxPrice}
+                        onChange={e => setMaxPrice(normalizePriceInputValue(e.target.value))}
+                        placeholder="до"
+                        aria-label="Цена до"
+                        className="input"
+                        style={{ width: '100%', padding: '.65rem 1rem', fontSize: '.875rem' }}
+                      />
+                    </div>
+                  </div>
                   <select
                     value={sortBy}
                     onChange={e => setSortBy(e.target.value as SortMode)}
@@ -746,7 +805,7 @@ export default function EventsPage() {
             <p className="text-sm" style={{ color: 'var(--error)' }}>{error}</p>
             <button
               onClick={() => load(
-                city, search, selectedCats, priceMode, dateFrom, dateTo,
+                city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
                 maxAge, tags, placeSearch, geo, sortBy,
                 quickDate, timeOfDay, permanence, hasCover, hasParty, hasFreeSpots, minAttendees,
                 startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace,

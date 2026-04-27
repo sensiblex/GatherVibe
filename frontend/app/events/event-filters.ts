@@ -46,6 +46,8 @@ export interface EventFilters {
   search?: string;
   categories?: string[];
   priceMode?: PriceMode;
+  minPrice?: number | null;
+  maxPrice?: number | null;
   actualSince?: number;      // unix seconds
   actualUntil?: number;
   maxAge?: number | null;
@@ -118,6 +120,16 @@ export function buildKudaGoQuery(f: EventFilters): string {
 
   if (f.priceMode === 'free') p.set('is_free', 'true');
   if (f.priceMode === 'paid') p.set('is_free', 'false');
+
+  const minPrice = typeof f.minPrice === 'number' && Number.isFinite(f.minPrice) ? f.minPrice : null;
+  const maxPrice = typeof f.maxPrice === 'number' && Number.isFinite(f.maxPrice) ? f.maxPrice : null;
+  if (minPrice !== null && maxPrice !== null) {
+    p.set('min_price', String(Math.min(minPrice, maxPrice)));
+    p.set('max_price', String(Math.max(minPrice, maxPrice)));
+  } else {
+    if (minPrice !== null) p.set('min_price', String(minPrice));
+    if (maxPrice !== null) p.set('max_price', String(maxPrice));
+  }
 
   if (f.actualSince !== undefined) p.set('actual_since', String(f.actualSince));
   if (f.actualUntil !== undefined) p.set('actual_until', String(f.actualUntil));

@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional
 
 import math
+import re
 
 from sqlalchemy import func, or_
 
@@ -87,6 +88,53 @@ def _parse_age(val) -> Optional[int]:
         return int(str(val).replace("+", "").strip())
     except (ValueError, TypeError):
         return None
+
+
+def _parse_price_bounds(price: object, is_free: bool = False) -> Optional[tuple[float, float]]:
+    """Return numeric price bounds parsed from KudaGo's free-form price string."""
+    if is_free:
+        return (0.0, 0.0)
+    if price is None:
+        return None
+
+    text = str(price).strip().lower()
+    if not text:
+        return None
+    if text in {"0", "0.0"} or "бесплат" in text or "free" in text:
+        return (0.0, 0.0)
+
+    numbers: list[float] = []
+    for match in re.findall(r"\d[\d\s.,]*", text):
+        normalized = match.replace(" ", "").replace("\u00a0", "")
+        if "," in normalized and "." not in normalized:
+            normalized = normalized.replace(",", ".")
+        normalized = normalized.replace(",", "")
+        try:
+            numbers.append(float(normalized))
+        except ValueError:
+            continue
+
+    if not numbers:
+        return None
+    return (min(numbers), max(numbers))
+
+
+def _matches_price_range(row: "KudaGoEvent", min_price: Optional[float], max_price: Optional[float]) -> bool:
+    if min_price is None and max_price is None:
+        return True
+    if min_price is not None and max_price is not None and min_price > max_price:
+        min_price, max_price = max_price, min_price
+
+    bounds = _parse_price_bounds(row.price, row.is_free)
+    if bounds is None:
+        return False
+
+    row_min, row_max = bounds
+    if min_price is not None and row_max < min_price:
+        return False
+    if max_price is not None and row_min > max_price:
+        return False
+    return True
 
 
 def _parse_start_ts(raw_event: dict) -> Optional[int]:
@@ -272,6 +320,8 @@ def query_cache(
     to_hour: Optional[int] = None,
     weekdays: Optional[str] = None,
     hide_started: Optional[bool] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
 ) -> dict:
     """
     Читает события из кэша БД.
@@ -467,9 +517,12 @@ def query_cache(
             except ValueError:
                 continue
     weekday_active = bool(weekday_set)
+    price_range_active = min_price is not None or max_price is not None
 
-    if geo_active or place_search_lower or tod or hour_range_active or sort_by_nearest or weekday_active:
+    if geo_active or place_search_lower or tod or hour_range_active or sort_by_nearest or weekday_active or price_range_active:
         all_rows = q.all()
+        if price_range_active:
+            all_rows = [r for r in all_rows if _matches_price_range(r, min_price, max_price)]
         if geo_active:
             all_rows = [
                 r for r in all_rows

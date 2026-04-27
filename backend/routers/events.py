@@ -353,6 +353,8 @@ def kudago_get_events(
     to_hour: Optional[int] = Query(default=None, ge=0, le=24),
     weekdays: Optional[str] = Query(default=None),
     hide_started: Optional[bool] = Query(default=None),
+    min_price: Optional[float] = Query(default=None, ge=0),
+    max_price: Optional[float] = Query(default=None, ge=0),
     has_party: Optional[bool] = Query(default=None),
     min_attendees: Optional[int] = Query(default=None, ge=0, le=10000),
     has_free_spots: Optional[bool] = Query(default=None),
@@ -415,6 +417,8 @@ def kudago_get_events(
                 to_hour=to_hour,
                 weekdays=weekdays,
                 hide_started=hide_started,
+                min_price=min_price,
+                max_price=max_price,
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Ошибка кэша: {str(e)}")
@@ -436,6 +440,8 @@ def kudago_get_events(
         from_hour is not None or to_hour is not None,
         bool(weekdays and str(weekdays).strip()),
         hide_started is True,
+        min_price is not None,
+        max_price is not None,
         starting_within_hours is not None,
         is_short is True, is_long is True,
         has_schedules is True,
