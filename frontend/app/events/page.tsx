@@ -39,9 +39,15 @@ import {
   type PermanenceMode,
   type QuickDate,
 } from './event-filters';
-import { localIsoDate as _localIsoDate } from './utils';
 import { apiFetch } from '../lib/apiFetch';
-import { localIsoDate, localStartTs, localEndTs, displayDate } from './utils';
+import {
+  displayDate,
+  getEventCategoryBadges,
+  localEndTs,
+  localIsoDate,
+  localStartTs,
+  translateCategory,
+} from './utils';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const PAGE_SIZE = 60;
@@ -359,6 +365,12 @@ export default function EventsPage() {
     }
   }, []);
 
+  const addCategoryFilter = useCallback((slug: string) => {
+    setSelectedCats(current => (
+      current.includes(slug) ? current : toggleCategory(current, slug)
+    ));
+  }, []);
+
   const clearFilters = useCallback(() => {
     setSearchInput(''); setSearch(''); setSelectedCats([]);
     setPriceMode('all'); setMinPrice(''); setMaxPrice(''); setDateFrom(''); setDateTo('');
@@ -421,6 +433,30 @@ export default function EventsPage() {
 
   // Backend already handles sorting via order_by; keep a noop memo for downstream code.
   const sortedEvents = events;
+
+  const categoryFilterOptions = useMemo(() => {
+    const bySlug = new Map<string, Category>();
+
+    categories.forEach(category => {
+      if (category.slug) bySlug.set(category.slug, category);
+    });
+
+    events.forEach(event => {
+      getEventCategoryBadges(event.categories, Number.MAX_SAFE_INTEGER).forEach(category => {
+        if (!bySlug.has(category.slug)) {
+          bySlug.set(category.slug, { slug: category.slug, name: category.label });
+        }
+      });
+    });
+
+    selectedCats.forEach(slug => {
+      if (!bySlug.has(slug)) {
+        bySlug.set(slug, { slug, name: translateCategory(slug) });
+      }
+    });
+
+    return Array.from(bySlug.values());
+  }, [categories, events, selectedCats]);
 
   // Events filtered by selected calendar date
   // Permanent events (is_permanent=true or start_date=null) always show
@@ -738,10 +774,10 @@ export default function EventsPage() {
                 <section className="flex flex-col gap-3">
                   <h3 className="t-label">Теги и категории</h3>
                   <TagPills selected={tags} onChange={setTags} />
-                  {categories.length > 0 && (
+                  {categoryFilterOptions.length > 0 && (
                     <div style={{ overflow: 'hidden' }}>
                       <CategoryPills
-                        categories={categories}
+                        categories={categoryFilterOptions}
                         selected={selectedCats}
                         onToggle={(slug) => setSelectedCats(cur => toggleCategory(cur, slug))}
                       />
@@ -864,6 +900,7 @@ export default function EventsPage() {
                     event={calendarEvents[0]}
                     attendeeCount={attendeeCounts[String(calendarEvents[0].kudago_id)] ?? 0}
                     onClick={setSelectedEvent}
+                    onCategoryClick={addCategoryFilter}
                   />
                 </div>
 
@@ -876,6 +913,7 @@ export default function EventsPage() {
                         event={event}
                         attendeeCount={attendeeCounts[String(event.kudago_id)] ?? 0}
                         onClick={setSelectedEvent}
+                        onCategoryClick={addCategoryFilter}
                       />
                     ))}
                   </div>

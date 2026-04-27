@@ -1,30 +1,39 @@
 'use client';
 
-import { memo, useState } from 'react';
+import { memo, useState, type MouseEvent } from 'react';
 import Image from 'next/image';
 import { KudaGoEvent } from '../components/EventCard';
-import { translateCategory, shortMonth } from './utils';
+import { getEventCategoryBadges, shortMonth } from './utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 
 interface FeaturedCardProps {
   event: KudaGoEvent;
   attendeeCount?: number;
   onClick: (event: KudaGoEvent) => void;
+  onCategoryClick?: (slug: string) => void;
 }
 
-function FeaturedCardInner({ event, attendeeCount = 0, onClick }: FeaturedCardProps) {
+function FeaturedCardInner({ event, attendeeCount = 0, onClick, onCategoryClick }: FeaturedCardProps) {
   const [hovered, setHovered] = useState(false);
   const displayTitle = capitalizeFirstDisplayChar(event.title);
 
-  const cats = (event.categories as (string | { slug?: string; name?: string })[])
-    .map(c => {
-      if (typeof c === 'string') return translateCategory(c);
-      if (c?.slug) return translateCategory(c.slug);
-      if (c && typeof c === 'object' && c.name) return translateCategory(c.name);
-      return null;
-    })
-    .filter(Boolean)
-    .slice(0, 2) as string[];
+  const cats = getEventCategoryBadges(event.categories);
+
+  const handleCategoryClick = (e: MouseEvent<HTMLButtonElement>, slug: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onCategoryClick?.(slug);
+  };
+
+  const enhanceCategoryButton = (button: HTMLButtonElement) => {
+    button.style.background = 'rgba(255,255,255,0.28)';
+    button.style.transform = 'translateY(-1px)';
+  };
+
+  const resetCategoryButton = (button: HTMLButtonElement) => {
+    button.style.background = 'rgba(255,255,255,0.18)';
+    button.style.transform = 'translateY(0)';
+  };
 
   const dateDay = event.start_date ? event.start_date.split('-')[2].replace(/^0/, '') : null;
   const dateMon = event.start_date ? shortMonth(event.start_date) : null;
@@ -84,19 +93,28 @@ function FeaturedCardInner({ event, attendeeCount = 0, onClick }: FeaturedCardPr
       {/* Top-left: category badges */}
       <div style={{ position: 'absolute', top: 16, left: 16, display: 'flex', gap: 6 }}>
         {cats.map(cat => (
-          <span
-            key={cat}
+          <button
+            key={cat.key}
+            type="button"
+            onClick={e => handleCategoryClick(e, cat.slug)}
+            onMouseEnter={e => enhanceCategoryButton(e.currentTarget)}
+            onMouseLeave={e => resetCategoryButton(e.currentTarget)}
+            onFocus={e => enhanceCategoryButton(e.currentTarget)}
+            onBlur={e => resetCategoryButton(e.currentTarget)}
+            aria-label={`Фильтровать по категории ${cat.label}`}
             className="text-xs font-bold px-3 py-1 rounded-full"
             style={{
               background: 'rgba(255,255,255,0.18)',
               color: '#fff',
               backdropFilter: 'blur(8px)',
               border: '1px solid rgba(255,255,255,0.3)',
+              cursor: 'pointer',
               letterSpacing: '0.02em',
+              transition: 'background 160ms ease, transform 160ms ease',
             }}
           >
-            {cat}
-          </span>
+            {cat.label}
+          </button>
         ))}
       </div>
 

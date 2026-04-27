@@ -1,30 +1,39 @@
 'use client';
 
-import { memo, useState } from 'react';
+import { memo, useState, type MouseEvent } from 'react';
 import Image from 'next/image';
 import { KudaGoEvent } from '../components/EventCard';
-import { translateCategory, shortMonth } from './utils';
+import { getEventCategoryBadges, shortMonth } from './utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 
 interface MasonryEventCardProps {
   event: KudaGoEvent;
   attendeeCount?: number;
   onClick: (event: KudaGoEvent) => void;
+  onCategoryClick?: (slug: string) => void;
 }
 
-function MasonryEventCardInner({ event, attendeeCount = 0, onClick }: MasonryEventCardProps) {
+function MasonryEventCardInner({ event, attendeeCount = 0, onClick, onCategoryClick }: MasonryEventCardProps) {
   const [hovered, setHovered] = useState(false);
   const displayTitle = capitalizeFirstDisplayChar(event.title);
 
-  const cats = (event.categories as (string | { slug?: string; name?: string })[])
-    .map(c => {
-      if (typeof c === 'string') return translateCategory(c);
-      if (c?.slug) return translateCategory(c.slug);
-      if (c && typeof c === 'object' && c.name) return translateCategory(c.name);
-      return null;
-    })
-    .filter(Boolean)
-    .slice(0, 2) as string[];
+  const cats = getEventCategoryBadges(event.categories);
+
+  const handleCategoryClick = (e: MouseEvent<HTMLButtonElement>, slug: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onCategoryClick?.(slug);
+  };
+
+  const enhanceCategoryButton = (button: HTMLButtonElement) => {
+    button.style.transform = 'translateY(-1px)';
+    button.style.boxShadow = '0 2px 8px var(--primary-ring)';
+  };
+
+  const resetCategoryButton = (button: HTMLButtonElement) => {
+    button.style.transform = 'translateY(0)';
+    button.style.boxShadow = 'none';
+  };
 
   const dateDay = event.start_date
     ? event.start_date.split('-')[2].replace(/^0/, '')
@@ -146,13 +155,27 @@ function MasonryEventCardInner({ event, attendeeCount = 0, onClick }: MasonryEve
           {/* Category pills in the strip for no-image cards */}
           <div className="flex flex-wrap gap-1 pt-1">
             {cats.map(cat => (
-              <span
-                key={cat}
+              <button
+                key={cat.key}
+                type="button"
+                onClick={e => handleCategoryClick(e, cat.slug)}
+                onMouseEnter={e => enhanceCategoryButton(e.currentTarget)}
+                onMouseLeave={e => resetCategoryButton(e.currentTarget)}
+                onFocus={e => enhanceCategoryButton(e.currentTarget)}
+                onBlur={e => resetCategoryButton(e.currentTarget)}
+                aria-label={`Фильтровать по категории ${cat.label}`}
                 className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                style={{ background: 'var(--primary)', color: 'var(--text-inverse)', opacity: 0.85 }}
+                style={{
+                  background: 'var(--primary)',
+                  color: 'var(--text-inverse)',
+                  opacity: 0.85,
+                  border: 'none',
+                  cursor: 'pointer',
+                  transition: 'transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease',
+                }}
               >
-                {cat}
-              </span>
+                {cat.label}
+              </button>
             ))}
           </div>
         </div>
@@ -164,17 +187,26 @@ function MasonryEventCardInner({ event, attendeeCount = 0, onClick }: MasonryEve
         {event.cover_url && cats.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-2">
             {cats.map(cat => (
-              <span
-                key={cat}
+              <button
+                key={cat.key}
+                type="button"
+                onClick={e => handleCategoryClick(e, cat.slug)}
+                onMouseEnter={e => enhanceCategoryButton(e.currentTarget)}
+                onMouseLeave={e => resetCategoryButton(e.currentTarget)}
+                onFocus={e => enhanceCategoryButton(e.currentTarget)}
+                onBlur={e => resetCategoryButton(e.currentTarget)}
+                aria-label={`Фильтровать по категории ${cat.label}`}
                 className="text-xs font-semibold px-2.5 py-0.5 rounded-full"
                 style={{
                   background: 'var(--primary-hl)',
                   color: 'var(--primary)',
                   border: '1px solid var(--border)',
+                  cursor: 'pointer',
+                  transition: 'transform 160ms ease, box-shadow 160ms ease, background 160ms ease',
                 }}
               >
-                {cat}
-              </span>
+                {cat.label}
+              </button>
             ))}
           </div>
         )}

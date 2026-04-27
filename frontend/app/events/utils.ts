@@ -81,6 +81,36 @@ export function translateCategory(raw: unknown): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+export interface EventCategoryBadge {
+  slug: string;
+  label: string;
+  key: string;
+}
+
+export function getEventCategoryBadges(categories: unknown, limit = 2): EventCategoryBadge[] {
+  if (!Array.isArray(categories)) return [];
+
+  return categories
+    .map((category, index): EventCategoryBadge | null => {
+      if (typeof category === 'string' || typeof category === 'number') {
+        const slug = String(category).trim();
+        const label = translateCategory(slug);
+        return slug && label ? { slug, label, key: `${slug}-${index}` } : null;
+      }
+
+      if (category && typeof category === 'object') {
+        const value = category as { slug?: unknown; name?: unknown; id?: unknown };
+        const slug = String(value.slug ?? value.name ?? value.id ?? '').trim();
+        const label = translateCategory(value.name ?? value.slug ?? value.id ?? '');
+        return slug && label ? { slug, label, key: `${slug}-${index}` } : null;
+      }
+
+      return null;
+    })
+    .filter((category): category is EventCategoryBadge => category !== null)
+    .slice(0, limit);
+}
+
 /** Short month name in Russian for date badges */
 export function shortMonth(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number);
