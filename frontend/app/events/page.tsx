@@ -48,6 +48,7 @@ import {
   localStartTs,
   translateCategory,
 } from './utils';
+import { readViewedEventIds } from './viewed-events';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const PAGE_SIZE = 60;
@@ -132,6 +133,8 @@ export default function EventsPage() {
   const [toHour,   setToHour]   = useState<number | null>(null);
   const [weekdays, setWeekdays] = useState<number[]>([]);
   const [hideStarted, setHideStarted] = useState(false);
+  const [hideViewed, setHideViewed] = useState(false);
+  const [viewedEventIds, setViewedEventIds] = useState<Set<string>>(() => new Set());
 
   // Calendar & drawer state
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -145,10 +148,32 @@ export default function EventsPage() {
   const hasLoadedOnceRef = useRef(false);
   const router = useRouter();
 
+  const refreshViewedEventIds = useCallback(() => {
+    setViewedEventIds(new Set(readViewedEventIds()));
+  }, []);
+
   // SSR-safe today
   useEffect(() => {
     setTodayStr(localIsoDate(new Date()));
   }, []);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    refreshViewedEventIds();
+
+    const handleFocus = () => refreshViewedEventIds();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshViewedEventIds();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('pageshow', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('pageshow', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [refreshViewedEventIds]);
   useEffect(() => {
     if (!filterDrawerOpen || typeof window === 'undefined') return;
 
@@ -200,6 +225,7 @@ export default function EventsPage() {
     if (ps) { setPlaceSearchInput(ps); setPlaceSearch(ps); }
     const lat = p.get('lat'), lon = p.get('lon'), rad = p.get('radius_m');
     if (lat && lon && rad) setGeo({ lat: parseFloat(lat), lon: parseFloat(lon), radiusM: parseInt(rad, 10) });
+    if (p.get('hide_viewed') === '1') setHideViewed(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -239,10 +265,11 @@ export default function EventsPage() {
       p.set('lon', String(geo.lon));
       p.set('radius_m', String(geo.radiusM));
     }
+    if (hideViewed) p.set('hide_viewed', '1');
     const qs = p.toString();
     router.replace(qs ? `/events?${qs}` : '/events', { scroll: false });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo, sortBy, maxAge, tags, placeSearch, geo]);
+  }, [city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo, sortBy, maxAge, tags, placeSearch, geo, hideViewed]);
 
   // Load events from API
   const load = useCallback(async (
@@ -382,7 +409,7 @@ export default function EventsPage() {
     setStartingWithinHours(null); setDurationMode(null);
     setHasSchedules(false); setOnlyVerifiedPlace(false);
     setFromHour(null); setToHour(null);
-    setWeekdays([]); setHideStarted(false);
+    setWeekdays([]); setHideStarted(false); setHideViewed(false);
   }, []);
 
   const hasActive = !!(
@@ -392,7 +419,7 @@ export default function EventsPage() {
     hasCover || hasParty || hasFreeSpots || minAttendees ||
     startingWithinHours || durationMode || hasSchedules || onlyVerifiedPlace ||
     fromHour !== null || toHour !== null ||
-    weekdays.length > 0 || hideStarted
+    weekdays.length > 0 || hideStarted || hideViewed
   );
   const activeFilterCount = useMemo(() => {
     return [
@@ -421,18 +448,23 @@ export default function EventsPage() {
       fromHour !== null || toHour !== null,
       weekdays.length > 0,
       hideStarted,
+      hideViewed,
     ].filter(Boolean).length;
   }, [
     city, selectedCats.length, priceMode, minPrice, maxPrice, dateFrom, dateTo, sortBy, maxAge,
     tags.length, placeSearch, geo, quickDate, timeOfDay, permanence, hasCover,
     hasParty, hasFreeSpots, minAttendees, startingWithinHours, durationMode,
-    hasSchedules, onlyVerifiedPlace, fromHour, toHour, weekdays.length, hideStarted,
+    hasSchedules, onlyVerifiedPlace, fromHour, toHour, weekdays.length, hideStarted, hideViewed,
   ]);
 
   const showInitialLoading = loading && !hasLoadedOnceRef.current;
 
   // Backend already handles sorting via order_by; keep a noop memo for downstream code.
   const sortedEvents = events;
+  const visibleEvents = useMemo(() => {
+    if (!hideViewed) return sortedEvents;
+    return sortedEvents.filter(event => !viewedEventIds.has(String(event.kudago_id)));
+  }, [hideViewed, sortedEvents, viewedEventIds]);
 
   const categoryFilterOptions = useMemo(() => {
     const bySlug = new Map<string, Category>();
@@ -441,7 +473,7 @@ export default function EventsPage() {
       if (category.slug) bySlug.set(category.slug, category);
     });
 
-    events.forEach(event => {
+    visibleEvents.forEach(event => {
       getEventCategoryBadges(event.categories, Number.MAX_SAFE_INTEGER).forEach(category => {
         if (!bySlug.has(category.slug)) {
           bySlug.set(category.slug, { slug: category.slug, name: category.label });
@@ -456,25 +488,25 @@ export default function EventsPage() {
     });
 
     return Array.from(bySlug.values());
-  }, [categories, events, selectedCats]);
+  }, [categories, visibleEvents, selectedCats]);
 
   // Events filtered by selected calendar date
   // Permanent events (is_permanent=true or start_date=null) always show
   const calendarEvents = useMemo(() => {
-    if (!selectedDate) return sortedEvents;
-    return sortedEvents.filter(e =>
+    if (!selectedDate) return visibleEvents;
+    return visibleEvents.filter(e =>
       e.start_date === selectedDate ||
       e.is_permanent ||
       e.start_date === null
     );
-  }, [sortedEvents, selectedDate]);
+  }, [visibleEvents, selectedDate]);
 
   // Set of dates that have events (for calendar dots)
   const eventDatesSet = useMemo(() => {
     const s = new Set<string>();
-    sortedEvents.forEach(e => { if (e.start_date) s.add(e.start_date); });
+    visibleEvents.forEach(e => { if (e.start_date) s.add(e.start_date); });
     return s;
-  }, [sortedEvents]);
+  }, [visibleEvents]);
 
   return (
     <div style={{ background: 'var(--bg)', minHeight: '100vh' }}>
@@ -661,6 +693,32 @@ export default function EventsPage() {
                       </option>
                     ))}
                   </select>
+                  <label
+                    className="flex items-center justify-between gap-3"
+                    style={{
+                      padding: '0.75rem 0.9rem',
+                      borderRadius: 'var(--r-xl)',
+                      background: 'var(--surface-2)',
+                      border: `1px solid ${hideViewed ? 'var(--primary)' : 'var(--border)'}`,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
+                      Убрать просмотренные
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={hideViewed}
+                      onChange={e => setHideViewed(e.target.checked)}
+                      aria-label="Убрать просмотренные события"
+                      style={{
+                        width: 18,
+                        height: 18,
+                        accentColor: 'var(--primary)',
+                        flexShrink: 0,
+                      }}
+                    />
+                  </label>
                 </section>
 
                 <section className="flex flex-col gap-3">
@@ -824,7 +882,7 @@ export default function EventsPage() {
       {/* ── Events map: synced 1:1 with the filtered list below ── */}
       {!error && (
         <EventsMap
-          events={sortedEvents}
+          events={visibleEvents}
           city={city}
           onEventClick={setSelectedEvent}
         />
@@ -899,6 +957,7 @@ export default function EventsPage() {
                   <FeaturedCard
                     event={calendarEvents[0]}
                     attendeeCount={attendeeCounts[String(calendarEvents[0].kudago_id)] ?? 0}
+                    isViewed={viewedEventIds.has(String(calendarEvents[0].kudago_id))}
                     onClick={setSelectedEvent}
                     onCategoryClick={addCategoryFilter}
                   />
@@ -912,6 +971,7 @@ export default function EventsPage() {
                         key={event.kudago_id}
                         event={event}
                         attendeeCount={attendeeCounts[String(event.kudago_id)] ?? 0}
+                        isViewed={viewedEventIds.has(String(event.kudago_id))}
                         onClick={setSelectedEvent}
                         onCategoryClick={addCategoryFilter}
                       />
@@ -950,7 +1010,7 @@ export default function EventsPage() {
             )}
 
             {/* Empty masonry state */}
-            {!showInitialLoading && calendarEvents.length === 0 && sortedEvents.length > 0 && (
+            {!showInitialLoading && calendarEvents.length === 0 && visibleEvents.length > 0 && (
               <div
                 className="flex flex-col items-center py-12 gap-3 rounded-2xl"
                 style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
@@ -970,7 +1030,7 @@ export default function EventsPage() {
             )}
 
             {/* Global empty state */}
-            {!showInitialLoading && sortedEvents.length === 0 && !error && (
+            {!showInitialLoading && visibleEvents.length === 0 && !error && (
               <div className="flex flex-col items-center py-20 gap-4 text-center">
                 <span className="text-6xl select-none">🎭</span>
                 <p className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Ничего не найдено</p>
@@ -999,6 +1059,7 @@ export default function EventsPage() {
         <EventDetailDrawer
           event={selectedEvent}
           onClose={() => setSelectedEvent(null)}
+          onViewed={refreshViewedEventIds}
         />
       )}
     </div>

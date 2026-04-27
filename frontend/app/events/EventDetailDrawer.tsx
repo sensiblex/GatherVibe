@@ -6,6 +6,7 @@ import { useEffect } from 'react';
 import { KudaGoEvent } from '../components/EventCard';
 import { translateCategory } from './utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
+import { markEventViewed } from './viewed-events';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toLabel(val: any): string {
@@ -39,9 +40,10 @@ function formatDrawerDate(dateStr: string | null, timeStr: string | null): strin
 interface EventDetailDrawerProps {
   event: KudaGoEvent;
   onClose: () => void;
+  onViewed?: () => void;
 }
 
-export default function EventDetailDrawer({ event, onClose }: EventDetailDrawerProps) {
+export default function EventDetailDrawer({ event, onClose, onViewed }: EventDetailDrawerProps) {
   const displayTitle = capitalizeFirstDisplayChar(event.title);
 
   // Close on Escape key
@@ -71,6 +73,11 @@ export default function EventDetailDrawer({ event, onClose }: EventDetailDrawerP
     : event.is_permanent
     ? 'Постоянное событие'
     : null;
+
+  const handleOpenDetail = () => {
+    markEventViewed(event.kudago_id);
+    onViewed?.();
+  };
 
   return (
     <>
@@ -252,6 +259,7 @@ export default function EventDetailDrawer({ event, onClose }: EventDetailDrawerP
           <div className="mt-auto pt-4" style={{ borderTop: '1px solid var(--divider)' }}>
             <Link
               href={`/events/${event.kudago_id}`}
+              onClick={handleOpenDetail}
               className="flex items-center justify-center gap-2 w-full py-3 px-6 rounded-2xl font-bold text-sm transition"
               style={{
                 background: 'var(--primary)',

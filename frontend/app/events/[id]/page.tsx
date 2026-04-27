@@ -24,6 +24,7 @@ import {
 } from './event-utils';
 import { translateCategory } from '../utils';
 import { capitalizeFirstDisplayChar } from '../../lib/text';
+import { markEventViewed } from '../viewed-events';
 
 const EventMap = dynamic(() => import('../../components/EventMap'), { ssr: false });
 
@@ -227,6 +228,10 @@ export default function EventDetailPage() {
   const [event, setEvent] = useState<UnifiedEvent | null>(null);
   const [status, setStatus] = useState<'loading' | 'ok' | 'notfound' | 'error'>('loading');
   const [myCreatorPartyId, setMyCreatorPartyId] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (eventId) markEventViewed(eventId);
+  }, [eventId]);
 
   useEffect(() => {
     if (!eventId) return;

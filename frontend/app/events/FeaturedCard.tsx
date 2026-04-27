@@ -9,11 +9,12 @@ import { capitalizeFirstDisplayChar } from '../lib/text';
 interface FeaturedCardProps {
   event: KudaGoEvent;
   attendeeCount?: number;
+  isViewed?: boolean;
   onClick: (event: KudaGoEvent) => void;
   onCategoryClick?: (slug: string) => void;
 }
 
-function FeaturedCardInner({ event, attendeeCount = 0, onClick, onCategoryClick }: FeaturedCardProps) {
+function FeaturedCardInner({ event, attendeeCount = 0, isViewed = false, onClick, onCategoryClick }: FeaturedCardProps) {
   const [hovered, setHovered] = useState(false);
   const displayTitle = capitalizeFirstDisplayChar(event.title);
 
@@ -119,7 +120,7 @@ function FeaturedCardInner({ event, attendeeCount = 0, onClick, onCategoryClick 
       </div>
 
       {/* Top-right: attendee count */}
-      {attendeeCount > 0 && (
+      {(isViewed || attendeeCount > 0) && (
         <div
           style={{
             position: 'absolute',
@@ -135,12 +136,25 @@ function FeaturedCardInner({ event, attendeeCount = 0, onClick, onCategoryClick 
             border: '1px solid rgba(255,255,255,0.2)',
           }}
         >
-          <svg width="14" height="14" fill="none" stroke="#fff" strokeWidth="2" viewBox="0 0 24 24">
+          {isViewed && (
+            <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#fff', whiteSpace: 'nowrap' }}>
+              Просмотрено
+            </span>
+          )}
+          <svg
+            width="14"
+            height="14"
+            fill="none"
+            stroke="#fff"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+            style={{ display: attendeeCount > 0 ? 'block' : 'none' }}
+          >
             <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
             <circle cx="9" cy="7" r="4"/>
             <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
           </svg>
-          <span style={{ fontSize: '0.8125rem', fontWeight: 700, color: '#fff' }}>
+          <span style={{ display: attendeeCount > 0 ? 'inline' : 'none', fontSize: '0.8125rem', fontWeight: 700, color: '#fff' }}>
             {attendeeCount} идут
           </span>
         </div>

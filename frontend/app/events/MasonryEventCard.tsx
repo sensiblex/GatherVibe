@@ -9,11 +9,12 @@ import { capitalizeFirstDisplayChar } from '../lib/text';
 interface MasonryEventCardProps {
   event: KudaGoEvent;
   attendeeCount?: number;
+  isViewed?: boolean;
   onClick: (event: KudaGoEvent) => void;
   onCategoryClick?: (slug: string) => void;
 }
 
-function MasonryEventCardInner({ event, attendeeCount = 0, onClick, onCategoryClick }: MasonryEventCardProps) {
+function MasonryEventCardInner({ event, attendeeCount = 0, isViewed = false, onClick, onCategoryClick }: MasonryEventCardProps) {
   const [hovered, setHovered] = useState(false);
   const displayTitle = capitalizeFirstDisplayChar(event.title);
 
@@ -53,6 +54,7 @@ function MasonryEventCardInner({ event, attendeeCount = 0, onClick, onCategoryCl
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
+        position: 'relative',
         background: 'var(--surface)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--r-2xl)',
@@ -63,6 +65,26 @@ function MasonryEventCardInner({ event, attendeeCount = 0, onClick, onCategoryCl
         transition: 'transform 220ms ease, box-shadow 220ms ease',
       }}
     >
+      {isViewed && (
+        <span
+          className="text-xs font-bold px-2.5 py-0.5 rounded-full"
+          style={{
+            position: 'absolute',
+            top: 12,
+            right: 12,
+            zIndex: 3,
+            background: event.cover_url ? 'rgba(255,255,255,0.92)' : 'var(--surface)',
+            color: 'var(--primary)',
+            border: '1px solid rgba(255,255,255,0.65)',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+            backdropFilter: 'blur(8px)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          Просмотрено
+        </span>
+      )}
+
       {/* Cover image */}
       {event.cover_url ? (
         <div style={{ position: 'relative', aspectRatio: '16/10', width: '100%', overflow: 'hidden' }}>
