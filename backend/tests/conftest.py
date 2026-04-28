@@ -17,6 +17,7 @@ from models.user import User
 from models.party import EventParty, PartyMember
 from models.notification import Notification
 from models.token_revocation import RevokedToken  # noqa: F401 — регистрируем таблицу в Base.metadata
+from models.feature_flag import FeatureFlag  # noqa: F401
 from auth import hash_password
 from jwt_handler import create_access_token
 from datetime import timedelta

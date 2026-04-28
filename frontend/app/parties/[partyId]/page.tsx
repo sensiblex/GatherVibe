@@ -55,6 +55,7 @@ interface Party {
   event_date_ts?: number | null;
   event_image_url?: string | null;
   invite_token?: string | null;
+  event_date_ts?: number | null;
   created_at: string;
 }
 

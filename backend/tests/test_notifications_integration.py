@@ -183,14 +183,9 @@ class TestKickCreatesNotification:
 
 
 class TestDeletePartyNotification:
-    def test_delete_party_does_not_create_db_notification(
+    def test_delete_party_creates_db_notification(
         self, client, db, user_a, user_b, token_a, token_b
     ):
-        """
-        KNOWN GAP: delete_party() only emits sio.emit('party_deleted') —
-        it does NOT create a DB notification for members.
-        This test documents the current behavior (not a bug in the test).
-        """
         party = _create_party(db, user_a.id, event_id="kudago-123")
         _join_party(client, party.id, token_b)
         request_id = _get_pending_request_id(db, party.id, user_b.id)
@@ -201,11 +196,13 @@ class TestDeletePartyNotification:
 
         client.delete(f"/parties/{party.id}", headers=AUTH_HEADER(token_a))
 
-        count = db.query(Notification).filter(Notification.user_id == user_b.id).count()
-        assert count == 0, (
-            "Implementation gap: delete_party() should create DB notifications for members "
-            "but currently does not. Only Socket.IO event is emitted."
-        )
+        notif = db.query(Notification).filter(
+            Notification.user_id == user_b.id,
+            Notification.type == "party_deleted_for_user",
+        ).first()
+        assert notif is not None
+        data = json.loads(notif.data)
+        assert data["party_id"] == party.id
 
 
 

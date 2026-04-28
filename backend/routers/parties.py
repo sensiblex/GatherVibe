@@ -558,7 +558,7 @@ async def join_party_by_invite_token(
         PartyMember.party_id == party.id,
         PartyMember.status == MemberStatus.accepted,
     ).count()
-    if accepted_count > party.max_members:
+    if accepted_count + 1 >= party.max_members:
         raise HTTPException(status_code=400, detail="Компания заполнена")
 
     if existing:
@@ -600,7 +600,7 @@ async def join_party_by_invite_token(
     }, room=f"user_{party.creator_id}")
     if party_closed:
         await _notify_party_closed(party, db, exclude_user_ids={party.creator_id, user.id})
-    return _build_party_out(party, db)
+    return _build_party_out(party, db, viewer_id=user.id)
 
 
 @router.get("/parties/{event_id}", response_model=List[PartyOut])
@@ -670,7 +670,7 @@ async def approve_request(
     )
     if party_closed:
         await _notify_party_closed(party, db, exclude_user_ids={party.creator_id, member.user_id})
-    return _build_party_out(party, db)
+    return _build_party_out(party, db, viewer_id=current_user.id)
 
 
 @router.post("/parties/requests/{request_id}/reject", response_model=PartyOut)
@@ -790,7 +790,7 @@ async def create_party(
     db.add(party)
     db.commit()
     db.refresh(party)
-    return _build_party_out(party, db)
+    return _build_party_out(party, db, viewer_id=user.id)
 
 
 @router.patch("/parties/{party_id}", response_model=PartyOut)

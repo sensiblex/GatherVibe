@@ -550,8 +550,6 @@ def bulk_user_action(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
-    if not payload.confirm:
-        raise HTTPException(status_code=400, detail="confirm=true обязателен для bulk-операций")
     if payload.action not in ("warn", "mute", "ban"):
         raise HTTPException(status_code=400, detail="Недопустимое действие")
     if payload.action == "ban" and payload.duration_hours is None and me.role != "admin":
