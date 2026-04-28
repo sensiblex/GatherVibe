@@ -50,6 +50,7 @@ import {
 } from './utils';
 import { readViewedEventIds } from './viewed-events';
 import { eventDetailHref, pickRandomEvent } from './random-event';
+import { FILTER_DRAWER_Z_INDEX, FILTER_OVERLAY_Z_INDEX } from './map-layering';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const PAGE_SIZE = 60;
@@ -637,14 +638,18 @@ export default function EventsPage() {
         {filterDrawerOpen && (
           <>
             <div
-              className="fixed inset-0 z-40"
-              style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)' }}
+              className="fixed inset-0"
+              style={{
+                background: 'rgba(0,0,0,0.45)',
+                backdropFilter: 'blur(2px)',
+                zIndex: FILTER_OVERLAY_Z_INDEX,
+              }}
               onClick={() => setFilterDrawerOpen(false)}
               aria-hidden="true"
             />
 
             <aside
-              className="events-filter-drawer fixed top-0 right-0 z-50 h-full overflow-y-auto flex flex-col"
+              className="events-filter-drawer fixed top-0 right-0 h-full overflow-y-auto flex flex-col"
               style={{
                 width: 460,
                 maxWidth: '100vw',
@@ -652,6 +657,7 @@ export default function EventsPage() {
                 borderLeft: '1px solid var(--border)',
                 boxShadow: 'var(--shadow-lg)',
                 animation: 'filterDrawerSlideIn 0.25s cubic-bezier(0.16,1,0.3,1) forwards',
+                zIndex: FILTER_DRAWER_Z_INDEX,
               }}
               role="dialog"
               aria-modal="true"

@@ -12,6 +12,7 @@ import {
   formatMapStats,
 } from '../events/events-map';
 import type { CitySlug } from '../events/event-filters';
+import { MAP_STACKING_CONTEXT_STYLE } from '../events/map-layering';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { proxiedImageUrl } from '../lib/imageProxy';
 import {
@@ -228,6 +229,10 @@ export default function EventsMap({
           className="gv-map-shell gv-map-shell--events"
           style={{
             height: containerHeight,
+            borderRadius: 16,
+            overflow: 'hidden',
+            border: '1px solid var(--border)',
+            ...MAP_STACKING_CONTEXT_STYLE,
           }}
         >
           {mapped.length === 0 ? (

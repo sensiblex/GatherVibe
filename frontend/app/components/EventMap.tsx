@@ -6,6 +6,7 @@ import 'react-leaflet-cluster/dist/assets/MarkerCluster.Default.css';
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { LatLngTuple } from 'leaflet';
+import { MAP_STACKING_CONTEXT_STYLE } from '../events/map-layering';
 import {
   MAP_TILE_SUBDOMAINS,
   MAP_TILE_URL,
@@ -206,7 +207,7 @@ export default function EventMap({
       )}
 
       {geoState === 'found' && coords && mapExpanded && (
-        <div style={{ height }} className="gv-map-shell">
+        <div style={{ height, ...MAP_STACKING_CONTEXT_STYLE }} className="gv-map-shell">
           <MapInner
             coords={coords}
             title={title}
