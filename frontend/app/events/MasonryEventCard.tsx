@@ -3,7 +3,7 @@
 import { memo, useState, type MouseEvent } from 'react';
 import Image from 'next/image';
 import { KudaGoEvent } from '../components/EventCard';
-import { getEventCategoryBadges, shortMonth } from './utils';
+import { formatPermanentScheduleLabel, getEventCategoryBadges, shortMonth } from './utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { proxiedImageUrl } from '../lib/imageProxy';
 
@@ -42,6 +42,7 @@ function MasonryEventCardInner({ event, attendeeCount = 0, isViewed = false, onC
     ? event.start_date.split('-')[2].replace(/^0/, '')
     : null;
   const dateMon = event.start_date ? shortMonth(event.start_date) : null;
+  const permanentScheduleLabel = formatPermanentScheduleLabel(event);
 
   const priceLabel = event.is_free
     ? 'Бесплатно'
@@ -247,18 +248,22 @@ function MasonryEventCardInner({ event, attendeeCount = 0, isViewed = false, onC
         {/* Meta rows */}
         <div className="flex flex-col gap-1.5">
           {/* Time */}
-          {event.start_time && (
+          {(event.start_time || permanentScheduleLabel) && (
             <div className="flex items-center gap-1.5">
               <svg width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" style={{ color: 'var(--primary)', flexShrink: 0 }}>
                 <circle cx="12" cy="12" r="10"/><path strokeLinecap="round" d="M12 6v6l4 2"/>
               </svg>
               <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-                {event.start_date
-                  ? new Date(...(event.start_date.split('-').map(Number) as [number, number, number]))
-                      .toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
-                  : ''
-                }
-                {event.start_time ? ` в ${event.start_time}` : ''}
+                {permanentScheduleLabel || (
+                  <>
+                    {event.start_date
+                      ? new Date(...(event.start_date.split('-').map(Number) as [number, number, number]))
+                          .toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+                      : ''
+                    }
+                    {event.start_time ? ` в ${event.start_time}` : ''}
+                  </>
+                )}
               </span>
             </div>
           )}

@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 import {
   stripHtml,
   normaliseKudago,
+  formatKudagoDate,
   formatShortDate,
   formatAge,
   safeEventTimestamp,
 } from './event-utils';
+import { groupPermanentScheduleRows } from '../utils';
 
 // ---------------------------------------------------------------------------
 // stripHtml — HTML entity decoding (FAILING: entities are not decoded yet)
@@ -107,5 +109,107 @@ describe('normaliseKudago — place_schedules', () => {
     const schedules = [{ weekday: 1, from: '10:00', to: '18:00' }];
     const event = normaliseKudago({ id: 1, title: 'Test', place_schedules: schedules });
     expect(event.place_schedules).toEqual(schedules);
+  });
+
+  it('place_schedules parses from all_dates.schedules when no separate field exists', () => {
+    const schedules = [{ weekday: 1, from: '10:00', to: '18:00' }];
+    const event = normaliseKudago({
+      id: 1,
+      title: 'Test',
+      is_permanent: true,
+      all_dates: [
+        {
+          start: null,
+          end: null,
+          start_time: null,
+          end_time: null,
+          is_continuous: false,
+          is_endless: true,
+          is_startless: false,
+          use_place_schedule: false,
+          schedules,
+        },
+      ],
+    });
+    expect(event.place_schedules).toEqual(schedules);
+  });
+
+  it('place_schedules parses KudaGo days_of_week schedules from all_dates', () => {
+    const event = normaliseKudago({
+      id: 1,
+      title: 'Test',
+      is_permanent: true,
+      all_dates: [
+        {
+          start: null,
+          end: null,
+          start_time: null,
+          end_time: null,
+          is_continuous: false,
+          is_endless: true,
+          is_startless: false,
+          use_place_schedule: false,
+          schedules: [
+            { days_of_week: [0, 1, 2, 3, 4], start_time: '12:00:00', end_time: '21:00:00' },
+            { days_of_week: [5, 6], start_time: '11:00:00', end_time: '21:00:00' },
+          ],
+        },
+      ],
+    });
+
+    expect(event.place_schedules).toEqual([
+      { weekday: 0, from: '12:00', to: '21:00' },
+      { weekday: 1, from: '12:00', to: '21:00' },
+      { weekday: 2, from: '12:00', to: '21:00' },
+      { weekday: 3, from: '12:00', to: '21:00' },
+      { weekday: 4, from: '12:00', to: '21:00' },
+      { weekday: 5, from: '11:00', to: '21:00' },
+      { weekday: 6, from: '11:00', to: '21:00' },
+    ]);
+  });
+});
+
+describe('formatKudagoDate - permanent schedules', () => {
+  it('returns place schedule text for use_place_schedule without concrete date', () => {
+    const event = normaliseKudago({
+      id: 1,
+      title: 'Test',
+      is_permanent: true,
+      all_dates: [
+        {
+          start: null,
+          end: null,
+          start_time: null,
+          end_time: null,
+          is_continuous: false,
+          is_endless: false,
+          is_startless: false,
+          use_place_schedule: true,
+          schedules: [],
+        },
+      ],
+    });
+
+    expect(formatKudagoDate(event)).toBe('По расписанию места');
+  });
+});
+
+describe('groupPermanentScheduleRows', () => {
+  it('deduplicates overlapping KudaGo schedules and renders compact day ranges', () => {
+    expect(groupPermanentScheduleRows([
+      { weekday: 0, from: '12:00', to: '21:00' },
+      { weekday: 1, from: '12:00', to: '21:00' },
+      { weekday: 2, from: '12:00', to: '21:00' },
+      { weekday: 3, from: '12:00', to: '21:00' },
+      { weekday: 4, from: '12:00', to: '21:00' },
+      { weekday: 1, from: '12:00', to: '21:00' },
+      { weekday: 2, from: '12:00', to: '21:00' },
+      { weekday: 5, from: '11:00', to: '21:00' },
+      { weekday: 6, from: '11:00', to: '21:00' },
+      { weekday: 5, from: '11:00', to: '21:00' },
+    ])).toEqual([
+      { label: 'Пн-Пт', time: '12:00-21:00' },
+      { label: 'Сб, Вс', time: '11:00-21:00' },
+    ]);
   });
 });

@@ -21,7 +21,7 @@ import {
   formatAge,
   safeEventTimestamp,
 } from './event-utils';
-import { translateCategory } from '../utils';
+import { groupPermanentScheduleRows, translateCategory } from '../utils';
 import { capitalizeFirstDisplayChar } from '../../lib/text';
 import { proxiedImageUrl } from '../../lib/imageProxy';
 import { markEventViewed } from '../viewed-events';
@@ -82,8 +82,9 @@ function isVirtualAddress(addr: string): boolean {
   return keywords.some(k => addr.toLowerCase().includes(k));
 }
 
-function PermanentSchedule({ schedules }: { schedules?: ScheduleEntry[] }) {
+function PermanentSchedule({ schedules, usePlaceSchedule = false }: { schedules?: ScheduleEntry[]; usePlaceSchedule?: boolean }) {
   const hasSchedule = schedules && schedules.length > 0;
+  const scheduleRows = hasSchedule ? groupPermanentScheduleRows(schedules!) : [];
 
   function groupSchedule(entries: ScheduleEntry[]): { label: string; time: string }[] {
     const sorted = [...entries].sort((a, b) => a.weekday - b.weekday);
@@ -120,12 +121,12 @@ function PermanentSchedule({ schedules }: { schedules?: ScheduleEntry[] }) {
 
       {hasSchedule ? (
         <div className="space-y-2">
-          {groupSchedule(schedules!).map((row, i) => (
-            <div key={i} className="flex justify-between items-center">
-              <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>{row.label}</span>
+          {scheduleRows.map((row, i) => (
+            <div key={`${row.label}-${row.time}-${i}`} className="grid items-center gap-3" style={{ gridTemplateColumns: 'minmax(0, 1fr) auto' }}>
+              <span className="text-sm font-medium" style={{ color: 'var(--text)', minWidth: 0 }}>{row.label}</span>
               <span
-                className="text-sm font-semibold px-3 py-0.5 rounded-full"
-                style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
+                className="text-sm font-semibold px-3 py-0.5 rounded-full whitespace-nowrap"
+                style={{ background: 'var(--primary-hl)', color: 'var(--primary)', justifySelf: 'end' }}
               >
                 {row.time}
               </span>
@@ -134,6 +135,11 @@ function PermanentSchedule({ schedules }: { schedules?: ScheduleEntry[] }) {
         </div>
       ) : (
         <div className="space-y-2">
+          {usePlaceSchedule && (
+            <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
+              По расписанию места
+            </p>
+          )}
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
             Точное расписание уточняйте на сайте места проведения.
           </p>
@@ -501,7 +507,10 @@ export default function EventDetailPage() {
 
                 {/* Блок расписания для постоянных событий */}
                 {event.source === 'kudago' && event.is_permanent && (
-                  <PermanentSchedule schedules={event.place_schedules} />
+                  <PermanentSchedule
+                    schedules={event.place_schedules}
+                    usePlaceSchedule={event.all_dates?.some(d => d.use_place_schedule)}
+                  />
                 )}
 
                 {/* Разовые даты (только если НЕ постоянное событие) */}

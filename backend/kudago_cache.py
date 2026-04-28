@@ -14,6 +14,18 @@ import re
 from sqlalchemy import func, or_
 
 
+def _json_list(val):
+    if not val:
+        return []
+    if isinstance(val, list):
+        return val
+    try:
+        parsed = json.loads(val)
+        return parsed if isinstance(parsed, list) else []
+    except Exception:
+        return []
+
+
 def _escape_like(pattern: str) -> str:
     """Escape LIKE wildcards so raw user input matches literally."""
     return pattern.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -39,10 +51,44 @@ def _matches_time_of_day(start_time: Optional[str], tod: str) -> bool:
     return True
 
 
-def _matches_weekday(start_ts: Optional[int], is_permanent: bool, allowed: set) -> bool:
-    """Permanent events excluded (no specific weekday). Uses Python weekday()
-    (0=Mon..6=Sun) derived from local-timezone timestamp."""
-    if is_permanent or not start_ts:
+def _schedule_weekdays(all_dates: object) -> set[int]:
+    weekdays: set[int] = set()
+    for date_entry in _json_list(all_dates):
+        if not isinstance(date_entry, dict):
+            continue
+        schedules = date_entry.get("schedules") or []
+        if not isinstance(schedules, list):
+            continue
+        for schedule in schedules:
+            if not isinstance(schedule, dict):
+                continue
+            raw_days = schedule.get("days_of_week")
+            if isinstance(raw_days, list):
+                for raw_weekday in raw_days:
+                    try:
+                        weekday = int(raw_weekday)
+                    except (TypeError, ValueError):
+                        continue
+                    if 0 <= weekday <= 6:
+                        weekdays.add(weekday)
+                continue
+
+            raw_weekday = schedule.get("weekday")
+            try:
+                weekday = int(raw_weekday)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= weekday <= 6:
+                weekdays.add(weekday)
+    return weekdays
+
+
+def _matches_weekday(start_ts: Optional[int], is_permanent: bool, allowed: set, all_dates: object = None) -> bool:
+    """Uses Python weekday() for dated events and schedules for permanent events."""
+    if is_permanent:
+        schedule_days = _schedule_weekdays(all_dates)
+        return bool(schedule_days and schedule_days & allowed)
+    if not start_ts:
         return False
     try:
         return datetime.fromtimestamp(start_ts).weekday() in allowed
@@ -155,6 +201,10 @@ def _parse_start_ts(raw_event: dict) -> Optional[int]:
 
 def _row_from_parsed(parsed: dict, location: str) -> dict:
     """Конвертируем результат parse_events в dict для upsert."""
+    all_dates = parsed.get("all_dates") or []
+    has_schedules = bool(parsed.get("has_schedules", False)) or any(
+        bool(d.get("schedules")) for d in all_dates if isinstance(d, dict)
+    )
     return {
         "kudago_id": parsed["kudago_id"],
         "location": location,
@@ -175,10 +225,10 @@ def _row_from_parsed(parsed: dict, location: str) -> dict:
         "site_url": parsed.get("site_url", ""),
         "start_date": parsed.get("start_date"),
         "start_time": parsed.get("start_time"),
-        "all_dates": json.dumps(parsed.get("all_dates") or [], ensure_ascii=False),
+        "all_dates": json.dumps(all_dates, ensure_ascii=False),
         "is_permanent": bool(parsed.get("is_permanent", False)),
         "end_ts": parsed.get("end_ts"),
-        "has_schedules": bool(parsed.get("has_schedules", False)),
+        "has_schedules": has_schedules,
         "place_is_stub": parsed.get("place_is_stub"),
         "place_title": parsed.get("place_title", ""),
         "place_address": parsed.get("place_address", ""),
@@ -540,7 +590,7 @@ def query_cache(
         if hour_range_active:
             all_rows = [r for r in all_rows if _matches_hour_range(r.start_time, from_hour, to_hour)]
         if weekday_active:
-            all_rows = [r for r in all_rows if _matches_weekday(r.start_ts, r.is_permanent, weekday_set)]
+            all_rows = [r for r in all_rows if _matches_weekday(r.start_ts, r.is_permanent, weekday_set, r.all_dates)]
         if sort_by_nearest:
             all_rows.sort(key=lambda r: _haversine_km(lat, lon, r.lat, r.lon))
         total = len(all_rows)
@@ -566,33 +616,26 @@ def query_cache(
 
 
 def _row_to_response(row: KudaGoEvent) -> dict:
-    def _json(val):
-        if not val:
-            return []
-        try:
-            return json.loads(val)
-        except Exception:
-            return []
-
     return {
         "kudago_id": row.kudago_id,
         "title": row.title,
         "short_title": row.short_title or "",
         "description": row.description or "",
-        "categories": _json(row.categories),
-        "tags": _json(row.tags),
+        "categories": _json_list(row.categories),
+        "tags": _json_list(row.tags),
         "price": row.price or "",
         "is_free": row.is_free,
         "age_restriction": row.age_restriction,
         "favorites_count": row.favorites_count or 0,
         "comments_count": row.comments_count or 0,
         "publication_ts": row.publication_ts,
-        "images": _json(row.images),
+        "images": _json_list(row.images),
         "cover_url": row.cover_url,
         "start_date": row.start_date,
         "start_time": row.start_time,
-        "all_dates": _json(row.all_dates),
+        "all_dates": _json_list(row.all_dates),
         "is_permanent": row.is_permanent,
+        "has_schedules": row.has_schedules,
         "place_title": row.place_title or "",
         "place_address": row.place_address or "",
         "place_phone": row.place_phone or "",

@@ -87,6 +87,143 @@ export interface EventCategoryBadge {
   key: string;
 }
 
+export interface ScheduleEntry {
+  weekday: number;
+  from: string;
+  to: string;
+}
+
+export interface ScheduleRow {
+  label: string;
+  time: string;
+}
+
+const WEEKDAY_SHORT = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+export function extractSchedulesFromAllDates(allDates: unknown): ScheduleEntry[] {
+  if (!Array.isArray(allDates)) return [];
+  const schedules: ScheduleEntry[] = [];
+
+  for (const dateEntry of allDates) {
+    if (!dateEntry || typeof dateEntry !== 'object') continue;
+    const rawSchedules = (dateEntry as { schedules?: unknown }).schedules;
+    if (!Array.isArray(rawSchedules)) continue;
+
+    for (const rawSchedule of rawSchedules) {
+      if (!rawSchedule || typeof rawSchedule !== 'object') continue;
+      const schedule = rawSchedule as {
+        weekday?: unknown;
+        days_of_week?: unknown;
+        from?: unknown;
+        to?: unknown;
+        start_time?: unknown;
+        end_time?: unknown;
+      };
+      const from = normalizeScheduleTime(schedule.from ?? schedule.start_time);
+      const to = normalizeScheduleTime(schedule.to ?? schedule.end_time);
+
+      if (Array.isArray(schedule.days_of_week)) {
+        for (const rawWeekday of schedule.days_of_week) {
+          const weekday = Number(rawWeekday);
+          if (Number.isInteger(weekday) && weekday >= 0 && weekday <= 6 && from && to) {
+            schedules.push({ weekday, from, to });
+          }
+        }
+        continue;
+      }
+
+      const weekday = Number(schedule.weekday);
+      if (Number.isInteger(weekday) && weekday >= 0 && weekday <= 6 && from && to) {
+        schedules.push({ weekday, from, to });
+      }
+    }
+  }
+
+  return schedules;
+}
+
+function normalizeScheduleTime(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.length >= 5 ? value.slice(0, 5) : value;
+}
+
+export function usesPlaceSchedule(allDates: unknown): boolean {
+  return Array.isArray(allDates) && allDates.some(dateEntry =>
+    Boolean(dateEntry && typeof dateEntry === 'object' && (dateEntry as { use_place_schedule?: unknown }).use_place_schedule)
+  );
+}
+
+export function formatPermanentScheduleLabel(event: {
+  is_permanent?: boolean;
+  all_dates?: unknown;
+}): string | null {
+  if (!event.is_permanent) return null;
+
+  const schedules = extractSchedulesFromAllDates(event.all_dates);
+  if (schedules.length > 0) {
+    const first = schedules[0];
+    const day = WEEKDAY_SHORT[first.weekday] ?? '';
+    const suffix = schedules.length > 1 ? ` +${schedules.length - 1}` : '';
+    return `${day} ${first.from}-${first.to}${suffix}`.trim();
+  }
+
+  if (usesPlaceSchedule(event.all_dates)) {
+    return 'По расписанию места';
+  }
+
+  return null;
+}
+
+export function groupPermanentScheduleRows(entries: ScheduleEntry[]): ScheduleRow[] {
+  const byTime = new Map<string, Set<number>>();
+
+  for (const entry of entries) {
+    if (!Number.isInteger(entry.weekday) || entry.weekday < 0 || entry.weekday > 6 || !entry.from || !entry.to) {
+      continue;
+    }
+    const key = `${entry.from}-${entry.to}`;
+    const days = byTime.get(key) ?? new Set<number>();
+    days.add(entry.weekday);
+    byTime.set(key, days);
+  }
+
+  return [...byTime.entries()]
+    .map(([time, days]) => ({
+      label: formatWeekdayRanges([...days].sort((a, b) => a - b)),
+      time,
+      firstDay: Math.min(...days),
+    }))
+    .sort((a, b) => a.firstDay - b.firstDay || a.time.localeCompare(b.time))
+    .map(({ label, time }) => ({ label, time }));
+}
+
+function formatWeekdayRanges(days: number[]): string {
+  const ranges: string[] = [];
+  let start = days[0];
+  let prev = days[0];
+
+  for (let i = 1; i <= days.length; i += 1) {
+    const day = days[i];
+    if (day === prev + 1) {
+      prev = day;
+      continue;
+    }
+
+    if (start === prev) {
+      ranges.push(WEEKDAY_SHORT[start] ?? '');
+    } else if (prev === start + 1) {
+      ranges.push(WEEKDAY_SHORT[start] ?? '', WEEKDAY_SHORT[prev] ?? '');
+    } else {
+      ranges.push(`${WEEKDAY_SHORT[start] ?? ''}-${WEEKDAY_SHORT[prev] ?? ''}`);
+    }
+
+    start = day;
+    prev = day;
+  }
+
+  return ranges.filter(Boolean).join(', ');
+}
+
 export function getEventCategoryBadges(categories: unknown, limit = 2): EventCategoryBadge[] {
   if (!Array.isArray(categories)) return [];
 

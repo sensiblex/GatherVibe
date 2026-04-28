@@ -1,6 +1,7 @@
 // Pure utility functions extracted from the event detail page.
 // React / Next.js imports are intentionally absent — this file is node-safe
 // so that Vitest can run tests without a browser environment.
+import { extractSchedulesFromAllDates, usesPlaceSchedule } from '../utils';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,6 +33,7 @@ export interface UnifiedEvent {
     is_endless: boolean;
     is_startless?: boolean;
     use_place_schedule?: boolean;
+    schedules?: ScheduleEntry[];
   }>;
   is_permanent?: boolean;
   place_schedules?: ScheduleEntry[];
@@ -85,7 +87,12 @@ export function stripHtml(html: string): string {
 }
 
 export function formatKudagoDate(event: UnifiedEvent): string {
-  if (event.is_permanent) return 'Постоянная экспозиция';
+  if (event.is_permanent) {
+    if (usesPlaceSchedule(event.all_dates) && (!event.place_schedules || event.place_schedules.length === 0)) {
+      return 'По расписанию места';
+    }
+    return 'Постоянная экспозиция';
+  }
   if (event.start_date) {
     const d = event.start_date;
     const t = event.start_time ? ` в ${event.start_time}` : '';
@@ -103,10 +110,8 @@ export function normaliseKudago(data: Record<string, unknown>): UnifiedEvent {
   const allDates = (data.all_dates as UnifiedEvent['all_dates']) ?? [];
   const isPermanent = Boolean(data.is_permanent) ||
     allDates.some(d => d.is_endless || d.is_startless || d.use_place_schedule);
-  // place_schedules: currently always returns [] — TDD test covers the case
-  // where data.place_schedules is supplied and should be used.
   const placeSchedules: ScheduleEntry[] =
-    (data.place_schedules as ScheduleEntry[] | undefined) ?? [];
+    (data.place_schedules as ScheduleEntry[] | undefined) ?? extractSchedulesFromAllDates(allDates);
   const locationSlug = (data.location as string) || null;
   const city = locationSlug ? (KUDAGO_CITY_NAMES[locationSlug] ?? null) : null;
 

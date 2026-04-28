@@ -10,11 +10,12 @@ from models.kudago_event import KudaGoEvent
 def _make(
     db, *, kid: int, location: str = "msk", title: str = "T",
     start_ts: int | None = None, end_ts: int | None = None,
-    is_permanent: bool = False,
+    is_permanent: bool = False, all_dates: list[dict] | None = None,
 ) -> KudaGoEvent:
     e = KudaGoEvent(
         kudago_id=kid, location=location, title=title, title_lower=title.lower(),
         categories=json.dumps([]), tags=json.dumps([]),
+        all_dates=json.dumps(all_dates or [], ensure_ascii=False),
         start_ts=start_ts, end_ts=end_ts,
         is_permanent=is_permanent,
         price="", favorites_count=0,
@@ -70,6 +71,98 @@ def test_weekdays_excludes_permanent_events(db):
 
     res = kudago_cache.query_cache(db=db, location="msk", weekdays="0")
     assert [e["title"] for e in res["results"]] == ["Mon"]
+
+
+def test_weekdays_includes_permanent_events_when_schedules_have_weekday(db):
+    _make(db, kid=1, title="Mon", start_ts=_ts_on_weekday(0))
+    _make(
+        db,
+        kid=2,
+        title="ScheduledExpo",
+        is_permanent=True,
+        all_dates=[
+            {
+                "start": None,
+                "end": None,
+                "start_time": None,
+                "end_time": None,
+                "is_continuous": False,
+                "is_endless": True,
+                "is_startless": False,
+                "use_place_schedule": False,
+                "schedules": [{"weekday": 0, "from": "10:00", "to": "18:00"}],
+            }
+        ],
+    )
+    _make(
+        db,
+        kid=3,
+        title="SundayExpo",
+        is_permanent=True,
+        all_dates=[
+            {
+                "start": None,
+                "end": None,
+                "start_time": None,
+                "end_time": None,
+                "is_continuous": False,
+                "is_endless": True,
+                "is_startless": False,
+                "use_place_schedule": False,
+                "schedules": [{"weekday": 6, "from": "10:00", "to": "18:00"}],
+            }
+        ],
+    )
+
+    res = kudago_cache.query_cache(db=db, location="msk", weekdays="0")
+    titles = {e["title"] for e in res["results"]}
+    assert titles == {"Mon", "ScheduledExpo"}
+
+
+def test_weekdays_includes_permanent_events_when_kudago_schedules_have_days_of_week(db):
+    _make(db, kid=1, title="Mon", start_ts=_ts_on_weekday(0))
+    _make(
+        db,
+        kid=2,
+        title="KudagoScheduledExpo",
+        is_permanent=True,
+        all_dates=[
+            {
+                "start": None,
+                "end": None,
+                "start_time": None,
+                "end_time": None,
+                "is_continuous": False,
+                "is_endless": True,
+                "is_startless": False,
+                "use_place_schedule": False,
+                "schedules": [{"days_of_week": [0, 1, 2, 3, 4], "start_time": "12:00:00", "end_time": "21:00:00"}],
+            }
+        ],
+    )
+    _make(
+        db,
+        kid=3,
+        title="WeekendExpo",
+        is_permanent=True,
+        all_dates=[
+            {
+                "start": None,
+                "end": None,
+                "start_time": None,
+                "end_time": None,
+                "is_continuous": False,
+                "is_endless": True,
+                "is_startless": False,
+                "use_place_schedule": False,
+                "schedules": [{"days_of_week": [5, 6], "start_time": "11:00:00", "end_time": "21:00:00"}],
+            }
+        ],
+    )
+
+    res = kudago_cache.query_cache(db=db, location="msk", weekdays="0")
+    titles = {e["title"] for e in res["results"]}
+    assert titles == {"Mon", "KudagoScheduledExpo"}
 
 
 def test_weekdays_invalid_values_ignored(db):

@@ -4,6 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect } from 'react';
 import { KudaGoEvent, getCategoryBadges } from '../lib/kudagoUi';
+import { formatPermanentScheduleLabel } from './utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { markEventViewed } from './viewed-events';
 import { proxiedImageUrl } from '../lib/imageProxy';
@@ -53,11 +54,15 @@ export default function EventDetailDrawer({ event, onClose, onViewed }: EventDet
 
   const categories = getCategoryBadges(event.categories, 3);
 
+  const permanentScheduleLabel = formatPermanentScheduleLabel(event);
   const dateLabel = event.start_date
     ? formatDrawerDate(event.start_date, event.start_time)
     : event.is_permanent
     ? 'Постоянное событие'
     : null;
+  const displayDateLabel = event.is_permanent
+    ? permanentScheduleLabel || (event.start_date ? dateLabel : 'Постоянное событие')
+    : dateLabel;
 
   const handleOpenDetail = () => {
     markEventViewed(event.kudago_id);
@@ -160,7 +165,7 @@ export default function EventDetailDrawer({ event, onClose, onViewed }: EventDet
           {/* Meta info */}
           <div className="flex flex-col gap-3">
             {/* Date */}
-            {dateLabel && (
+            {displayDateLabel && (
               <div className="flex items-start gap-3">
                 <div
                   className="flex items-center justify-center w-8 h-8 rounded-xl shrink-0 mt-0.5"
@@ -178,7 +183,7 @@ export default function EventDetailDrawer({ event, onClose, onViewed }: EventDet
                     Дата и время
                   </p>
                   <p className="text-sm font-medium capitalize" style={{ color: 'var(--text)' }}>
-                    {dateLabel}
+                    {displayDateLabel}
                   </p>
                 </div>
               </div>

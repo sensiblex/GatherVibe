@@ -135,6 +135,27 @@ def _is_permanent_date(d: dict) -> bool:
     return bool(d.get("is_endless") or d.get("is_startless") or d.get("use_place_schedule"))
 
 
+def _event_date_entry(
+    d: dict,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+) -> dict:
+    schedules = d.get("schedules")
+    return {
+        "start": start_date,
+        "end": end_date,
+        "start_time": start_time,
+        "end_time": end_time,
+        "is_continuous": d.get("is_continuous", False),
+        "is_endless": d.get("is_endless", False),
+        "is_startless": d.get("is_startless", False),
+        "use_place_schedule": d.get("use_place_schedule", False),
+        "schedules": schedules if schedules is not None else [],
+    }
+
+
 def parse_events(raw: dict, skip_date_filter: bool = False) -> list:
     import datetime
     import time
@@ -165,16 +186,7 @@ def parse_events(raw: dict, skip_date_filter: bool = False) -> list:
             is_permanent = True
             start_date = None
             start_time = None
-            all_dates = [{
-                "start": None,
-                "end": None,
-                "start_time": None,
-                "end_time": None,
-                "is_continuous": permanent_dates[0].get("is_continuous", False),
-                "is_endless": permanent_dates[0].get("is_endless", False),
-                "is_startless": permanent_dates[0].get("is_startless", False),
-                "use_place_schedule": permanent_dates[0].get("use_place_schedule", False),
-            }]
+            all_dates = [_event_date_entry(d) for d in permanent_dates]
         elif future_dates:
             for d in future_dates:
                 start_ts = d.get("start")
@@ -191,12 +203,7 @@ def parse_events(raw: dict, skip_date_filter: bool = False) -> list:
                     dt2 = datetime.datetime.fromtimestamp(end_ts)
                     ed = dt2.strftime("%Y-%m-%d")
                     et = dt2.strftime("%H:%M")
-                all_dates.append({
-                    "start": sd, "end": ed,
-                    "start_time": st, "end_time": et,
-                    "is_continuous": d.get("is_continuous", False),
-                    "is_endless": d.get("is_endless", False),
-                })
+                all_dates.append(_event_date_entry(d, sd, ed, st, et))
 
             # Выбрать ближайшую будущую дату
             selected_date = None
@@ -226,7 +233,7 @@ def parse_events(raw: dict, skip_date_filter: bool = False) -> list:
         tag_list = [_safe_str(t) for t in raw_tags if _safe_str(t)]
 
         _raw_dates = e.get("dates") or []
-        has_sched = any(bool(d.get("schedules")) for d in _raw_dates)
+        has_sched = any(bool(d.get("schedules")) for d in all_dates)
         nearest_end_ts = None
         if not is_permanent:
             future_ends = [d.get("end") for d in _raw_dates
@@ -292,16 +299,7 @@ def parse_event_detail(e: dict) -> dict:
 
     if permanent_dates:
         is_permanent = True
-        all_dates = [{
-            "start": None,
-            "end": None,
-            "start_time": None,
-            "end_time": None,
-            "is_continuous": permanent_dates[0].get("is_continuous", False),
-            "is_endless": permanent_dates[0].get("is_endless", False),
-            "is_startless": permanent_dates[0].get("is_startless", False),
-            "use_place_schedule": permanent_dates[0].get("use_place_schedule", False),
-        }]
+        all_dates = [_event_date_entry(d) for d in permanent_dates]
     elif future_dates:
         for d in future_dates:
             start_ts = d.get("start")
@@ -315,9 +313,7 @@ def parse_event_detail(e: dict) -> dict:
                 dt2 = datetime.datetime.fromtimestamp(end_ts)
                 ed = dt2.strftime("%Y-%m-%d")
                 et = dt2.strftime("%H:%M")
-            all_dates.append({"start": sd, "end": ed, "start_time": st, "end_time": et,
-                               "is_continuous": d.get("is_continuous", False),
-                               "is_endless": d.get("is_endless", False)})
+            all_dates.append(_event_date_entry(d, sd, ed, st, et))
 
         # Выбрать ближайшую будущую дату
         selected_date = None
@@ -367,6 +363,7 @@ def parse_event_detail(e: dict) -> dict:
         "start_time": start_time,
         "all_dates": all_dates,
         "is_permanent": is_permanent,
+        "has_schedules": any(bool(d.get("schedules")) for d in all_dates),
         "place_title": _safe_str(place.get("title")),
         "place_address": _safe_str(place.get("address")),
         "place_phone": _safe_str(place.get("phone")),

@@ -4,6 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { getCategoryBadges } from '../lib/kudagoUi';
 import type { KudaGoEvent } from '../lib/kudagoUi';
+import { formatPermanentScheduleLabel } from '../events/utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { proxiedImageUrl } from '../lib/imageProxy';
 export type { KudaGoEvent, KudaGoParty, UnknownTagLike } from '../lib/kudagoUi';
@@ -36,6 +37,7 @@ export default function EventCard({ event, attendees = [] }: { event: KudaGoEven
   const ageLabel = event.age_restriction ? (typeof event.age_restriction === 'string' && event.age_restriction.endsWith('+') ? event.age_restriction : `${event.age_restriction}+`) : null;
   const displayTitle = capitalizeFirstDisplayChar(event.title);
   const coverUrl = proxiedImageUrl(event.cover_url);
+  const permanentScheduleLabel = formatPermanentScheduleLabel(event);
 
   return (
     <Link
@@ -80,7 +82,7 @@ export default function EventCard({ event, attendees = [] }: { event: KudaGoEven
           )}
         </div>
 
-        {formatDate(event.start_date, event.start_time) && (
+        {(formatDate(event.start_date, event.start_time) || permanentScheduleLabel) && (
           <span
             className="absolute bottom-3 right-3 text-xs font-semibold px-2.5 py-1 rounded-lg shadow-md"
             style={{
@@ -90,7 +92,7 @@ export default function EventCard({ event, attendees = [] }: { event: KudaGoEven
               WebkitBackdropFilter: 'blur(4px)',
             }}
           >
-            {formatDate(event.start_date, event.start_time)}
+            {formatDate(event.start_date, event.start_time) || permanentScheduleLabel}
           </span>
         )}
       </div>
