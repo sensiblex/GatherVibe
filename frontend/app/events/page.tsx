@@ -49,6 +49,7 @@ import {
   translateCategory,
 } from './utils';
 import { readViewedEventIds } from './viewed-events';
+import { eventDetailHref, pickRandomEvent } from './random-event';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const PAGE_SIZE = 60;
@@ -501,6 +502,14 @@ export default function EventsPage() {
     );
   }, [visibleEvents, selectedDate]);
 
+  const randomEventDisabled = showInitialLoading || isRefreshing || calendarEvents.length === 0;
+  const handleRandomEventClick = useCallback(() => {
+    if (randomEventDisabled) return;
+    const event = pickRandomEvent(calendarEvents);
+    if (!event) return;
+    router.push(eventDetailHref(event));
+  }, [calendarEvents, randomEventDisabled, router]);
+
   // Set of dates that have events (for calendar dots)
   const eventDatesSet = useMemo(() => {
     const s = new Set<string>();
@@ -530,7 +539,7 @@ export default function EventsPage() {
         </div>
 
         {/* Search */}
-        <div className="events-search-row">
+        <div className="events-search-row" style={{ flexWrap: 'wrap' }}>
           <div className="input-wrap" style={{ flex: 1 }}>
             <svg className="input-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
               <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
@@ -543,6 +552,42 @@ export default function EventsPage() {
               className="input input-padl"
             />
           </div>
+          <button
+            type="button"
+            onClick={handleRandomEventClick}
+            disabled={randomEventDisabled}
+            className="btn"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '.65rem 1rem',
+              borderRadius: 'var(--r-full)',
+              background: randomEventDisabled ? 'var(--surface-2)' : 'var(--ink)',
+              color: randomEventDisabled ? 'var(--text-dim)' : 'var(--text-inverse)',
+              border: `1px solid ${randomEventDisabled ? 'var(--border)' : 'var(--ink)'}`,
+              boxShadow: randomEventDisabled ? 'none' : 'var(--shadow-sm)',
+              fontWeight: 800,
+              whiteSpace: 'nowrap',
+              cursor: randomEventDisabled ? 'not-allowed' : 'pointer',
+              opacity: randomEventDisabled ? 0.65 : 1,
+            }}
+            aria-label={
+              randomEventDisabled
+                ? 'Случайное событие недоступно: список пуст или загружается'
+                : 'Перейти на случайное событие из текущего списка'
+            }
+            title={randomEventDisabled ? 'Нет доступных событий' : 'Перейти на случайное событие'}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M16 3h5v5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M4 20 21 3" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M21 16v5h-5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M15 15l6 6" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M4 4l5 5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Случайное событие
+          </button>
           <button
             type="button"
             onClick={() => setFilterDrawerOpen(true)}
