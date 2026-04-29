@@ -7,7 +7,7 @@ import {
   formatAge,
   safeEventTimestamp,
 } from './event-utils';
-import { groupPermanentScheduleRows } from '../utils';
+import { formatEventDateTimeLabel, formatPermanentScheduleLabel, groupPermanentScheduleRows } from '../utils';
 
 // ---------------------------------------------------------------------------
 // stripHtml — HTML entity decoding (FAILING: entities are not decoded yet)
@@ -191,6 +191,62 @@ describe('formatKudagoDate - permanent schedules', () => {
     });
 
     expect(formatKudagoDate(event)).toBe('По расписанию места');
+  });
+});
+
+describe('KudaGo event time display', () => {
+  it('formats card date labels without shifting the month', () => {
+    expect(formatEventDateTimeLabel('2026-04-30', '18:00')).toBe('30 апреля в 18:00');
+    expect(formatEventDateTimeLabel('2026-04-30', '18:00', { timeSeparator: ' · ' })).toBe('30 апреля · 18:00');
+  });
+
+  it('keeps the same start time after normalising event data for the detail page', () => {
+    const event = normaliseKudago({
+      kudago_id: 42,
+      title: 'Concert',
+      start_date: '2026-05-14',
+      start_time: '19:00',
+      all_dates: [
+        {
+          start: '2026-05-14',
+          end: '2026-05-14',
+          start_time: '19:00',
+          end_time: '21:30',
+          is_continuous: false,
+          is_endless: false,
+          is_startless: false,
+          use_place_schedule: false,
+          schedules: [],
+        },
+      ],
+    });
+
+    expect(event.start_date).toBe('2026-05-14');
+    expect(event.start_time).toBe('19:00');
+    expect(event.all_dates?.[0].end_time).toBe('21:30');
+    expect(formatKudagoDate(event)).toContain('19:00');
+  });
+
+  it('does not render nullish or invalid date tokens for permanent schedules', () => {
+    const label = formatPermanentScheduleLabel({
+      is_permanent: true,
+      all_dates: [
+        {
+          start: null,
+          end: null,
+          start_time: null,
+          end_time: null,
+          is_continuous: false,
+          is_endless: true,
+          is_startless: false,
+          use_place_schedule: false,
+          schedules: [{ weekday: 1, from: '10:00', to: '18:00' }],
+        },
+      ],
+    });
+
+    expect(label).toContain('10:00-18:00');
+    expect(label).not.toMatch(/null|undefined|Invalid Date/i);
   });
 });
 

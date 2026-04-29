@@ -22,6 +22,20 @@ export function displayDate(dateStr: string, opts: Intl.DateTimeFormatOptions): 
   return new Date(y, m - 1, d).toLocaleDateString('ru-RU', opts);
 }
 
+export function formatEventDateTimeLabel(
+  dateStr: string,
+  timeStr?: string | null,
+  options: Intl.DateTimeFormatOptions & { timeSeparator?: string } = {},
+): string {
+  const { timeSeparator = ' в ', ...dateOptions } = options;
+  const dateLabel = displayDate(dateStr, {
+    day: 'numeric',
+    month: 'long',
+    ...dateOptions,
+  });
+  return `${dateLabel}${timeStr ? `${timeSeparator}${timeStr.slice(0, 5)}` : ''}`;
+}
+
 export const CATEGORY_RU: Record<string, string> = {
   concert: 'Концерт', theater: 'Театр', theatre: 'Театр',
   exhibition: 'Выставка', movie: 'Кино', cinema: 'Кино',

@@ -3,7 +3,7 @@
 import { memo, useState, type MouseEvent } from 'react';
 import Image from 'next/image';
 import { KudaGoEvent } from '../components/EventCard';
-import { formatPermanentScheduleLabel, getEventCategoryBadges, shortMonth } from './utils';
+import { formatEventDateTimeLabel, formatPermanentScheduleLabel, getEventCategoryBadges, shortMonth } from './utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { proxiedImageUrl } from '../lib/imageProxy';
 
@@ -256,12 +256,7 @@ function MasonryEventCardInner({ event, attendeeCount = 0, isViewed = false, onC
               <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
                 {permanentScheduleLabel || (
                   <>
-                    {event.start_date
-                      ? new Date(...(event.start_date.split('-').map(Number) as [number, number, number]))
-                          .toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
-                      : ''
-                    }
-                    {event.start_time ? ` в ${event.start_time}` : ''}
+                    {event.start_date ? formatEventDateTimeLabel(event.start_date, event.start_time) : ''}
                   </>
                 )}
               </span>

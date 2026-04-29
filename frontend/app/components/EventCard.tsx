@@ -4,26 +4,23 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { getCategoryBadges } from '../lib/kudagoUi';
 import type { KudaGoEvent } from '../lib/kudagoUi';
-import { formatPermanentScheduleLabel } from '../events/utils';
+import { formatEventDateTimeLabel, formatPermanentScheduleLabel } from '../events/utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { proxiedImageUrl } from '../lib/imageProxy';
 export type { KudaGoEvent, KudaGoParty, UnknownTagLike } from '../lib/kudagoUi';
 function formatDate(dateStr: string | null, timeStr: string | null): string {
   if (!dateStr) return '';
-  
-  const eventDate = new Date(dateStr);
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const eventDate = new Date(y, m - 1, d);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
+
   // Don't show date for past events
   if (eventDate < today) {
     return '';
   }
-  
-  return (
-    eventDate.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) +
-    (timeStr ? ` в ${timeStr.slice(0, 5)}` : '')
-  );
+
+  return formatEventDateTimeLabel(dateStr, timeStr, { month: 'short' });
 }
 
 interface AttendeeBasic {

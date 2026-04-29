@@ -1,11 +1,14 @@
 import httpx
 import logging
 import time
+from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from kudago_common import safe_str as _safe_str
 
 BASE_URL = "https://kudago.com/public-api/v1.4"
+KUDAGO_TIMEZONE = ZoneInfo("Europe/Moscow")
 
 _logger = logging.getLogger(__name__)
 
@@ -156,8 +159,12 @@ def _event_date_entry(
     }
 
 
+def _format_kudago_timestamp(ts: int) -> tuple[str, str]:
+    dt = datetime.fromtimestamp(ts, tz=KUDAGO_TIMEZONE)
+    return dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M")
+
+
 def parse_events(raw: dict, skip_date_filter: bool = False) -> list:
-    import datetime
     import time
     now_ts = int(time.time())
     results = raw.get("results", [])
@@ -196,13 +203,9 @@ def parse_events(raw: dict, skip_date_filter: bool = False) -> list:
                 ed = None
                 et = None
                 if start_ts:
-                    dt = datetime.datetime.fromtimestamp(start_ts)
-                    sd = dt.strftime("%Y-%m-%d")
-                    st = dt.strftime("%H:%M")
+                    sd, st = _format_kudago_timestamp(start_ts)
                 if end_ts:
-                    dt2 = datetime.datetime.fromtimestamp(end_ts)
-                    ed = dt2.strftime("%Y-%m-%d")
-                    et = dt2.strftime("%H:%M")
+                    ed, et = _format_kudago_timestamp(end_ts)
                 all_dates.append(_event_date_entry(d, sd, ed, st, et))
 
             # Выбрать ближайшую будущую дату
@@ -215,9 +218,7 @@ def parse_events(raw: dict, skip_date_filter: bool = False) -> list:
                     selected_date = d
 
             if selected_date and selected_date.get("start"):
-                dt = datetime.datetime.fromtimestamp(selected_date["start"])
-                start_date = dt.strftime("%Y-%m-%d")
-                start_time = dt.strftime("%H:%M")
+                start_date, start_time = _format_kudago_timestamp(selected_date["start"])
         else:
             # Нет ни постоянных, ни будущих дат — либо прошло, либо даты не развёрнуты
             if not skip_date_filter:
@@ -276,7 +277,6 @@ def parse_events(raw: dict, skip_date_filter: bool = False) -> list:
 
 
 def parse_event_detail(e: dict) -> dict:
-    import datetime
     import time
     now_ts = int(time.time())
     raw_dates = e.get("dates") or []
@@ -306,13 +306,9 @@ def parse_event_detail(e: dict) -> dict:
             end_ts = d.get("end")
             sd = st = ed = et = None
             if start_ts:
-                dt = datetime.datetime.fromtimestamp(start_ts)
-                sd = dt.strftime("%Y-%m-%d")
-                st = dt.strftime("%H:%M")
+                sd, st = _format_kudago_timestamp(start_ts)
             if end_ts:
-                dt2 = datetime.datetime.fromtimestamp(end_ts)
-                ed = dt2.strftime("%Y-%m-%d")
-                et = dt2.strftime("%H:%M")
+                ed, et = _format_kudago_timestamp(end_ts)
             all_dates.append(_event_date_entry(d, sd, ed, st, et))
 
         # Выбрать ближайшую будущую дату
@@ -325,9 +321,7 @@ def parse_event_detail(e: dict) -> dict:
                 selected_date = d
 
         if selected_date and selected_date.get("start"):
-            dt = datetime.datetime.fromtimestamp(selected_date["start"])
-            start_date = dt.strftime("%Y-%m-%d")
-            start_time = dt.strftime("%H:%M")
+            start_date, start_time = _format_kudago_timestamp(selected_date["start"])
     else:
         # Нет ни постоянных, ни будущих дат
         pass

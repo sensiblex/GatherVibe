@@ -3,7 +3,7 @@
 import { memo, useState, type MouseEvent } from 'react';
 import Image from 'next/image';
 import { KudaGoEvent } from '../components/EventCard';
-import { formatPermanentScheduleLabel, getEventCategoryBadges, shortMonth } from './utils';
+import { formatEventDateTimeLabel, formatPermanentScheduleLabel, getEventCategoryBadges, shortMonth } from './utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { proxiedImageUrl } from '../lib/imageProxy';
 
@@ -40,11 +40,8 @@ function FeaturedCardInner({ event, attendeeCount = 0, isViewed = false, onClick
 
   const dateDay = event.start_date ? event.start_date.split('-')[2].replace(/^0/, '') : null;
   const dateMon = event.start_date ? shortMonth(event.start_date) : null;
-  const dateYear = event.start_date ? event.start_date.split('-')[0] : null;
-
   const fullDate = event.start_date
-    ? new Date(...(event.start_date.split('-').map(Number) as [number, number, number]))
-        .toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+    ? formatEventDateTimeLabel(event.start_date, event.start_time, { timeSeparator: ' · ' })
     : null;
   const permanentScheduleLabel = formatPermanentScheduleLabel(event);
 
@@ -194,7 +191,7 @@ function FeaturedCardInner({ event, attendeeCount = 0, isViewed = false, onClick
                   letterSpacing: '0.01em',
                 }}
               >
-                {permanentScheduleLabel || `${fullDate}${event.start_time ? ` · ${event.start_time}` : ''}`}
+                {permanentScheduleLabel || fullDate}
               </span>
             </div>
           )}
