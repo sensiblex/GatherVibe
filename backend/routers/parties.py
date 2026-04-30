@@ -1240,8 +1240,6 @@ async def invite_to_party(
     target = db.query(User).filter(User.id == body.user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-    if not target.is_discoverable_on_events:
-        raise HTTPException(status_code=403, detail="Пользователь скрыл себя от поиска по событиям")
 
     used_slots = 1 + db.query(PartyMember).filter(
         PartyMember.party_id == party_id,

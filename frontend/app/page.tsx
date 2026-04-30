@@ -90,11 +90,6 @@ export default function Home() {
         </section>
       </header>
 
-      {/* ─── РЕКОМЕНДАЦИИ ─── */}
-      {/* {user && <RecommendedEventsSection />}
-      {user && <RecommendedPartiesSection />}
-      {user && <RecommendedPeopleSection />} */}
-
       {/* ─── STEPS ─── */}
       <section className="steps-section">
         <div className="steps-top">

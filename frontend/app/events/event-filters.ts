@@ -218,7 +218,7 @@ export function quickDateRange(preset: QuickDate, now: Date = new Date()): { sin
   }
 }
 
-/** Toggle a tag in/out of the current selection (same semantics as toggleCategory). */
+/** Toggle a tag in/out of the current selection. */
 export function toggleTag(selected: string[], tag: string): string[] {
   if (!tag) return [];
   return selected.includes(tag)

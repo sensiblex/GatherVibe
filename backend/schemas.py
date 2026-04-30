@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Dict, List, Literal, Optional
-from datetime import date, datetime
+from datetime import datetime
 import math
 
 from utils.sanitize import sanitize_text
@@ -48,16 +48,6 @@ class UserResponse(BaseModel):
     bio: Optional[str] = None
     avatar_url: Optional[str] = None
     is_active: bool
-    birth_date: Optional[date] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    geo_precision: Optional[str] = None
-    show_age: Optional[bool] = True
-    is_discoverable_on_events: Optional[bool] = False
-    preferred_categories: Optional[str] = None
-    preferred_days: Optional[str] = None
-    preferred_time: Optional[str] = None
-    budget_max: Optional[int] = None
     role: Optional[str] = "user"
     is_banned: Optional[bool] = False
     banned_until: Optional[datetime] = None
@@ -77,19 +67,8 @@ class UserUpdate(BaseModel):
     new_password: Optional[str] = None
     avatar_url: Optional[str] = None
 
-    birth_date: Optional[date] = None
-    latitude: Optional[float] = Field(default=None, ge=-90.0, le=90.0)
-    longitude: Optional[float] = Field(default=None, ge=-180.0, le=180.0)
-    geo_precision: Optional[Literal["city", "district", "exact"]] = None
-    show_age: Optional[bool] = None
-    is_discoverable_on_events: Optional[bool] = None
-    preferred_categories: Optional[str] = Field(default=None, max_length=500)
-    preferred_days: Optional[Literal["weekends", "weekdays", "any"]] = None
-    preferred_time: Optional[Literal["morning", "evening", "any"]] = None
-    budget_max: Optional[int] = Field(default=None, ge=0, le=1_000_000)
-
     _sanitize = field_validator(
-        "username", "city", "bio", "interests", "preferred_categories",
+        "username", "city", "bio", "interests",
         mode="before",
     )(_sanitize_optional)
 

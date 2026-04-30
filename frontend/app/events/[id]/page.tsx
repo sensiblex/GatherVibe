@@ -7,7 +7,6 @@ import Navbar from '../../components/Navbar';
 import EventAttendees from '../../components/EventAttendees';
 import EventChat from '../../components/EventChat';
 import EventParty from '../../components/EventParty';
-import EventPeersSection from '../../components/EventPeersSection';
 import { apiFetch } from '../../lib/apiFetch';
 import { useAuth } from '../../context/AuthContext';
 import dynamic from 'next/dynamic';
@@ -228,7 +227,6 @@ export default function EventDetailPage() {
 
   const [event, setEvent] = useState<UnifiedEvent | null>(null);
   const [status, setStatus] = useState<'loading' | 'ok' | 'notfound' | 'error'>('loading');
-  const [myCreatorPartyId, setMyCreatorPartyId] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     if (eventId) markEventViewed(eventId);
@@ -280,27 +278,6 @@ export default function EventDetailPage() {
 
     return () => controller.abort();
   }, [eventId]);
-
-  useEffect(() => {
-    if (!user || !eventId) {
-      setMyCreatorPartyId(undefined);
-      return;
-    }
-    let cancelled = false;
-    apiFetch(`/parties/${encodeURIComponent(eventId)}`)
-      .then(async (r) => (r.ok ? ((await r.json()) as { id: number; creator_id: number; is_open: boolean }[]) : []))
-      .then((parties) => {
-        if (cancelled) return;
-        const mine = parties.find((p) => p.creator_id === user.id && p.is_open);
-        setMyCreatorPartyId(mine?.id);
-      })
-      .catch(() => {
-        if (!cancelled) setMyCreatorPartyId(undefined);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [user, eventId]);
 
   const mapAddress = event ? (event.place_address || event.location || null) : null;
   const mapQuery = mapAddress
@@ -603,7 +580,6 @@ export default function EventDetailPage() {
             {!user && <UnauthBanner />}
 
             <EventAttendees eventId={chatEventId} eventMeta={eventMeta} />
-            <EventPeersSection eventId={chatEventId} creatorPartyId={myCreatorPartyId} />
             <EventParty eventId={chatEventId} />
             <EventChat
               eventId={chatEventId}

@@ -376,15 +376,13 @@ async def _db_cleanup_loop():
     """Периодически чистит таблицы, которые растут неограниченно.
 
     - revoked_tokens: удаляем записи с exp < NOW() (JWT уже истёк — blacklist-check не нужен).
-    - recommendation_impressions: удаляем записи старше 90 дней (аналитика свежее не читается).
 
     Интервал: раз в час. Пропуск одного запуска допустим.
     """
     import logging as _lg
     logger = _lg.getLogger(__name__)
     from models.token_revocation import RevokedToken
-    from models.recommendation_impression import RecommendationImpression
-    from datetime import datetime, timedelta
+    from datetime import datetime
     from sqlalchemy import delete as sa_delete
     while True:
         try:
@@ -392,14 +390,10 @@ async def _db_cleanup_loop():
             db = SessionLocal()
             try:
                 now = datetime.utcnow()
-                stale_impr = now - timedelta(days=90)
                 try:
                     r1 = db.execute(sa_delete(RevokedToken).where(RevokedToken.exp < now))
-                    r2 = db.execute(sa_delete(RecommendationImpression).where(
-                        RecommendationImpression.created_at < stale_impr
-                    ))
                     db.commit()
-                    logger.info("db_cleanup: revoked=%s impressions=%s", r1.rowcount, r2.rowcount)
+                    logger.info("db_cleanup: revoked=%s", r1.rowcount)
                 except Exception as exc:
                     logger.warning("db_cleanup inner error: %s", exc)
                     db.rollback()
@@ -464,7 +458,6 @@ app.add_middleware(
 
 from routers import auth, users, events, parties, reviews, notifications, party_coordination  # noqa: E402
 from routers.party_plan import router as party_plan_router  # noqa: E402
-from routers.recommendations import router as recommendations_router  # noqa: E402
 from routers.party_recap import router as party_recap_router  # noqa: E402
 from routers.admin import router as admin_router  # noqa: E402
 from routers.reports import router as reports_router  # noqa: E402
@@ -479,7 +472,6 @@ app.include_router(party_coordination.router)
 app.include_router(party_plan_router)
 app.include_router(party_recap_router)
 app.include_router(reviews.router)
-app.include_router(recommendations_router)
 app.include_router(users.router)
 app.include_router(events.router)
 app.include_router(notifications.router)

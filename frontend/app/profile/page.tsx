@@ -7,7 +7,6 @@ import { apiFetch } from '../lib/apiFetch';
 import { useAuth } from '../context/AuthContext';
 import Navbar from '../components/Navbar';
 import UserReviewsBlock from '../components/UserReviewsBlock';
-import MatchingProfileSection from '../components/MatchingProfileSection';
 import { INTERESTS_LIST, getInterestLabel } from '../lib/interests';
 import { translateCategory } from '../events/utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
@@ -836,8 +835,6 @@ export default function ProfilePage() {
             <UserReviewsBlock userId={user.id} viewerUserId={user.id} maxReviews={3} />
           </div>
         )}
-
-        {user && <MatchingProfileSection />}
 
         <div className="p-card">
           <div className="p-card-title">Настройки</div>

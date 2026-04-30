@@ -40,11 +40,6 @@ def _auth_headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _make_discoverable(db, user: User):
-    user.is_discoverable_on_events = True
-    db.commit()
-
-
 @pytest.fixture
 def user_c(db):
     from auth import hash_password
@@ -72,7 +67,6 @@ def token_c(user_c):
 
 
 def test_invite_success(client: TestClient, db, user_a, user_b, token_a):
-    _make_discoverable(db, user_b)
     party = _make_party(db, user_a.id)
 
     resp = client.post(
@@ -93,7 +87,6 @@ def test_invite_success(client: TestClient, db, user_a, user_b, token_a):
 
 
 def test_invite_non_creator_forbidden(client: TestClient, db, user_a, user_b, token_b):
-    _make_discoverable(db, user_a)
     party = _make_party(db, user_a.id)
 
     resp = client.post(
@@ -116,7 +109,6 @@ def test_invite_self_forbidden(client: TestClient, db, user_a, token_a):
 
 
 def test_invite_already_member_forbidden(client: TestClient, db, user_a, user_b, token_a):
-    _make_discoverable(db, user_b)
     party = _make_party(db, user_a.id)
     db.add(PartyMember(party_id=party.id, user_id=user_b.id, status="accepted"))
     db.commit()
@@ -130,7 +122,6 @@ def test_invite_already_member_forbidden(client: TestClient, db, user_a, user_b,
 
 
 def test_invite_already_invited_forbidden(client: TestClient, db, user_a, user_b, token_a):
-    _make_discoverable(db, user_b)
     party = _make_party(db, user_a.id)
 
     r1 = client.post(
@@ -149,8 +140,6 @@ def test_invite_already_invited_forbidden(client: TestClient, db, user_a, user_b
 
 
 def test_invite_party_full_forbidden(client: TestClient, db, user_a, user_b, user_c, token_a):
-    _make_discoverable(db, user_b)
-    _make_discoverable(db, user_c)
     party = _make_party(db, user_a.id, max_members=2)
     db.add(PartyMember(party_id=party.id, user_id=user_b.id, status="accepted"))
     db.commit()
@@ -163,19 +152,7 @@ def test_invite_party_full_forbidden(client: TestClient, db, user_a, user_b, use
     assert resp.status_code == 400
 
 
-def test_invite_non_discoverable_forbidden(client: TestClient, db, user_a, user_b, token_a):
-    party = _make_party(db, user_a.id)
-
-    resp = client.post(
-        f"/parties/{party.id}/invite",
-        json={"user_id": user_b.id},
-        headers=_auth_headers(token_a),
-    )
-    assert resp.status_code == 403
-
-
 def test_invite_closed_party_forbidden(client: TestClient, db, user_a, user_b, token_a):
-    _make_discoverable(db, user_b)
     party = _make_party(db, user_a.id)
     party.is_open = False
     db.commit()
@@ -191,7 +168,6 @@ def test_invite_closed_party_forbidden(client: TestClient, db, user_a, user_b, t
 
 
 def test_accept_invite_success(client: TestClient, db, user_a, user_b, token_a, token_b):
-    _make_discoverable(db, user_b)
     party = _make_party(db, user_a.id)
     client.post(
         f"/parties/{party.id}/invite",
@@ -213,7 +189,6 @@ def test_accept_invite_success(client: TestClient, db, user_a, user_b, token_a, 
 
 
 def test_accept_wrong_user_forbidden(client: TestClient, db, user_a, user_b, user_c, token_a, token_c):
-    _make_discoverable(db, user_b)
     party = _make_party(db, user_a.id)
     client.post(
         f"/parties/{party.id}/invite",
@@ -232,7 +207,6 @@ def test_accept_wrong_user_forbidden(client: TestClient, db, user_a, user_b, use
 
 
 def test_accept_closes_party_at_capacity(client: TestClient, db, user_a, user_b, token_a, token_b):
-    _make_discoverable(db, user_b)
     party = _make_party(db, user_a.id, max_members=2)
     client.post(
         f"/parties/{party.id}/invite",
@@ -256,7 +230,6 @@ def test_accept_closes_party_at_capacity(client: TestClient, db, user_a, user_b,
 
 
 def test_decline_invite_success(client: TestClient, db, user_a, user_b, token_a, token_b):
-    _make_discoverable(db, user_b)
     party = _make_party(db, user_a.id)
     client.post(
         f"/parties/{party.id}/invite",
@@ -280,7 +253,6 @@ def test_decline_invite_success(client: TestClient, db, user_a, user_b, token_a,
 
 
 def test_cancel_invite_success(client: TestClient, db, user_a, user_b, token_a):
-    _make_discoverable(db, user_b)
     party = _make_party(db, user_a.id)
     client.post(
         f"/parties/{party.id}/invite",
@@ -302,7 +274,6 @@ def test_cancel_invite_success(client: TestClient, db, user_a, user_b, token_a):
 
 
 def test_cancel_non_creator_forbidden(client: TestClient, db, user_a, user_b, user_c, token_a, token_c):
-    _make_discoverable(db, user_b)
     party = _make_party(db, user_a.id)
     client.post(
         f"/parties/{party.id}/invite",
@@ -323,7 +294,6 @@ def test_cancel_non_creator_forbidden(client: TestClient, db, user_a, user_b, us
 
 
 def test_list_my_invites(client: TestClient, db, user_a, user_b, token_a, token_b):
-    _make_discoverable(db, user_b)
     party1 = _make_party(db, user_a.id, title="Party One", event_id="e1")
     party2 = _make_party(db, user_a.id, title="Party Two", event_id="e2")
     client.post(
@@ -347,7 +317,6 @@ def test_list_my_invites(client: TestClient, db, user_a, user_b, token_a, token_
 
 
 def test_list_my_invites_excludes_non_invited(client: TestClient, db, user_a, user_b, token_a, token_b):
-    _make_discoverable(db, user_b)
     party = _make_party(db, user_a.id)
     client.post(
         f"/parties/{party.id}/invite",
@@ -373,7 +342,6 @@ def test_expire_invites_before_event(db, user_a, user_b):
     """Helper function expires invited rows where event_date_ts - now < 24h."""
     from routers.parties import expire_pending_invites
 
-    _make_discoverable(db, user_b)
     soon_ts = int(time.time()) + 12 * 3600
     party_soon = _make_party(db, user_a.id, title="Soon", event_date_ts=soon_ts, event_id="es")
     later_ts = int(time.time()) + 48 * 3600
@@ -413,7 +381,6 @@ def test_accept_sends_push_to_creator(
     import push_helpers
     monkeypatch.setattr(push_helpers, "send_push_to_user", fake_push)
 
-    _make_discoverable(db, user_b)
     party = _make_party(db, user_a.id)
     client.post(
         f"/parties/{party.id}/invite",
@@ -448,7 +415,6 @@ def test_decline_sends_push_to_creator(
     import push_helpers
     monkeypatch.setattr(push_helpers, "send_push_to_user", fake_push)
 
-    _make_discoverable(db, user_b)
     party = _make_party(db, user_a.id)
     client.post(
         f"/parties/{party.id}/invite",
@@ -476,8 +442,6 @@ def test_party_deleted_notifies_invited_members(
     client: TestClient, db, user_a, user_b, user_c, token_a,
 ):
     from models.notification import Notification
-    _make_discoverable(db, user_b)
-    _make_discoverable(db, user_c)
     party = _make_party(db, user_a.id, title="Going to delete")
 
     client.post(
@@ -514,7 +478,6 @@ def test_party_deleted_does_not_notify_creator(
     client: TestClient, db, user_a, user_b, token_a,
 ):
     from models.notification import Notification
-    _make_discoverable(db, user_b)
     party = _make_party(db, user_a.id, title="Solo delete")
 
     resp = client.delete(
@@ -534,7 +497,6 @@ def test_party_deleted_does_not_notify_creator(
 def test_cancel_then_accept_returns_404(
     client: TestClient, db, user_a, user_b, token_a, token_b,
 ):
-    _make_discoverable(db, user_b)
     party = _make_party(db, user_a.id)
     client.post(
         f"/parties/{party.id}/invite",

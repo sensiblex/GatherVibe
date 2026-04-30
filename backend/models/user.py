@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Date, DateTime, Float, Integer, String, Boolean, Text, text as sa_text
+from sqlalchemy import Column, DateTime, Float, Integer, String, Boolean, Text, text as sa_text
 from sqlalchemy.sql import func
 from database import Base
 
@@ -21,18 +21,6 @@ class User(Base):
     is_verified        = Column(Boolean, default=False, nullable=False)
     verification_token = Column(String(64), nullable=True, index=True)
     email_notifications = Column(Boolean, default=True, nullable=False, server_default='true')
-
-    birth_date = Column(Date, nullable=True)
-    latitude = Column(Float, nullable=True)
-    longitude = Column(Float, nullable=True)
-    geo_precision = Column(String(10), nullable=True)
-    show_age = Column(Boolean, default=True, nullable=False, server_default='true')
-    is_discoverable_on_events = Column(Boolean, default=False, nullable=False, server_default='false')
-    preferred_categories = Column(Text, nullable=True)
-    preferred_days = Column(String(20), nullable=True)
-    preferred_time = Column(String(20), nullable=True)
-    budget_max = Column(Integer, nullable=True)
-    embedding_updated_at = Column(DateTime(timezone=True), nullable=True)
 
     role = Column(String(16), default="user", nullable=False, server_default="user")
     is_banned = Column(Boolean, default=False, nullable=False, server_default="false")

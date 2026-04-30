@@ -225,41 +225,6 @@ def update_profile(
             raise HTTPException(status_code=400, detail="avatar_url должен начинаться с https://")
         user.avatar_url = data.avatar_url or None
 
-    matching_text_changed = data.interests is not None or data.bio is not None or data.city is not None
-    if data.birth_date is not None:
-        user.birth_date = data.birth_date
-    if data.latitude is not None:
-        user.latitude = data.latitude
-    if data.longitude is not None:
-        user.longitude = data.longitude
-    if data.geo_precision is not None:
-        user.geo_precision = data.geo_precision
-    if data.show_age is not None:
-        user.show_age = data.show_age
-    if data.is_discoverable_on_events is not None:
-        user.is_discoverable_on_events = data.is_discoverable_on_events
-    if data.preferred_categories is not None:
-        user.preferred_categories = data.preferred_categories
-        matching_text_changed = True
-    if data.preferred_days is not None:
-        user.preferred_days = data.preferred_days
-    if data.preferred_time is not None:
-        user.preferred_time = data.preferred_time
-    if data.budget_max is not None:
-        user.budget_max = data.budget_max
-
-    if matching_text_changed:
-        try:
-            from services import embeddings
-            from routers.recommendations import (
-                invalidate_user_cache, invalidate_user_event_cache,
-            )
-            embeddings.refresh_user_embedding(db, user)
-            invalidate_user_cache(user.id)
-            invalidate_user_event_cache(user.id)
-        except Exception:
-            pass
-
     db.commit()
     db.refresh(user)
     return user
