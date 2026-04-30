@@ -24,6 +24,7 @@ import {
 } from './event-utils';
 import { translateCategory } from '../utils';
 import { capitalizeFirstDisplayChar } from '../../lib/text';
+import { proxiedImageUrl } from '../../lib/imageProxy';
 import { markEventViewed } from '../viewed-events';
 
 const EventMap = dynamic(() => import('../../components/EventMap'), { ssr: false });
@@ -265,7 +266,7 @@ export default function EventDetailPage() {
         if (signal.aborted) return;
         if (res.ok) {
           const data = await res.json();
-          setEvent(normaliseLocal(data));
+          setEvent(data?.kudago_id ? normaliseKudago(data) : normaliseLocal(data));
           setStatus('ok');
           return;
         }
@@ -317,6 +318,7 @@ export default function EventDetailPage() {
 
   const displayDate = event ? getDisplayDate(event) : '';
   const displayTitle = event ? capitalizeFirstDisplayChar(event.title) : '';
+  const eventImageUrl = event ? proxiedImageUrl(event.image_url) : null;
   const chatEventId = event?.id ?? eventId;
 
   const eventMeta = event ? {
@@ -368,10 +370,10 @@ export default function EventDetailPage() {
 
             <div className="gv-card overflow-hidden" style={{ padding: 0 }}>
 
-              {event.image_url && (
+              {eventImageUrl && (
                 <div className="w-full h-56 sm:h-72 overflow-hidden">
                   <img
-                    src={event.image_url}
+                    src={eventImageUrl}
                     alt={displayTitle}
                     className="w-full h-full object-cover"
                     loading="lazy"
@@ -568,11 +570,13 @@ export default function EventDetailPage() {
                       Участники
                     </p>
                     <div className="flex flex-wrap gap-3">
-                      {event.participants.map((p, i) => (
+                      {event.participants.map((p, i) => {
+                        const participantImageUrl = proxiedImageUrl(p.image_url);
+                        return (
                         <div key={i} className="flex items-center gap-2">
-                          {p.image_url && (
+                          {participantImageUrl && (
                             <img
-                              src={p.image_url}
+                              src={participantImageUrl}
                               alt={p.name}
                               width={32}
                               height={32}
@@ -587,7 +591,8 @@ export default function EventDetailPage() {
                             )}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}

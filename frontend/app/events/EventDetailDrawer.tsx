@@ -7,6 +7,7 @@ import { KudaGoEvent } from '../components/EventCard';
 import { translateCategory } from './utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { markEventViewed } from './viewed-events';
+import { proxiedImageUrl } from '../lib/imageProxy';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toLabel(val: any): string {
@@ -45,6 +46,7 @@ interface EventDetailDrawerProps {
 
 export default function EventDetailDrawer({ event, onClose, onViewed }: EventDetailDrawerProps) {
   const displayTitle = capitalizeFirstDisplayChar(event.title);
+  const coverUrl = proxiedImageUrl(event.cover_url);
 
   // Close on Escape key
   useEffect(() => {
@@ -121,10 +123,10 @@ export default function EventDetailDrawer({ event, onClose, onViewed }: EventDet
         </button>
 
         {/* Cover image */}
-        {event.cover_url ? (
+        {coverUrl ? (
           <div className="relative w-full shrink-0" style={{ height: '200px' }}>
             <Image
-              src={event.cover_url}
+              src={coverUrl}
               alt={displayTitle}
               fill
               className="object-cover"

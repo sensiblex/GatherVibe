@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useState } from 'react';
 import type { RecommendedEvent } from '../hooks/useRecommendedEvents';
 import { capitalizeFirstDisplayChar } from '../lib/text';
+import { proxiedImageUrl } from '../lib/imageProxy';
 
 function scoreColor(score: number): string {
   if (score >= 70) return '#16a34a';
@@ -34,6 +35,7 @@ export default function RecommendedEventCard({ event, onDismiss, onLike }: Props
   const dateLabel = formatDate(event.start_ts);
   const [liked, setLiked] = useState(false);
   const displayTitle = capitalizeFirstDisplayChar(event.title);
+  const coverUrl = proxiedImageUrl(event.cover_url);
 
   return (
     <div
@@ -46,9 +48,9 @@ export default function RecommendedEventCard({ event, onDismiss, onLike }: Props
     >
       <Link href={`/events/${event.event_id}`} className="block">
         <div className="relative w-full h-40 bg-gray-100">
-          {event.cover_url ? (
+          {coverUrl ? (
             <Image
-              src={event.cover_url}
+              src={coverUrl}
               alt={displayTitle}
               fill
               sizes="320px"

@@ -189,9 +189,12 @@ export function formatShortDate(isoDate: string, time?: string | null): string {
   return `${day} ${MONTHS[m] ?? ''} ${y}${t}`;
 }
 
-export function formatAge(age: string): string {
-  const a = age.trim();
-  return a.endsWith('+') ? a : `${a}+`;
+export function formatAge(age: string | number | null | undefined): string {
+  if (age === null || age === undefined) {
+    return '';
+  }
+  const a = String(age).trim();
+  return a ? (a.endsWith('+') ? a : `${a}+`) : '';
 }
 
 export function safeEventTimestamp(

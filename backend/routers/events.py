@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func as sa_func, select as sa_select, update as sa_update
 from typing import Optional, List
 from datetime import datetime
+import httpx
 import time
 import os
 import uuid
@@ -17,6 +18,7 @@ from models.chat_message import ChatMessage
 from models.message_reaction import MessageReaction
 from models.user import User
 from models.party import EventParty, PartyMember
+from models.kudago_event import KudaGoEvent
 import kudago_api
 import kudago_api_async
 import kudago_cache
@@ -262,12 +264,25 @@ def get_events(
     return query.offset(skip).limit(limit).all()
 
 
-@router.get("/events/{event_id}", response_model=EventResponse)
-def get_event(event_id: int, db: Session = Depends(get_db)):
+@router.get("/events/{event_id}")
+async def get_event(event_id: int, db: Session = Depends(get_db)):
     event = db.query(Event).filter(Event.id == event_id, Event.is_active == True).first()
-    if event is None:
-        raise HTTPException(status_code=404, detail="Событие не найдено")
-    return event
+    if event is not None:
+        return EventResponse.model_validate(event)
+
+    cached = db.query(KudaGoEvent).filter(KudaGoEvent.kudago_id == event_id).first()
+    if cached is not None:
+        return kudago_cache._row_to_response(cached)
+
+    try:
+        raw = await kudago_api_async.get_event_by_id(event_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Событие не найдено")
+        raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(exc)}")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
+    return kudago_api.parse_event_detail(raw)
 
 
 @router.post("/events", response_model=EventResponse)
@@ -550,9 +565,16 @@ def kudago_debug(
 
 
 @router.get("/kudago/events/{event_id}")
-async def kudago_get_event_detail(event_id: int):
+async def kudago_get_event_detail(event_id: int, db: Session = Depends(get_db)):
+    cached = db.query(KudaGoEvent).filter(KudaGoEvent.kudago_id == event_id).first()
+    if cached is not None:
+        return kudago_cache._row_to_response(cached)
     try:
         raw = await kudago_api_async.get_event_by_id(event_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(status_code=404, detail="Событие не найдено в KudaGo")
+        raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(exc)}")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
     return kudago_api.parse_event_detail(raw)

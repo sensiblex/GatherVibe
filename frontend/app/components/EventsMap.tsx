@@ -13,6 +13,7 @@ import {
 } from '../events/events-map';
 import type { CitySlug } from '../events/event-filters';
 import { capitalizeFirstDisplayChar } from '../lib/text';
+import { proxiedImageUrl } from '../lib/imageProxy';
 
 interface EventsMapProps {
   events: KudaGoEvent[];
@@ -85,6 +86,7 @@ function MapInnerComponent({ events, center, bounds, onEventClick }: MapInnerPro
       <MarkerClusterGroup chunkedLoading maxClusterRadius={60}>
         {events.map((ev) => {
           const displayTitle = capitalizeFirstDisplayChar(ev.title);
+          const coverUrl = proxiedImageUrl(ev.cover_url);
           return (
             <Marker
               key={ev.kudago_id}
@@ -93,10 +95,10 @@ function MapInnerComponent({ events, center, bounds, onEventClick }: MapInnerPro
             >
               <Popup maxWidth={260}>
               <div style={{ minWidth: 200 }}>
-                {ev.cover_url && (
+                {coverUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={ev.cover_url}
+                    src={coverUrl}
                     alt=""
                     style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 8, marginBottom: 8 }}
                   />

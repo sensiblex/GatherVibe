@@ -19,8 +19,3 @@ self.addEventListener('notificationclick', (event) => {
     event.waitUntil(clients.openWindow('/notifications'));
   }
 });
-
-// Passthrough fetch handler — no caching, just signals intentional SW presence.
-self.addEventListener('fetch', (event) => {
-  event.respondWith(fetch(event.request));
-});

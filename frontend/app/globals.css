@@ -2,13 +2,13 @@
 
 /* ═══════════════════════════════════════════════════════════════
    GATHERVIBE — Design System (ported from design/index.html)
-   Fonts:  Cabinet Grotesk (display) + Satoshi (body)
+   Fonts:  local system stacks, no remote font runtime
    Accent: #5B4FD9 (--ink)
 ═══════════════════════════════════════════════════════════════ */
 
 :root {
-  --font-display: 'Cabinet Grotesk', sans-serif;
-  --font-body:    'Satoshi', sans-serif;
+  --font-display: 'Trebuchet MS', 'Segoe UI', sans-serif;
+  --font-body:    'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
 
   --r-sm:   4px;
   --r-md:   8px;

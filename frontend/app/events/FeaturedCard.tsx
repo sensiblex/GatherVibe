@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { KudaGoEvent } from '../components/EventCard';
 import { getEventCategoryBadges, shortMonth } from './utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
+import { proxiedImageUrl } from '../lib/imageProxy';
 
 interface FeaturedCardProps {
   event: KudaGoEvent;
@@ -17,6 +18,7 @@ interface FeaturedCardProps {
 function FeaturedCardInner({ event, attendeeCount = 0, isViewed = false, onClick, onCategoryClick }: FeaturedCardProps) {
   const [hovered, setHovered] = useState(false);
   const displayTitle = capitalizeFirstDisplayChar(event.title);
+  const coverUrl = proxiedImageUrl(event.cover_url);
 
   const cats = getEventCategoryBadges(event.categories);
 
@@ -65,13 +67,14 @@ function FeaturedCardInner({ event, attendeeCount = 0, isViewed = false, onClick
       }}
     >
       {/* Background image */}
-      {event.cover_url ? (
+      {coverUrl ? (
         <Image
-          src={event.cover_url}
+          src={coverUrl}
           alt={displayTitle}
           fill
           priority
           sizes="100vw"
+          unoptimized
           style={{
             objectFit: 'cover',
             transform: hovered ? 'scale(1.05)' : 'scale(1)',

@@ -18,14 +18,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ru" data-theme="dark">
-      <head>
-        <link rel="preconnect" href="https://api.fontshare.com" crossOrigin="anonymous" />
-        <link
-          href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@800,700,500,400&f[]=satoshi@700,500,400&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html lang="ru" data-theme="dark" data-scroll-behavior="smooth">
       <body>
         <ClientLayout>{children}</ClientLayout>
       </body>

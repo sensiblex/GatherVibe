@@ -6,10 +6,13 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: {
+    unoptimized: true,
+    domains: ['media.kudago.com'],
     remotePatterns: [
       {
         protocol: 'https',
         hostname: 'media.kudago.com',
+        pathname: '/images/**',
       },
     ],
   },

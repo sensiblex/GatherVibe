@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { KudaGoEvent } from '../components/EventCard';
 import { getEventCategoryBadges, shortMonth } from './utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
+import { proxiedImageUrl } from '../lib/imageProxy';
 
 interface MasonryEventCardProps {
   event: KudaGoEvent;
@@ -17,6 +18,7 @@ interface MasonryEventCardProps {
 function MasonryEventCardInner({ event, attendeeCount = 0, isViewed = false, onClick, onCategoryClick }: MasonryEventCardProps) {
   const [hovered, setHovered] = useState(false);
   const displayTitle = capitalizeFirstDisplayChar(event.title);
+  const coverUrl = proxiedImageUrl(event.cover_url);
 
   const cats = getEventCategoryBadges(event.categories);
 
@@ -86,13 +88,14 @@ function MasonryEventCardInner({ event, attendeeCount = 0, isViewed = false, onC
       )}
 
       {/* Cover image */}
-      {event.cover_url ? (
+      {coverUrl ? (
         <div style={{ position: 'relative', aspectRatio: '16/10', width: '100%', overflow: 'hidden' }}>
           <Image
-            src={event.cover_url}
+            src={coverUrl}
             alt={displayTitle}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            unoptimized
             style={{ objectFit: 'cover', transition: 'transform 400ms ease' }}
             onMouseEnter={e => { (e.currentTarget as HTMLImageElement).style.transform = 'scale(1.05)'; }}
             onMouseLeave={e => { (e.currentTarget as HTMLImageElement).style.transform = 'scale(1)'; }}
