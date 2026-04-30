@@ -14,6 +14,13 @@ import {
 import type { CitySlug } from '../events/event-filters';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { proxiedImageUrl } from '../lib/imageProxy';
+import {
+  MAP_TILE_SUBDOMAINS,
+  MAP_TILE_URL,
+  MapAttribution,
+  createMapPinIcon,
+  mapShellHeight,
+} from './map-ui';
 
 interface EventsMapProps {
   events: KudaGoEvent[];
@@ -39,16 +46,7 @@ function MapInnerComponent({ events, center, bounds, onEventClick }: MapInnerPro
   const L = require('leaflet');
   /* eslint-enable @typescript-eslint/no-require-imports */
 
-  const pinIcon = L.divIcon({
-    html: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 40 40">
-      <path d="M20 2C13.373 2 8 7.373 8 14c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z" fill="#610bef" stroke="white" stroke-width="2"/>
-      <circle cx="20" cy="14" r="4" fill="white"/>
-    </svg>`,
-    className: '',
-    iconSize: [32, 32] as [number, number],
-    iconAnchor: [16, 32] as [number, number],
-    popupAnchor: [0, -34] as [number, number],
-  });
+  const pinIcon = createMapPinIcon(L, 'event', 32);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FitBounds({ bounds }: { bounds: LatLngBoundsExpression | null }) {
@@ -79,8 +77,8 @@ function MapInnerComponent({ events, center, bounds, onEventClick }: MapInnerPro
       style={{ height: '100%', width: '100%' }}
     >
       <TileLayer
-        url="https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1"
-        subdomains="0123"
+        url={MAP_TILE_URL}
+        subdomains={MAP_TILE_SUBDOMAINS}
       />
       <FitBounds bounds={bounds} />
       <MarkerClusterGroup chunkedLoading maxClusterRadius={60}>
@@ -93,66 +91,46 @@ function MapInnerComponent({ events, center, bounds, onEventClick }: MapInnerPro
               position={[ev.lat as number, ev.lon as number]}
               icon={pinIcon}
             >
-              <Popup maxWidth={260}>
-              <div style={{ minWidth: 200 }}>
+              <Popup maxWidth={280} className="gv-map-popup">
+              <div className="gv-map-event-popup">
                 {coverUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={coverUrl}
                     alt=""
-                    style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 8, marginBottom: 8 }}
                   />
                 )}
-                <strong style={{ display: 'block', marginBottom: 4, fontSize: 14 }}>
+                <strong>
                   {displayTitle}
                 </strong>
                 {ev.place_title && (
-                  <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>
-                    📍 {ev.place_title}
+                  <div>
+                    <span className="gv-map-popup-label">Место</span>
+                    {ev.place_title}
                   </div>
                 )}
                 {ev.start_date && (
-                  <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
-                    🗓 {ev.start_date}
+                  <div>
+                    <span className="gv-map-popup-label">Когда</span>
+                    {ev.start_date}
                     {ev.start_time ? `, ${ev.start_time}` : ''}
                   </div>
                 )}
-                <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
-                  💰 {ev.is_free ? 'Бесплатно' : (ev.price || 'Платно')}
+                <div>
+                  <span className="gv-map-popup-label">Цена</span>
+                  {ev.is_free ? 'Бесплатно' : (ev.price || 'Платно')}
                 </div>
                 {onEventClick ? (
                   <button
                     onClick={() => onEventClick(ev)}
-                    style={{
-                      display: 'inline-block',
-                      padding: '6px 12px',
-                      background: '#610bef',
-                      color: 'white',
-                      borderRadius: 8,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      border: 'none',
-                      cursor: 'pointer',
-                      width: '100%',
-                    }}
+                    className="gv-map-popup-action"
                   >
                     Подробнее
                   </button>
                 ) : (
                   <Link
                     href={`/events/${ev.kudago_id}`}
-                    style={{
-                      display: 'inline-block',
-                      padding: '6px 12px',
-                      background: '#610bef',
-                      color: 'white',
-                      borderRadius: 8,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      textDecoration: 'none',
-                      width: '100%',
-                      textAlign: 'center',
-                    }}
+                    className="gv-map-popup-action"
                   >
                     Подробнее
                   </Link>
@@ -222,63 +200,23 @@ export default function EventsMap({
     });
   };
 
-  const containerHeight = isMobile ? mobileHeight : height;
+  const containerHeight = mapShellHeight(isMobile, height, mobileHeight);
 
   return (
-    <div
-      style={{
-        maxWidth: 1200,
-        margin: '0 auto',
-        padding: '0 40px 32px',
-        width: '100%',
-      }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 12,
-          gap: 12,
-          flexWrap: 'wrap',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div
-            style={{
-              width: 4,
-              height: 28,
-              borderRadius: 999,
-              background: 'var(--primary)',
-            }}
-          />
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--text)', margin: 0 }}>
+    <div className="gv-events-map">
+      <div className="gv-events-map__header">
+        <div className="gv-events-map__title">
+          <span className="gv-section-mark" aria-hidden="true" />
+          <h2>
             Карта событий
           </h2>
-          <span
-            style={{
-              fontSize: '.8125rem',
-              color: 'var(--text-muted)',
-              background: 'var(--surface-2)',
-              padding: '4px 10px',
-              borderRadius: 999,
-            }}
-          >
+          <span className="gv-map-count">
             {formatMapStats(mapped.length, events.length)}
           </span>
         </div>
         <button
           onClick={toggleCollapse}
-          style={{
-            padding: '.4rem .9rem',
-            borderRadius: 'var(--r-full)',
-            fontSize: '.8125rem',
-            background: 'var(--surface-2)',
-            color: 'var(--text-muted)',
-            border: '1px solid var(--border)',
-            cursor: 'pointer',
-            fontWeight: 600,
-          }}
+          className="gv-map-toggle"
           aria-expanded={!collapsed}
         >
           {collapsed ? 'Показать карту' : 'Скрыть карту'}
@@ -287,34 +225,18 @@ export default function EventsMap({
 
       {!collapsed && (
         <div
+          className="gv-map-shell gv-map-shell--events"
           style={{
             height: containerHeight,
-            borderRadius: 16,
-            overflow: 'hidden',
-            border: '1px solid var(--border)',
-            position: 'relative',
           }}
         >
           {mapped.length === 0 ? (
-            <div
-              style={{
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 12,
-                background: 'var(--surface)',
-                color: 'var(--text-muted)',
-                textAlign: 'center',
-                padding: 24,
-              }}
-            >
-              <span style={{ fontSize: 40 }}>🗺</span>
-              <p style={{ fontSize: '.9375rem', fontWeight: 600, margin: 0 }}>
+            <div className="gv-map-empty">
+              <span className="gv-map-empty-icon" aria-hidden="true" />
+              <p>
                 Нет событий с координатами по текущим фильтрам
               </p>
-              <p style={{ fontSize: '.8125rem', margin: 0 }}>
+              <p>
                 Попробуйте изменить фильтры или выбрать другой город
               </p>
             </div>
@@ -326,30 +248,7 @@ export default function EventsMap({
                 bounds={bounds}
                 onEventClick={onEventClick}
               />
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: 6,
-                  right: 10,
-                  fontSize: 11,
-                  color: 'var(--text-faint)',
-                  background: 'rgba(255,255,255,0.85)',
-                  padding: '2px 6px',
-                  borderRadius: 4,
-                  pointerEvents: 'auto',
-                  zIndex: 500,
-                }}
-              >
-                &copy;{' '}
-                <a
-                  href="https://2gis.ru"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: 'inherit', textDecoration: 'underline' }}
-                >
-                  2ГИС
-                </a>
-              </div>
+              <MapAttribution />
             </>
           )}
         </div>

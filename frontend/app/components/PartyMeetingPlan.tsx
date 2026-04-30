@@ -384,8 +384,9 @@ export default function PartyMeetingPlan({ partyId, isCreator, socket }: PartyMe
             className="rounded-xl p-3 flex flex-col gap-2"
             style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
           >
-            <p className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-              🗺️ Точка встречи
+            <p className="text-xs font-bold uppercase tracking-wide flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
+              <span className="gv-map-dot" aria-hidden="true" />
+              Точка встречи
             </p>
             <PartyMeetingMap
               partyId={partyId}

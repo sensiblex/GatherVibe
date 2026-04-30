@@ -6,6 +6,13 @@ import 'react-leaflet-cluster/dist/assets/MarkerCluster.Default.css';
 import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { LatLngTuple } from 'leaflet';
+import {
+  MAP_TILE_SUBDOMAINS,
+  MAP_TILE_URL,
+  MapAttribution,
+  buildExternalMapSearchUrl,
+  createMapPinIcon,
+} from './map-ui';
 
 interface EventMapProps {
   address: string;
@@ -52,16 +59,7 @@ function MapInnerComponent({ coords, title, address, height }: MapInnerProps) {
   const { MapContainer, TileLayer, Marker, Popup } = require('react-leaflet');
   const L = require('leaflet');
 
-  const customIcon = L.divIcon({
-    html: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-      <path d="M20 2C13.373 2 8 7.373 8 14c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z" fill="#01696f" stroke="white" stroke-width="2"/>
-      <circle cx="20" cy="14" r="4" fill="white"/>
-    </svg>`,
-    className: '',
-    iconSize: [40, 40] as [number, number],
-    iconAnchor: [20, 40] as [number, number],
-    popupAnchor: [0, -42] as [number, number],
-  });
+  const customIcon = createMapPinIcon(L, 'venue', 40);
 
   return (
     <MapContainer
@@ -72,13 +70,15 @@ function MapInnerComponent({ coords, title, address, height }: MapInnerProps) {
       style={{ height, width: '100%' }}
     >
       <TileLayer
-        url="https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1"
-        subdomains="0123"
+        url={MAP_TILE_URL}
+        subdomains={MAP_TILE_SUBDOMAINS}
       />
       <Marker position={coords} icon={customIcon}>
-        <Popup>
-          <strong>{title}</strong>
-          {address && <><br />{address}</>}
+        <Popup className="gv-map-popup">
+          <div className="gv-map-popup-content">
+            {title && <strong>{title}</strong>}
+            {address && <span>{address}</span>}
+          </div>
         </Popup>
       </Marker>
     </MapContainer>
@@ -174,30 +174,31 @@ export default function EventMap({
 
   if (!address || isVirtualAddress(address)) return null;
 
-  const fallbackHref = `https://2gis.ru/search/${encodeURIComponent(address)}`;
+  const fallbackHref = buildExternalMapSearchUrl(address);
 
   return (
-    <div ref={wrapperRef} className={className}>
+    <div ref={wrapperRef} className={`gv-event-map ${className}`.trim()}>
       {(geoState === 'idle' || geoState === 'loading') && (
         <div
-          className="animate-pulse rounded-2xl"
-          style={{ height, background: 'var(--surface-2)' }}
-        />
+          className="gv-map-skeleton animate-pulse"
+          style={{ height }}
+          aria-label="Карта загружается"
+        >
+          <span />
+        </div>
       )}
 
       {geoState === 'found' && coords && !mapExpanded && (
         <div
-          className="rounded-2xl px-4 py-3 flex items-center justify-between gap-3"
-          style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+          className="gv-map-preview"
         >
-          <div className="flex items-center gap-2 text-sm min-w-0" style={{ color: 'var(--text-muted)' }}>
-            <span className="shrink-0">📍</span>
-            <span className="truncate">{address}</span>
+          <div className="gv-map-preview__text">
+            <span className="gv-map-dot" aria-hidden="true" />
+            <span>{address}</span>
           </div>
           <button
             onClick={() => setMapExpanded(true)}
-            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition hover:opacity-80 shrink-0"
-            style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
+            className="gv-map-action"
           >
             Показать карту
           </button>
@@ -205,35 +206,22 @@ export default function EventMap({
       )}
 
       {geoState === 'found' && coords && mapExpanded && (
-        <>
-          <div style={{ height }} className="rounded-2xl overflow-hidden">
-            <MapInner
-              coords={coords}
-              title={title}
-              address={address}
-              height={height}
-            />
-          </div>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>
-            &copy;{' '}
-            <a
-              href="https://2gis.ru"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:opacity-70 transition"
-            >
-              2ГИС
-            </a>
-          </p>
-        </>
+        <div style={{ height }} className="gv-map-shell">
+          <MapInner
+            coords={coords}
+            title={title}
+            address={address}
+            height={height}
+          />
+          <MapAttribution />
+        </div>
       )}
 
       {(geoState === 'notfound' || geoState === 'error' || geoState === 'limit') && (
         <div
-          className="rounded-2xl px-5 py-4 flex items-center gap-4"
-          style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+          className="gv-map-fallback"
         >
-          <span className="text-2xl shrink-0">📍</span>
+          <span className="gv-map-dot gv-map-dot--muted" aria-hidden="true" />
           <div className="flex-1 min-w-0">
             <p className="text-sm truncate" style={{ color: 'var(--text-muted)' }}>
               {address}
@@ -243,8 +231,7 @@ export default function EventMap({
             href={fallbackHref}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm font-semibold shrink-0 transition hover:opacity-70"
-            style={{ color: 'var(--primary)' }}
+            className="gv-map-link"
           >
             Открыть на карте →
           </a>

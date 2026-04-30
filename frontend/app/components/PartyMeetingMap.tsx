@@ -3,6 +3,13 @@
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import type { LatLngTuple } from 'leaflet';
+import {
+  MAP_TILE_SUBDOMAINS,
+  MAP_TILE_URL,
+  MapAttribution,
+  createMapPinIcon,
+  formatMapPointLabel,
+} from './map-ui';
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -21,21 +28,6 @@ const DEFAULT_CENTER: LatLngTuple = [55.7558, 37.6173];
 const DEFAULT_ZOOM = 11;
 const PIN_ZOOM = 15;
 
-// ── Shared pin SVG factory ────────────────────────────────────────────────────
-
-function buildIcon(L: { divIcon: Function }, color: string) {
-  return L.divIcon({
-    html: `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">
-      <path d="M20 2C13.373 2 8 7.373 8 14c0 9 12 24 12 24s12-15 12-24c0-6.627-5.373-12-12-12z" fill="${color}" stroke="white" stroke-width="2"/>
-      <circle cx="20" cy="14" r="4" fill="white"/>
-    </svg>`,
-    className: '',
-    iconSize: [40, 40] as [number, number],
-    iconAnchor: [20, 40] as [number, number],
-    popupAnchor: [0, -42] as [number, number],
-  });
-}
-
 // ── VIEW inner map ────────────────────────────────────────────────────────────
 
 interface MapViewInnerProps {
@@ -47,7 +39,7 @@ function MapViewInnerComponent({ coords, landmark }: MapViewInnerProps) {
   const { MapContainer, TileLayer, Marker, Popup, useMap } = require('react-leaflet');
   const L = require('leaflet');
 
-  const icon = buildIcon(L, '#610bef');
+  const icon = createMapPinIcon(L, 'meeting', 40);
 
   // Re-center map when coords change via real-time socket update
   function FlyToController({ target }: { target: LatLngTuple }) {
@@ -65,14 +57,17 @@ function MapViewInnerComponent({ coords, landmark }: MapViewInnerProps) {
       style={{ height: '100%', width: '100%' }}
     >
       <TileLayer
-        url="https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1"
-        subdomains="0123"
+        url={MAP_TILE_URL}
+        subdomains={MAP_TILE_SUBDOMAINS}
       />
       <FlyToController target={coords} />
       <Marker position={coords} icon={icon}>
         {landmark && (
-          <Popup>
-            <strong>{landmark}</strong>
+          <Popup className="gv-map-popup">
+            <div className="gv-map-popup-content">
+              <strong>Точка встречи</strong>
+              <span>{landmark}</span>
+            </div>
           </Popup>
         )}
       </Marker>
@@ -96,7 +91,7 @@ function MapEditInnerComponent({ coords, onPick }: MapEditInnerProps) {
   const { MapContainer, TileLayer, Marker, useMapEvents } = require('react-leaflet');
   const L = require('leaflet');
 
-  const icon = buildIcon(L, '#610bef');
+  const icon = createMapPinIcon(L, 'meeting', 40);
 
   function ClickHandler() {
     useMapEvents({
@@ -119,8 +114,8 @@ function MapEditInnerComponent({ coords, onPick }: MapEditInnerProps) {
       style={{ height: '100%', width: '100%', cursor: 'crosshair' }}
     >
       <TileLayer
-        url="https://tile{s}.maps.2gis.com/tiles?x={x}&y={y}&z={z}&v=1"
-        subdomains="0123"
+        url={MAP_TILE_URL}
+        subdomains={MAP_TILE_SUBDOMAINS}
       />
       <ClickHandler />
       {coords && (
@@ -140,10 +135,11 @@ const MapEditInner = dynamic(
 function MapShell({ children }: { children: React.ReactNode }) {
   return (
     <div
-      className="rounded-2xl overflow-hidden"
-      style={{ height: '220px', width: '100%' }}
+      className="gv-map-shell gv-map-shell--meeting"
+      style={{ height: '220px' }}
     >
       {children}
+      <MapAttribution />
     </div>
   );
 }
@@ -203,7 +199,7 @@ export default function PartyMeetingMap({
       <div className="flex flex-col gap-3">
         {!tempCoords && (
           <p
-            className="text-xs font-medium px-1"
+            className="gv-map-hint"
             style={{ color: 'var(--text-muted)' }}
           >
             Нажмите на карте, чтобы выбрать точку встречи
@@ -238,36 +234,22 @@ export default function PartyMeetingMap({
           />
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button
             onClick={handleSave}
             disabled={!tempCoords || saving}
-            className="text-sm font-semibold px-4 py-2 rounded-lg transition hover:opacity-80 disabled:opacity-40"
-            style={{ background: 'var(--primary)', color: '#fff' }}
+            className="gv-map-action gv-map-action--solid"
           >
             {saving ? 'Сохранение...' : 'Сохранить'}
           </button>
           <button
             onClick={handleCancel}
             disabled={saving}
-            className="text-sm font-medium px-4 py-2 rounded-lg transition hover:opacity-70 disabled:opacity-40"
-            style={{ color: 'var(--text-muted)' }}
+            className="gv-map-action"
           >
             Отмена
           </button>
         </div>
-
-        <p className="text-xs" style={{ color: 'var(--text-faint)' }}>
-          &copy;{' '}
-          <a
-            href="https://2gis.ru"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline hover:opacity-70 transition"
-          >
-            2ГИС
-          </a>
-        </p>
       </div>
     );
   }
@@ -287,18 +269,17 @@ export default function PartyMeetingMap({
   if (!hasCoords && isCreator) {
     return (
       <div className="flex flex-col gap-3">
-        <p className="text-sm px-1" style={{ color: 'var(--text-faint)' }}>
-          Точка встречи ещё не указана
-        </p>
-        <button
-          onClick={handleStartEdit}
-          className="self-start text-xs font-semibold px-3 py-1.5 rounded-lg transition hover:opacity-80"
-          style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
-        >
-          + Указать точку встречи
-        </button>
-      </div>
-    );
+      <p className="text-sm px-1" style={{ color: 'var(--text-faint)' }}>
+        Точка встречи ещё не указана
+      </p>
+      <button
+        onClick={handleStartEdit}
+        className="gv-map-action self-start"
+      >
+        Указать точку встречи
+      </button>
+    </div>
+  );
   }
 
   // ── VIEW mode (has coords) ─────────────────────────────────────────────────
@@ -306,6 +287,7 @@ export default function PartyMeetingMap({
   const viewCoords: LatLngTuple = [lat as number, lon as number];
   // Yandex Maps: rtext=~lat,lon sets destination from current location
   const routeHref = `https://yandex.ru/maps/?rtext=~${lat}%2C${lon}&rtt=auto`;
+  const pointLabel = formatMapPointLabel(landmark, lat as number, lon as number);
 
   return (
     <div className="flex flex-col gap-3">
@@ -313,20 +295,19 @@ export default function PartyMeetingMap({
         <MapViewInner coords={viewCoords} landmark={landmark} />
       </MapShell>
 
-      {landmark && (
-        <div className="flex items-center gap-2 text-sm px-1">
-          <span className="shrink-0">📍</span>
-          <span style={{ color: 'var(--text-muted)' }}>{landmark}</span>
+      <div className="gv-map-preview gv-map-preview--compact">
+        <div className="gv-map-preview__text">
+          <span className="gv-map-dot" aria-hidden="true" />
+          <span>{pointLabel}</span>
         </div>
-      )}
+      </div>
 
-      <div className="flex items-center gap-3 px-1">
+      <div className="flex items-center gap-3 px-1 flex-wrap">
         <a
           href={routeHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-sm font-semibold transition hover:opacity-80"
-          style={{ color: 'var(--primary)' }}
+          className="gv-map-link"
         >
           Открыть маршрут →
         </a>
@@ -334,25 +315,12 @@ export default function PartyMeetingMap({
         {isCreator && (
           <button
             onClick={handleStartEdit}
-            className="text-xs font-medium transition hover:opacity-70"
-            style={{ color: 'var(--text-muted)' }}
+            className="gv-map-action"
           >
             Изменить точку
           </button>
         )}
       </div>
-
-      <p className="text-xs px-1" style={{ color: 'var(--text-faint)' }}>
-        &copy;{' '}
-        <a
-          href="https://2gis.ru"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="underline hover:opacity-70 transition"
-        >
-          2ГИС
-        </a>
-      </p>
     </div>
   );
 }
