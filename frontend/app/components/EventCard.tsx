@@ -2,49 +2,10 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { translateCategory } from '../events/utils';
+import { getCategoryBadges } from '../lib/kudagoUi';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { proxiedImageUrl } from '../lib/imageProxy';
-
-
-export interface KudaGoEvent {
-  kudago_id: number;
-  title: string;
-  short_title: string;
-  description: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  categories: any[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tags: any[];
-  price: string;
-  is_free: boolean;
-  age_restriction: string | number | null;
-  is_permanent: boolean;
-  start_date: string | null;
-  start_time: string | null;
-  place_title: string;
-  place_address: string;
-  lat: number | null;
-  lon: number | null;
-  cover_url: string | null;
-  site_url: string;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toLabel(val: any): string {
-  if (!val && val !== 0) return '';
-  if (typeof val === 'string') return val;
-  if (typeof val === 'number') return String(val);
-  if (typeof val === 'object') return String(val.name ?? val.slug ?? val.id ?? '');
-  return String(val);
-}
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toKey(val: any, idx: number): string {
-  return toLabel(val) || String(idx);
-}
-function translateTag(raw: string): string {
-  return translateCategory(raw);
-}
+export type { KudaGoEvent, KudaGoParty, UnknownTagLike } from '../lib/kudagoUi';
 function formatDate(dateStr: string | null, timeStr: string | null): string {
   if (!dateStr) return '';
   
@@ -137,19 +98,17 @@ export default function EventCard({ event, attendees = [] }: { event: KudaGoEven
       <div className="flex flex-col flex-1 p-4 gap-2">
         {event.categories?.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            {event.categories.slice(0, 2).map((cat, i) => {
-              const raw = toLabel(cat);
-              if (!raw) return null;
+            {getCategoryBadges(event.categories, 2).map(({ key, label }) => {
               return (
                 <span
-                  key={toKey(cat, i)}
+                  key={key}
                   className="text-xs font-medium px-2 py-0.5 rounded-full"
                   style={{
                     background: 'var(--primary-hl)',
                     color: 'var(--primary)',
                   }}
                 >
-                  {translateTag(raw)}
+                  {label}
                 </span>
               );
             })}

@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../lib/apiFetch';
 import { toast } from './Toast';
 import { capitalizeFirstDisplayChar } from '../lib/text';
+import { extractApiErrorMessage } from '../lib/apiErrors';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const POLL_INTERVAL = 5000;
@@ -32,21 +33,6 @@ export interface Party {
   is_open: boolean;
   members: PartyMember[];
   created_at: string;
-}
-
-/** Safely extract a human-readable error string from any FastAPI error response */
-function extractErrorMessage(detail: unknown): string {
-  if (typeof detail === 'string') return detail;
-  if (Array.isArray(detail)) {
-    return detail.map((e: any) => (typeof e?.msg === 'string' ? e.msg : JSON.stringify(e))).join('; ');
-  }
-  if (detail && typeof detail === 'object') {
-    const d = detail as any;
-    if (typeof d.msg === 'string') return d.msg;
-    if (typeof d.message === 'string') return d.message;
-    return JSON.stringify(d);
-  }
-  return 'Ошибка';
 }
 
 const cardStyle = {
@@ -85,7 +71,7 @@ function JoinModal({
         onClose();
       } else {
         const d = await res.json();
-        toast(extractErrorMessage(d.detail), 'error');
+        toast(extractApiErrorMessage(d.detail), 'error');
       }
     } catch {}
     setLoading(false);
@@ -173,7 +159,7 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
         onUpdate();
       } else {
         const d = await res.json();
-        toast(extractErrorMessage(d.detail), 'error');
+        toast(extractApiErrorMessage(d.detail), 'error');
       }
     } catch {}
     setLoading(false);

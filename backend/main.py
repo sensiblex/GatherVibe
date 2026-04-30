@@ -10,157 +10,11 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-from database import engine
-import models.user
-import models.event
-import models.attendee
-import models.party
-import models.chat_message
-import models.review
-import models.notification
-import models.kudago_event
-import models.party_coordination
-import models.push_subscription
-import models.message_reaction
-import models.party_recap
-import models.report
-import models.audit_log
-import models.feature_flag
-import models.banned_word
-import models.appeal
-import models.token_revocation
-
-models.user.Base.metadata.create_all(bind=engine)
-models.event.Base.metadata.create_all(bind=engine)
-models.attendee.Base.metadata.create_all(bind=engine)
-models.party.Base.metadata.create_all(bind=engine)
-models.chat_message.Base.metadata.create_all(bind=engine)
-models.review.Base.metadata.create_all(bind=engine)
-models.party_coordination.Base.metadata.create_all(bind=engine)
-models.push_subscription.Base.metadata.create_all(bind=engine)
-models.message_reaction.Base.metadata.create_all(bind=engine)
-models.party_recap.Base.metadata.create_all(bind=engine)
-models.report.Base.metadata.create_all(bind=engine)
-models.audit_log.Base.metadata.create_all(bind=engine)
-models.feature_flag.Base.metadata.create_all(bind=engine)
-models.banned_word.Base.metadata.create_all(bind=engine)
-models.appeal.Base.metadata.create_all(bind=engine)
-models.token_revocation.Base.metadata.create_all(bind=engine)
-
-
-def _run_column_migrations():
-    """Add new columns to existing tables (idempotent — silently skips if column exists)."""
-    from sqlalchemy import text, inspect as sa_inspect
-    insp = sa_inspect(engine)
-    existing = {c["name"] for c in insp.get_columns("chat_messages")}
-    with engine.connect() as conn:
-        if "is_system" not in existing:
-            conn.execute(text(
-                "ALTER TABLE chat_messages ADD COLUMN is_system BOOLEAN NOT NULL DEFAULT FALSE"
-            ))
-        if "event_type" not in existing:
-            conn.execute(text(
-                "ALTER TABLE chat_messages ADD COLUMN event_type VARCHAR(50)"
-            ))
-        if "file_url" not in existing:
-            conn.execute(text(
-                "ALTER TABLE chat_messages ADD COLUMN file_url TEXT"
-            ))
-        if "file_type" not in existing:
-            conn.execute(text(
-                "ALTER TABLE chat_messages ADD COLUMN file_type VARCHAR(50)"
-            ))
-        if "file_name" not in existing:
-            conn.execute(text(
-                "ALTER TABLE chat_messages ADD COLUMN file_name VARCHAR(255)"
-            ))
-        event_parties_cols = {c["name"] for c in insp.get_columns("event_parties")}
-        if "invite_token" not in event_parties_cols:
-            conn.execute(text(
-                "ALTER TABLE event_parties ADD COLUMN invite_token VARCHAR(64)"
-            ))
-            import uuid as _uuid
-            existing_ids = [r[0] for r in conn.execute(text("SELECT id FROM event_parties")).fetchall()]
-            for pid in existing_ids:
-                conn.execute(
-                    text("UPDATE event_parties SET invite_token = :tok WHERE id = :pid"),
-                    {"tok": _uuid.uuid4().hex, "pid": pid},
-                )
-            try:
-                conn.execute(text(
-                    "CREATE UNIQUE INDEX ix_event_parties_invite_token ON event_parties(invite_token)"
-                ))
-            except Exception:
-                pass
-
-        party_members_cols = {c["name"] for c in insp.get_columns("party_members")}
-        if "invited_by_user_id" not in party_members_cols:
-            conn.execute(text(
-                "ALTER TABLE party_members ADD COLUMN invited_by_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL"
-            ))
-        if "invite_message" not in party_members_cols:
-            conn.execute(text(
-                "ALTER TABLE party_members ADD COLUMN invite_message VARCHAR(200)"
-            ))
-
-        users_cols = {c["name"] for c in insp.get_columns("users")}
-        if "role" not in users_cols:
-            conn.execute(text(
-                "ALTER TABLE users ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'user'"
-            ))
-        if "is_banned" not in users_cols:
-            conn.execute(text(
-                "ALTER TABLE users ADD COLUMN is_banned BOOLEAN NOT NULL DEFAULT FALSE"
-            ))
-        if "banned_until" not in users_cols:
-            conn.execute(text("ALTER TABLE users ADD COLUMN banned_until TIMESTAMP"))
-        if "ban_reason" not in users_cols:
-            conn.execute(text("ALTER TABLE users ADD COLUMN ban_reason VARCHAR(500)"))
-        if "muted_until" not in users_cols:
-            conn.execute(text("ALTER TABLE users ADD COLUMN muted_until TIMESTAMP"))
-        if "warnings_count" not in users_cols:
-            conn.execute(text(
-                "ALTER TABLE users ADD COLUMN warnings_count INTEGER NOT NULL DEFAULT 0"
-            ))
-        if "created_at" not in users_cols:
-            conn.execute(text(
-                "ALTER TABLE users ADD COLUMN created_at TIMESTAMPTZ DEFAULT NOW()"
-            ))
-
-        chat_cols_now = {c["name"] for c in insp.get_columns("chat_messages")}
-        if "is_deleted" not in chat_cols_now:
-            conn.execute(text(
-                "ALTER TABLE chat_messages ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE"
-            ))
-        if "deleted_by_id" not in chat_cols_now:
-            conn.execute(text(
-                "ALTER TABLE chat_messages ADD COLUMN deleted_by_id INTEGER REFERENCES users(id)"
-            ))
-        if "deleted_at" not in chat_cols_now:
-            conn.execute(text("ALTER TABLE chat_messages ADD COLUMN deleted_at TIMESTAMP"))
-        if "delete_reason" not in chat_cols_now:
-            conn.execute(text("ALTER TABLE chat_messages ADD COLUMN delete_reason VARCHAR(200)"))
-
-        ep_cols = {c["name"] for c in insp.get_columns("event_parties")}
-        if "is_hidden" not in ep_cols:
-            conn.execute(text(
-                "ALTER TABLE event_parties ADD COLUMN is_hidden BOOLEAN NOT NULL DEFAULT FALSE"
-            ))
-        if "hidden_reason" not in ep_cols:
-            conn.execute(text("ALTER TABLE event_parties ADD COLUMN hidden_reason VARCHAR(200)"))
-
-        conn.commit()
-
-
-try:
-    _run_column_migrations()
-except Exception:
-    # ALTER'ы идемпотентны и выполняются на startup. Если один падает (diskfull,
-    # lock), не валим весь процесс: Alembic остаётся главным источником истины.
-    import logging as _lg
-    _lg.getLogger(__name__).exception("Column migration failed — continuing, schema may be partial")
-
-from deps import (  # noqa: E402
+from services.db_schema import (
+    ensure_db_schema_compatibility,
+    get_current_schema_check_mode,
+)
+from deps import (
     get_db,
     get_current_user_from_token,
     get_user_from_socket_token,
@@ -201,8 +55,8 @@ async def _reminder_loop():
     from email_helpers import send_event_reminder_email, _hours_label
     from models.party import EventParty, PartyMember
     from models.user import User
-    from models.notification import Notification
     from notification_helpers import create_notification
+    from services.notification_dedup import has_party_notification
 
     # Окно ±7 минут вокруг порогового момента (24 ч или 1 ч до события)
     WINDOW = 420  # секунд
@@ -222,7 +76,7 @@ async def _reminder_loop():
                     target_high = now_ts + delta_secs + WINDOW
 
                     parties = (
-                        db.query(EventParty)
+                    db.query(EventParty)
                         .filter(
                             EventParty.event_date_ts.isnot(None),
                             EventParty.event_date_ts >= target_low,
@@ -230,84 +84,98 @@ async def _reminder_loop():
                         )
                         .all()
                     )
+                    if not parties:
+                        continue
+
+                    party_ids = [p.id for p in parties]
+                    party_to_recipients: dict[int, set[int]] = {
+                        p.id: {p.creator_id} for p in parties
+                    }
+
+                    accepted_rows = (
+                        db.query(PartyMember.party_id, PartyMember.user_id)
+                        .filter(
+                            PartyMember.party_id.in_(party_ids),
+                            PartyMember.status == "accepted",
+                        )
+                        .all()
+                    )
+                    for party_id, user_id in accepted_rows:
+                        party_to_recipients.setdefault(party_id, set()).add(user_id)
+
+                    all_recipient_ids = {
+                        user_id
+                        for recipient_ids in party_to_recipients.values()
+                        for user_id in recipient_ids
+                    }
+                    user_by_id = {
+                        user.id: user
+                        for user in db.query(User).filter(User.id.in_(all_recipient_ids)).all()
+                    } if all_recipient_ids else {}
+
+                    email_jobs = []
+                    event_loop = asyncio.get_event_loop()
 
                     for party in parties:
-                        # Кооперативный yield перед каждой party: даём event-loop
-                        # обработать socket-события между синхронными DB-запросами.
-                        # Полноценное решение — async session; здесь это bandaid
-                        # под текущую нагрузку.
-                        await asyncio.sleep(0)
-                        # Собираем accepted-участников + creator
-                        accepted_rows = (
-                            db.query(PartyMember)
-                            .filter(
-                                PartyMember.party_id == party.id,
-                                PartyMember.status == "accepted",
-                            )
-                            .all()
-                        )
-                        recipient_ids = {m.user_id for m in accepted_rows}
-                        recipient_ids.add(party.creator_id)
-
-                        # Список username-ов всех принятых (для письма)
-                        member_users = (
-                            db.query(User)
-                            .filter(User.id.in_(recipient_ids))
-                            .all()
-                        )
-                        member_usernames = [u.username for u in member_users]
-                        user_by_id = {u.id: u for u in member_users}
+                        recipient_ids = party_to_recipients.get(party.id, {party.creator_id})
+                        recipient_list = sorted(recipient_ids)
+                        member_usernames = [
+                            user_by_id[uid].username
+                            for uid in recipient_list
+                            if uid in user_by_id
+                        ]
                         event_date = datetime.utcfromtimestamp(party.event_date_ts)
                         hours_before = delta_secs // 3600
 
                         for uid in recipient_ids:
-                            # Dedup: party_id может быть последним ключом (}), middle (,) или рядом с пробелом.
-                            # Проверяем обе валидные JSON-формы, чтобы не промахнуться.
-                            frag_mid = f'%"party_id": {party.id},%'
-                            frag_end = f'%"party_id": {party.id}}}%'
-                            already_sent = (
-                                db.query(Notification)
-                                .filter(
-                                    Notification.user_id == uid,
-                                    Notification.type == notif_type,
-                                    (Notification.data.like(frag_mid) | Notification.data.like(frag_end)),
-                                )
-                                .first()
-                            )
-                            if already_sent:
+                            if has_party_notification(
+                                db,
+                                user_id=uid,
+                                notif_type=notif_type,
+                                party_id=party.id,
+                            ):
                                 continue
-
                             user = user_by_id.get(uid)
                             if not user:
                                 continue
-
-                            create_notification(
-                                db,
-                                uid,
-                                notif_type,
-                                f"Событие «{party.event_title or party.title}» через {_hours_label(hours_before)}",
-                                f"Компания «{party.title}» встречается {event_date.strftime('%d.%m в %H:%M')}",
-                                {"party_id": party.id},
-                            )
-                            db.commit()
+                            try:
+                                create_notification(
+                                    db,
+                                    uid,
+                                    notif_type,
+                                    f"Событие «{party.event_title or party.title}» через {_hours_label(hours_before)}",
+                                    f"Компания «{party.title}» встречается {event_date.strftime('%d.%m в %H:%M')}",
+                                    {"party_id": party.id},
+                                )
+                                db.commit()
+                            except Exception as exc:
+                                logger.error("Reminder loop create/commit error: %s", exc)
+                                db.rollback()
+                                continue
 
                             if user.email_notifications:
-                                loop = asyncio.get_event_loop()
-                                await loop.run_in_executor(
-                                    None,
-                                    lambda u=user, pt=party, ed=event_date, hb=hours_before: (
-                                        send_event_reminder_email(
-                                            to_email=u.email,
-                                            username=u.username,
-                                            event_title=pt.event_title or pt.title,
-                                            event_date=ed,
-                                            party_title=pt.title,
-                                            party_id=pt.id,
-                                            members=member_usernames,
-                                            hours_before=hb,
-                                        )
-                                    ),
+                                email_jobs.append(
+                                    event_loop.run_in_executor(
+                                        None,
+                                        lambda u=user, pt=party, ed=event_date, hb=hours_before: (
+                                            send_event_reminder_email(
+                                                to_email=u.email,
+                                                username=u.username,
+                                                event_title=pt.event_title or pt.title,
+                                                event_date=ed,
+                                                party_title=pt.title,
+                                                party_id=pt.id,
+                                                members=member_usernames,
+                                                hours_before=hb,
+                                            )
+                                        ),
+                                    )
                                 )
+
+                    if email_jobs:
+                        for send_result in await asyncio.gather(*email_jobs, return_exceptions=True):
+                            if isinstance(send_result, Exception):
+                                logger.warning("Failed to send reminder email: %s", send_result)
             except Exception as exc:
                 logger.error("Reminder loop inner error: %s", exc)
                 db.rollback()
@@ -408,6 +276,11 @@ async def _db_cleanup_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import os as _os_lifespan
+
+    schema_check_mode = get_current_schema_check_mode()
+    logger.info("Schema check mode: %s", schema_check_mode)
+    ensure_db_schema_compatibility(mode=schema_check_mode)
+
     if _os_lifespan.environ.get("SKIP_BACKGROUND_LOOPS") == "1":
         yield
         return

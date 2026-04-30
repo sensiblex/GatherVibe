@@ -10,15 +10,14 @@ into the app instead of drifting to external messengers:
 The runner is sync and takes an explicit `now_ts` so it's trivially testable.
 The background loop in main.py wraps it.
 """
-import json
 import logging
 from typing import Callable
 
 from sqlalchemy.orm import Session
 
-from models.notification import Notification
 from models.party import EventParty, PartyMember
 from notification_helpers import create_notification
+from services.notification_dedup import has_party_notification
 
 logger = logging.getLogger(__name__)
 
@@ -42,20 +41,6 @@ def _accepted_recipients(db: Session, party: EventParty) -> set[int]:
     ids = {r.user_id for r in rows}
     ids.add(party.creator_id)
     return ids
-
-
-def _already_sent(db: Session, user_id: int, notif_type: str, party_id: int) -> bool:
-    expected = json.dumps({"party_id": party_id})
-    return (
-        db.query(Notification)
-        .filter(
-            Notification.user_id == user_id,
-            Notification.type == notif_type,
-            Notification.data == expected,
-        )
-        .first()
-        is not None
-    )
 
 
 _TitleFn = Callable[[EventParty], str]
@@ -116,7 +101,7 @@ def run_post_event_jobs(
 
         for party in parties:
             for uid in _accepted_recipients(db, party):
-                if _already_sent(db, uid, notif_type, party.id):
+                if has_party_notification(db, uid, notif_type, party.id):
                     continue
                 try:
                     create_notification(

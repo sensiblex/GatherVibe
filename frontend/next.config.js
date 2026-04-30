@@ -2,9 +2,6 @@
 const nextConfig = {
   devIndicators: false,
   reactStrictMode: false,
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   images: {
     unoptimized: true,
     domains: ['media.kudago.com'],

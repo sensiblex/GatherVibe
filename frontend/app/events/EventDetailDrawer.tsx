@@ -3,24 +3,10 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect } from 'react';
-import { KudaGoEvent } from '../components/EventCard';
-import { translateCategory } from './utils';
+import { KudaGoEvent, getCategoryBadges } from '../lib/kudagoUi';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { markEventViewed } from './viewed-events';
 import { proxiedImageUrl } from '../lib/imageProxy';
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toLabel(val: any): string {
-  if (!val && val !== 0) return '';
-  if (typeof val === 'string') return val;
-  if (typeof val === 'number') return String(val);
-  if (typeof val === 'object') return String(val.name ?? val.slug ?? val.id ?? '');
-  return String(val);
-}
-
-function translateCat(raw: string): string {
-  return translateCategory(raw);
-}
 
 function formatDrawerDate(dateStr: string | null, timeStr: string | null): string {
   if (!dateStr) return '';
@@ -65,10 +51,7 @@ export default function EventDetailDrawer({ event, onClose, onViewed }: EventDet
     };
   }, []);
 
-  const categories = (event.categories ?? [])
-    .slice(0, 3)
-    .map(toLabel)
-    .filter(Boolean);
+  const categories = getCategoryBadges(event.categories, 3);
 
   const dateLabel = event.start_date
     ? formatDrawerDate(event.start_date, event.start_time)
@@ -151,16 +134,16 @@ export default function EventDetailDrawer({ event, onClose, onViewed }: EventDet
           {/* Categories */}
           {categories.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              {categories.map((cat, i) => (
+              {categories.map((cat) => (
                 <span
-                  key={i}
+                  key={cat.key}
                   className="text-xs font-semibold px-2.5 py-1 rounded-full"
                   style={{
                     background: 'var(--primary-hl)',
                     color: 'var(--primary)',
                   }}
                 >
-                  {translateCat(cat)}
+                  {cat.label}
                 </span>
               ))}
             </div>
