@@ -16,6 +16,10 @@ const nextConfig = {
   async rewrites() {
     return [
       {
+        source: '/socket.io/:path*',
+        destination: 'http://backend:8000/socket.io/:path*',
+      },
+      {
         source: '/api/:path*',
         destination: 'http://backend:8000/:path*',
       },
