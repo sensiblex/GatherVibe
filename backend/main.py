@@ -604,6 +604,21 @@ async def join_party_chat(sid, data: dict):
     )
 
 
+ALLOWED_PARTY_MESSAGE_FILE_TYPES = {
+    "image",
+    "pdf",
+    "file",
+    # Legacy/client-compatible values accepted by older socket payloads.
+    "document",
+    "video",
+    "audio",
+}
+
+
+def _is_allowed_party_file_type(file_type: str) -> bool:
+    return file_type in ALLOWED_PARTY_MESSAGE_FILE_TYPES
+
+
 @sio.on('send_party_message')
 async def send_party_message(sid, data: dict):
     if data is not None and not isinstance(data, dict):
@@ -641,8 +656,7 @@ async def send_party_message(sid, data: dict):
             await sio.emit('error', {'message': 'file_url должен быть /uploads/... или https://...'}, room=sid)
             db.close()
             return
-    ALLOWED_FILE_TYPES = {'image', 'document', 'video', 'audio'}
-    if file_type and (not isinstance(file_type, str) or file_type not in ALLOWED_FILE_TYPES):
+    if file_type and (not isinstance(file_type, str) or not _is_allowed_party_file_type(file_type)):
         await sio.emit('error', {'message': 'Некорректный file_type'}, room=sid)
         db.close()
         return

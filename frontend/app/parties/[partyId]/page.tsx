@@ -51,6 +51,9 @@ interface Party {
   creator_username: string;
   is_open: boolean;
   members: PartyMember[];
+  event_title?: string | null;
+  event_date_ts?: number | null;
+  event_image_url?: string | null;
   invite_token?: string | null;
   created_at: string;
 }

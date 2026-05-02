@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { getCategoryBadges } from '../lib/kudagoUi';
+import type { KudaGoEvent } from '../lib/kudagoUi';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { proxiedImageUrl } from '../lib/imageProxy';
 export type { KudaGoEvent, KudaGoParty, UnknownTagLike } from '../lib/kudagoUi';
