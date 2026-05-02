@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '../components/Navbar';
 import { INTERESTS_LIST } from '../lib/interests';
+import { KUDAGO_CITIES } from '../events/event-filters';
+import { validateRegisterStep1 } from './register-city';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -17,7 +19,7 @@ export default function RegisterPage() {
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) =>
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
 
   const toggleInterest = (id: string) =>
@@ -29,8 +31,9 @@ export default function RegisterPage() {
 
   const handleStep1 = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.email || !form.username || !form.password) {
-      setError('Заполните все обязательные поля');
+    const validationError = validateRegisterStep1(form);
+    if (validationError) {
+      setError(validationError);
       return;
     }
     setError(null);
@@ -144,9 +147,13 @@ export default function RegisterPage() {
                     placeholder="Не менее 8 символов" required minLength={8} className="gv-input" />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Город</label>
-                  <input type="text" name="city" value={form.city} onChange={handleChange}
-                    placeholder="Казань" className="gv-input" />
+                  <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Город *</label>
+                  <select name="city" value={form.city} onChange={handleChange} required className="gv-input">
+                    <option value="" disabled>Выберите город</option>
+                    {KUDAGO_CITIES.map(city => (
+                      <option key={city.slug} value={city.name}>{city.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <button type="submit" className="gv-btn-primary w-full mt-2">
                   Далее →
