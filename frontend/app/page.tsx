@@ -8,17 +8,17 @@ const STEPS = [
   {
     num: '01',
     title: 'Находи события',
-    desc: 'Тысячи мероприятий по всей России. Концерты, выставки, театр, мастер-классы, фестивали.',
+    desc: 'Концерты, выставки, мастер-классы',
   },
   {
     num: '02',
     title: 'Собери компанию',
-    desc: 'Создай группу, набери участников со схожими интересами, скоординируйтесь в чате.',
+    desc: 'Найди людей с похожими интересами',
   },
   {
     num: '03',
     title: 'Получай впечатления',
-    desc: 'Встречайтесь, ходите на события вместе. Впечатления становятся глубже когда есть кому их разделить.',
+    desc: 'Ходи вместе и делись опытом',
   },
 ];
 
@@ -34,19 +34,13 @@ export default function Home() {
         <section className="hero">
           <div className="hero-city-card" aria-hidden="true">
             <img
-              src="https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=800&q=85&auto=format&fit=crop"
+              src="https://images.unsplash.com/photo-1630395822701-565a7c69d344?q=80&w=687&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
               alt=""
             />
           </div>
 
           <div className="hero-grid">
             <div className="hero-left">
-              <div className="hero-eyebrow fu">
-                <span className="eyebrow-dot blink" />
-                <span className="eyebrow-line" />
-                <span className="t-label">Уже в 11 городах России</span>
-              </div>
-
               <h1 className="hero-title">
                 <span className="word word-1">Найди</span><br />
                 <span className="word word-2"><em>компанию</em></span><br />
@@ -158,7 +152,6 @@ export default function Home() {
             {!user && <Link href="/login">Войти</Link>}
             {!user && <Link href="/register">Регистрация</Link>}
           </div>
-          <div className="footer-copy">© {new Date().getFullYear()} GatherVibe</div>
         </div>
       </footer>
     </div>
