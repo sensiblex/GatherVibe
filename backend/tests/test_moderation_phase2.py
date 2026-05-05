@@ -225,6 +225,16 @@ def test_users_me_returns_muted_until(client, db, user_a, token_a):
     assert body.get("warnings_count") == 0
 
 
+def test_users_me_returns_trust_score_and_created_at(client, user_a, token_a):
+    r = client.get("/users/me", headers=_auth(token_a))
+    assert r.status_code == 200
+    body = r.json()
+    assert "trust_score" in body
+    assert body.get("trust_score") is None or isinstance(body.get("trust_score"), (int, float))
+    assert "created_at" in body
+    assert body.get("created_at") is None or isinstance(body.get("created_at"), str)
+
+
 # ── 4. Timeseries метрики ─────────────────────────────────────────────────────
 
 def test_timeseries_returns_7_days(client, admin_token):

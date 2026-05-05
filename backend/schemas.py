@@ -53,6 +53,8 @@ class UserResponse(BaseModel):
     banned_until: Optional[datetime] = None
     muted_until: Optional[datetime] = None
     warnings_count: Optional[int] = 0
+    trust_score: Optional[float] = None
+    created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
