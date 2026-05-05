@@ -395,11 +395,46 @@ def kudago_get_events(
             "results": [], "from_cache": False,
         }
     cache_has_location = kudago_cache.location_has_cache(db, location)
+    search_trimmed = search.strip() if search else ""
+    # Разрешаем API-фоллбэк, если кэш локации есть, но plain-browsing выдача пуста.
+    # Это защищает от stale/полупустого кэша для конкретного города.
+    plain_browsing = not any([
+        categories,
+        is_free is not None,
+        bool(search_trimmed),
+        actual_since is not None,
+        actual_until is not None,
+        max_age is not None,
+        tags,
+        bool(place_search and place_search.strip()),
+        lat is not None,
+        lon is not None,
+        radius_m is not None,
+        order_by is not None,
+        from_hour is not None,
+        to_hour is not None,
+        bool(weekdays and str(weekdays).strip()),
+        hide_started is True,
+        min_price is not None,
+        max_price is not None,
+        has_party is not None,
+        min_attendees is not None,
+        has_free_spots is not None,
+        time_of_day is not None,
+        only_permanent is not None,
+        exclude_permanent is not None,
+        has_cover is not None,
+        starting_within_hours is not None,
+        is_short is not None,
+        is_long is not None,
+        has_schedules is not None,
+        only_verified_place is not None,
+    ])
 
     if cache_has_location:
         # Кэш есть — всегда читаем из него. Поиск точный, по title.
         try:
-            return kudago_cache.query_cache(
+            cached = kudago_cache.query_cache(
                 db=db,
                 location=location,
                 categories=categories,
@@ -435,6 +470,8 @@ def kudago_get_events(
                 min_price=min_price,
                 max_price=max_price,
             )
+            if cached.get("count", 0) > 0 or not plain_browsing:
+                return cached
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Ошибка кэша: {str(e)}")
 
