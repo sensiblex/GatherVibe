@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { Socket } from 'socket.io-client';
@@ -201,16 +201,6 @@ export default function PartyChat({
 
   return (
     <div className="overflow-hidden" style={{ borderTop: '1px solid var(--border)' }}>
-      {/* Connection indicator */}
-      <div className="flex items-center justify-end gap-1.5 px-4 py-2" style={{ background: 'var(--surface-2)', borderBottom: '1px solid var(--border)' }}>
-        <span
-          className={`w-1.5 h-1.5 rounded-full transition-colors ${connected ? 'bg-green-500' : 'bg-red-400'}`}
-        />
-        <span className="text-xs" style={{ color: 'var(--text-faint)' }}>
-          {connected ? 'онлайн' : 'соединение...'}
-        </span>
-      </div>
-
       {/* Messages */}
       <div
         className="h-[320px] overflow-y-auto p-4 flex flex-col gap-2"
@@ -428,3 +418,4 @@ export default function PartyChat({
     </div>
   );
 }
+

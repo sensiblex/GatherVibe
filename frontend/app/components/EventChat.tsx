@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
@@ -121,7 +121,7 @@ export default function EventChat({
     <div className="rounded-2xl shadow-sm overflow-hidden" style={cardStyle}>
       {/* Header */}
       <div
-        className="px-6 py-4 flex items-center justify-between"
+        className="px-6 py-4"
         style={{ borderBottom: '1px solid var(--border)' }}
       >
         <div>
@@ -131,16 +131,6 @@ export default function EventChat({
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
             Общайся с другими участниками
           </p>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'
-            }`}
-          />
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            {connected ? 'Подключено' : 'Подключение...'}
-          </span>
         </div>
       </div>
 
@@ -266,3 +256,7 @@ export default function EventChat({
     </div>
   );
 }
+
+
+
+

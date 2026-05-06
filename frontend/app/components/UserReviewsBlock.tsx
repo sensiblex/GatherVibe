@@ -86,7 +86,7 @@ export default function UserReviewsBlock({
         body: JSON.stringify({}),
       });
       if (res.status === 409) {
-        // Already reported — mark locally anyway
+        // Already reported - mark locally anyway
         setReportedIds(prev => new Set(prev).add(reviewId));
         return;
       }
@@ -118,15 +118,11 @@ export default function UserReviewsBlock({
       className="rounded-3xl p-6"
       style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}
     >
-      <h2 className="text-lg font-black mb-4" style={{ color: 'var(--text)' }}>
-        Отзывы
-      </h2>
-
       {!summary || summary.total_reviews === 0 ? (
         <EmptyState />
       ) : (
         <>
-          {/* ── Summary ── */}
+          {/* Summary */}
           <div className="flex items-start gap-6 mb-5">
             {/* Average rating */}
             <div className="text-center shrink-0">
@@ -169,7 +165,7 @@ export default function UserReviewsBlock({
             </div>
           </div>
 
-          {/* ── Top tags (split by polarity) ── */}
+          {/* Top tags (split by polarity) */}
           {(summary.top_positive_tags && summary.top_positive_tags.length > 0) && (
             <div className="flex flex-wrap gap-1.5 mb-2">
               {summary.top_positive_tags.slice(0, 5).map(tag => (
@@ -214,7 +210,7 @@ export default function UserReviewsBlock({
             </div>
           )}
 
-          {/* ── Review list ── */}
+          {/* Review list */}
           <div className="space-y-3">
             {summary.reviews.slice(0, maxReviews).map(review => (
               <div
@@ -330,3 +326,4 @@ function EmptyState() {
     </div>
   );
 }
+
