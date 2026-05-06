@@ -45,9 +45,14 @@ def token_c(user_c):
     )
 
 
-def _create_party(client: TestClient, token: str, body: dict | None = None) -> dict:
+def _create_party(
+    client: TestClient,
+    token: str,
+    body: dict | None = None,
+    event_id: str = "event_x",
+) -> dict:
     body = body or {"title": "Test", "max_members": 4}
-    r = client.post("/parties/event/event_x", json=body, headers=_auth(token))
+    r = client.post(f"/parties/event/{event_id}", json=body, headers=_auth(token))
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -62,9 +67,20 @@ def test_party_create_returns_invite_token(client: TestClient, db, user_a, token
 
 
 def test_each_party_gets_unique_token(client: TestClient, db, user_a, token_a):
-    p1 = _create_party(client, token_a)
-    p2 = _create_party(client, token_a, {"title": "Second", "max_members": 4})
+    p1 = _create_party(client, token_a, event_id="event_x")
+    p2 = _create_party(client, token_a, {"title": "Second", "max_members": 4}, event_id="event_y")
     assert p1["invite_token"] != p2["invite_token"]
+
+
+def test_creator_cannot_create_second_party_for_same_event(client: TestClient, db, user_a, token_a):
+    _create_party(client, token_a, event_id="event_same")
+    r = client.post(
+        "/parties/event/event_same",
+        json={"title": "Second", "max_members": 4},
+        headers=_auth(token_a),
+    )
+    assert r.status_code == 400
+    assert "более 1 активной компании" in r.text
 
 
 def test_existing_party_without_token_gets_one_lazily(client: TestClient, db, user_a, token_a):

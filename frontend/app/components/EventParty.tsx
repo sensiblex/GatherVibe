@@ -17,7 +17,7 @@ export interface PartyMember {
   username: string;
   city: string | null;
   interests: string | null;
-  status: 'pending' | 'accepted' | 'rejected';
+  status: 'pending' | 'accepted' | 'rejected' | 'invited' | 'declined' | 'left';
   joined_at: string;
   message?: string | null;
 }
@@ -33,6 +33,12 @@ export interface Party {
   is_open: boolean;
   members: PartyMember[];
   created_at: string;
+}
+
+export interface CreatorPartyContext {
+  partyId: number;
+  creatorId: number;
+  members: Array<{ user_id: number; status: PartyMember['status'] }>;
 }
 
 const cardStyle = {
@@ -276,23 +282,51 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
   );
 }
 
-export default function EventParty({ eventId }: { eventId: string }) {
+export default function EventParty({
+  eventId,
+  onCreatorPartyChange,
+}: {
+  eventId: string;
+  onCreatorPartyChange?: (context: CreatorPartyContext | null) => void;
+}) {
   const router = useRouter();
   const params = useParams();
   const urlEventId = (params?.id as string) ?? eventId;
 
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [parties, setParties] = useState<Party[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchParties = useCallback(async () => {
     try {
       const res = await apiFetch(`/parties/${eventId}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        onCreatorPartyChange?.(null);
+        return;
+      }
       const data: Party[] = await res.json();
       setParties(data);
-    } catch {}
-  }, [eventId, token]);
+      if (onCreatorPartyChange) {
+        const myParty = user
+          ? data.find((party) => party.creator_id === user.id) ?? null
+          : null;
+        onCreatorPartyChange(
+          myParty
+            ? {
+                partyId: myParty.id,
+                creatorId: myParty.creator_id,
+                members: myParty.members.map((member) => ({
+                  user_id: member.user_id,
+                  status: member.status,
+                })),
+              }
+            : null
+        );
+      }
+    } catch {
+      onCreatorPartyChange?.(null);
+    }
+  }, [eventId, token, onCreatorPartyChange, user]);
 
   useEffect(() => {
     fetchParties().finally(() => setLoading(false));

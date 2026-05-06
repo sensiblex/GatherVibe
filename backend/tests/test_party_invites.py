@@ -7,6 +7,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
+from models.attendee import EventAttendee
 from models.party import EventParty, PartyMember
 from models.user import User
 
@@ -40,6 +41,11 @@ def _auth_headers(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+def _mark_attending(db, event_id: str, user_id: int) -> None:
+    db.add(EventAttendee(event_id=event_id, user_id=user_id))
+    db.commit()
+
+
 @pytest.fixture
 def user_c(db):
     from auth import hash_password
@@ -68,6 +74,7 @@ def token_c(user_c):
 
 def test_invite_success(client: TestClient, db, user_a, user_b, token_a):
     party = _make_party(db, user_a.id)
+    _mark_attending(db, party.event_id, user_b.id)
 
     resp = client.post(
         f"/parties/{party.id}/invite",
@@ -123,6 +130,7 @@ def test_invite_already_member_forbidden(client: TestClient, db, user_a, user_b,
 
 def test_invite_already_invited_forbidden(client: TestClient, db, user_a, user_b, token_a):
     party = _make_party(db, user_a.id)
+    _mark_attending(db, party.event_id, user_b.id)
 
     r1 = client.post(
         f"/parties/{party.id}/invite",
@@ -143,6 +151,7 @@ def test_invite_party_full_forbidden(client: TestClient, db, user_a, user_b, use
     party = _make_party(db, user_a.id, max_members=2)
     db.add(PartyMember(party_id=party.id, user_id=user_b.id, status="accepted"))
     db.commit()
+    _mark_attending(db, party.event_id, user_c.id)
 
     resp = client.post(
         f"/parties/{party.id}/invite",
@@ -169,6 +178,7 @@ def test_invite_closed_party_forbidden(client: TestClient, db, user_a, user_b, t
 
 def test_accept_invite_success(client: TestClient, db, user_a, user_b, token_a, token_b):
     party = _make_party(db, user_a.id)
+    _mark_attending(db, party.event_id, user_b.id)
     client.post(
         f"/parties/{party.id}/invite",
         json={"user_id": user_b.id},
@@ -190,6 +200,7 @@ def test_accept_invite_success(client: TestClient, db, user_a, user_b, token_a, 
 
 def test_accept_wrong_user_forbidden(client: TestClient, db, user_a, user_b, user_c, token_a, token_c):
     party = _make_party(db, user_a.id)
+    _mark_attending(db, party.event_id, user_b.id)
     client.post(
         f"/parties/{party.id}/invite",
         json={"user_id": user_b.id},
@@ -208,6 +219,7 @@ def test_accept_wrong_user_forbidden(client: TestClient, db, user_a, user_b, use
 
 def test_accept_closes_party_at_capacity(client: TestClient, db, user_a, user_b, token_a, token_b):
     party = _make_party(db, user_a.id, max_members=2)
+    _mark_attending(db, party.event_id, user_b.id)
     client.post(
         f"/parties/{party.id}/invite",
         json={"user_id": user_b.id},
@@ -231,6 +243,7 @@ def test_accept_closes_party_at_capacity(client: TestClient, db, user_a, user_b,
 
 def test_decline_invite_success(client: TestClient, db, user_a, user_b, token_a, token_b):
     party = _make_party(db, user_a.id)
+    _mark_attending(db, party.event_id, user_b.id)
     client.post(
         f"/parties/{party.id}/invite",
         json={"user_id": user_b.id},
@@ -254,6 +267,7 @@ def test_decline_invite_success(client: TestClient, db, user_a, user_b, token_a,
 
 def test_cancel_invite_success(client: TestClient, db, user_a, user_b, token_a):
     party = _make_party(db, user_a.id)
+    _mark_attending(db, party.event_id, user_b.id)
     client.post(
         f"/parties/{party.id}/invite",
         json={"user_id": user_b.id},
@@ -275,6 +289,7 @@ def test_cancel_invite_success(client: TestClient, db, user_a, user_b, token_a):
 
 def test_cancel_non_creator_forbidden(client: TestClient, db, user_a, user_b, user_c, token_a, token_c):
     party = _make_party(db, user_a.id)
+    _mark_attending(db, party.event_id, user_b.id)
     client.post(
         f"/parties/{party.id}/invite",
         json={"user_id": user_b.id},
@@ -296,6 +311,8 @@ def test_cancel_non_creator_forbidden(client: TestClient, db, user_a, user_b, us
 def test_list_my_invites(client: TestClient, db, user_a, user_b, token_a, token_b):
     party1 = _make_party(db, user_a.id, title="Party One", event_id="e1")
     party2 = _make_party(db, user_a.id, title="Party Two", event_id="e2")
+    _mark_attending(db, party1.event_id, user_b.id)
+    _mark_attending(db, party2.event_id, user_b.id)
     client.post(
         f"/parties/{party1.id}/invite",
         json={"user_id": user_b.id, "message": "Join p1"},
@@ -318,6 +335,7 @@ def test_list_my_invites(client: TestClient, db, user_a, user_b, token_a, token_
 
 def test_list_my_invites_excludes_non_invited(client: TestClient, db, user_a, user_b, token_a, token_b):
     party = _make_party(db, user_a.id)
+    _mark_attending(db, party.event_id, user_b.id)
     client.post(
         f"/parties/{party.id}/invite",
         json={"user_id": user_b.id},
@@ -334,6 +352,30 @@ def test_list_my_invites_excludes_non_invited(client: TestClient, db, user_a, us
     resp = client.get("/users/me/party-invites", headers=_auth_headers(token_b))
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+def test_invite_requires_attendee_for_same_event(client: TestClient, db, user_a, user_b, token_a):
+    party = _make_party(db, user_a.id, event_id="event_42")
+
+    resp = client.post(
+        f"/parties/{party.id}/invite",
+        json={"user_id": user_b.id},
+        headers=_auth_headers(token_a),
+    )
+    assert resp.status_code == 400
+    assert "не отметился" in resp.text.lower()
+
+
+def test_invite_attendee_of_same_event_success(client: TestClient, db, user_a, user_b, token_a):
+    party = _make_party(db, user_a.id, event_id="event_42")
+    _mark_attending(db, "event_42", user_b.id)
+
+    resp = client.post(
+        f"/parties/{party.id}/invite",
+        json={"user_id": user_b.id},
+        headers=_auth_headers(token_a),
+    )
+    assert resp.status_code == 200, resp.text
 
 
 
@@ -382,6 +424,7 @@ def test_accept_sends_push_to_creator(
     monkeypatch.setattr(push_helpers, "send_push_to_user", fake_push)
 
     party = _make_party(db, user_a.id)
+    _mark_attending(db, party.event_id, user_b.id)
     client.post(
         f"/parties/{party.id}/invite",
         json={"user_id": user_b.id},
@@ -416,6 +459,7 @@ def test_decline_sends_push_to_creator(
     monkeypatch.setattr(push_helpers, "send_push_to_user", fake_push)
 
     party = _make_party(db, user_a.id)
+    _mark_attending(db, party.event_id, user_b.id)
     client.post(
         f"/parties/{party.id}/invite",
         json={"user_id": user_b.id},
@@ -443,6 +487,7 @@ def test_party_deleted_notifies_invited_members(
 ):
     from models.notification import Notification
     party = _make_party(db, user_a.id, title="Going to delete")
+    _mark_attending(db, party.event_id, user_b.id)
 
     client.post(
         f"/parties/{party.id}/invite",
@@ -498,6 +543,7 @@ def test_cancel_then_accept_returns_404(
     client: TestClient, db, user_a, user_b, token_a, token_b,
 ):
     party = _make_party(db, user_a.id)
+    _mark_attending(db, party.event_id, user_b.id)
     client.post(
         f"/parties/{party.id}/invite",
         json={"user_id": user_b.id},

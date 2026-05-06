@@ -7,6 +7,7 @@ import Navbar from '../../components/Navbar';
 import EventAttendees from '../../components/EventAttendees';
 import EventChat from '../../components/EventChat';
 import EventParty from '../../components/EventParty';
+import type { CreatorPartyContext } from '../../components/EventParty';
 import { apiFetch } from '../../lib/apiFetch';
 import { useAuth } from '../../context/AuthContext';
 import dynamic from 'next/dynamic';
@@ -233,6 +234,7 @@ export default function EventDetailPage() {
 
   const [event, setEvent] = useState<UnifiedEvent | null>(null);
   const [status, setStatus] = useState<'loading' | 'ok' | 'notfound' | 'error'>('loading');
+  const [creatorPartyContext, setCreatorPartyContext] = useState<CreatorPartyContext | null>(null);
 
   useEffect(() => {
     if (eventId) markEventViewed(eventId);
@@ -588,8 +590,14 @@ export default function EventDetailPage() {
 
             {!user && <UnauthBanner />}
 
-            <EventAttendees eventId={chatEventId} eventMeta={eventMeta} />
-            <EventParty eventId={chatEventId} />
+            <EventAttendees
+              eventId={chatEventId}
+              eventMeta={eventMeta}
+              partyId={creatorPartyContext?.partyId ?? null}
+              partyCreatorId={creatorPartyContext?.creatorId ?? null}
+              partyMembers={creatorPartyContext?.members ?? []}
+            />
+            <EventParty eventId={chatEventId} onCreatorPartyChange={setCreatorPartyContext} />
             <EventChat
               eventId={chatEventId}
               currentUserId={user ? String(user.id) : ''}

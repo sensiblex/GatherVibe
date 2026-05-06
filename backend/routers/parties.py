@@ -15,6 +15,7 @@ from schemas import PartySearchItem, PartySearchResponse
 from sio_instance import sio
 from models.user import User
 from models.event import Event
+from models.attendee import EventAttendee
 from models.party import EventParty, PartyMember
 from notification_helpers import create_notification
 import push_helpers
@@ -736,10 +737,10 @@ async def create_party(
         EventParty.creator_id == user.id,
         EventParty.is_open == True,
     ).count()
-    if existing_count >= 2:
+    if existing_count >= 1:
         raise HTTPException(
             status_code=400,
-            detail="Нельзя создать более 2 активных компаний для одного события",
+            detail="Нельзя создать более 1 активной компании для одного события",
         )
 
     event_title: Optional[str] = None
@@ -1240,6 +1241,15 @@ async def invite_to_party(
     target = db.query(User).filter(User.id == body.user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
+    attendee = db.query(EventAttendee).filter(
+        EventAttendee.event_id == party.event_id,
+        EventAttendee.user_id == body.user_id,
+    ).first()
+    if not attendee:
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя пригласить: пользователь не отметился на это событие",
+        )
 
     used_slots = 1 + db.query(PartyMember).filter(
         PartyMember.party_id == party_id,
