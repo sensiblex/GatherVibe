@@ -35,6 +35,7 @@ export default function EventCard({ event, attendees = [] }: { event: KudaGoEven
   const displayTitle = capitalizeFirstDisplayChar(event.title);
   const coverUrl = proxiedImageUrl(event.cover_url);
   const permanentScheduleLabel = formatPermanentScheduleLabel(event);
+  const eventTimeLabel = formatDate(event.start_date, event.start_time) || permanentScheduleLabel;
 
   return (
     <Link
@@ -79,7 +80,7 @@ export default function EventCard({ event, attendees = [] }: { event: KudaGoEven
           )}
         </div>
 
-        {(formatDate(event.start_date, event.start_time) || permanentScheduleLabel) && (
+        {eventTimeLabel && (
           <span
             className="absolute bottom-3 right-3 text-xs font-semibold px-2.5 py-1 rounded-lg shadow-md"
             style={{
@@ -89,7 +90,7 @@ export default function EventCard({ event, attendees = [] }: { event: KudaGoEven
               WebkitBackdropFilter: 'blur(4px)',
             }}
           >
-            {formatDate(event.start_date, event.start_time) || permanentScheduleLabel}
+            {eventTimeLabel}
           </span>
         )}
       </div>
@@ -122,18 +123,31 @@ export default function EventCard({ event, attendees = [] }: { event: KudaGoEven
           {displayTitle}
         </h3>
 
-        {event.place_title && (
+        {(event.place_title || eventTimeLabel) && (
           <div
-            className="flex items-center gap-1.5 text-sm"
-            style={{ color: 'var(--text-muted)' }}
+            className="rounded-xl px-3 py-2 space-y-1"
+            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
           >
-            <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            <span className="line-clamp-1">{event.place_title}</span>
+            {eventTimeLabel && (
+              <div className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--text-muted)' }}>
+                <span aria-hidden="true">🗓️</span>
+                <span className="line-clamp-1">{eventTimeLabel}</span>
+              </div>
+            )}
+            {event.place_title && (
+              <div
+                className="flex items-center gap-1.5 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span className="line-clamp-1">{event.place_title}</span>
+              </div>
+            )}
           </div>
         )}
 

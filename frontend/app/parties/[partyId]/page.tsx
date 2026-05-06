@@ -17,6 +17,7 @@ import { toast } from '../../components/Toast';
 import { apiFetch } from '../../lib/apiFetch';
 import { extractApiErrorMessage } from '../../lib/apiErrors';
 import { getSocket } from '../../lib/socket';
+import { buildEventIdentityMeta } from '../../lib/event-identity';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const POLL_INTERVAL = 5000;
@@ -55,7 +56,6 @@ interface Party {
   event_date_ts?: number | null;
   event_image_url?: string | null;
   invite_token?: string | null;
-  event_date_ts?: number | null;
   created_at: string;
 }
 
@@ -527,6 +527,11 @@ export default function PartyDetailPage() {
   const cardStyle: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' };
   const myRowStyle: React.CSSProperties = { background: 'color-mix(in oklch, var(--primary) 8%, var(--surface))', border: '1px solid color-mix(in oklch, var(--primary) 25%, transparent)' };
   const normalRowStyle: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)' };
+  const eventMeta = buildEventIdentityMeta({
+    eventId: party.event_id,
+    eventTitle: party.event_title,
+    eventDateTs: party.event_date_ts,
+  });
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
@@ -536,7 +541,9 @@ export default function PartyDetailPage() {
         <nav className="flex items-center gap-2 text-sm mb-8" style={{ color: 'var(--text-muted)' }}>
           <Link href="/events" className="transition hover:opacity-80" style={{ color: 'var(--text-muted)' }}>События</Link>
           <span>/</span>
-          <Link href={`/events/${party.event_id}`} className="transition hover:opacity-80" style={{ color: 'var(--text-muted)' }}>Событие</Link>
+          <Link href={`/events/${party.event_id}`} className="transition hover:opacity-80 line-clamp-1 max-w-xs" style={{ color: 'var(--text-muted)' }}>
+            {eventMeta.title}
+          </Link>
           <span>/</span>
           <span className="line-clamp-1 max-w-xs" style={{ color: 'var(--text)' }}>{party.title}</span>
         </nav>
@@ -551,6 +558,34 @@ export default function PartyDetailPage() {
               <div className="flex items-start gap-4">
                 <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-3xl shrink-0">🎉</div>
                 <div className="flex-1 min-w-0">
+                  <div
+                    className="mb-3 rounded-xl p-3 flex items-start justify-between gap-3 flex-wrap"
+                    style={{
+                      border: '1px solid var(--border)',
+                      background: 'var(--surface-2)',
+                    }}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>
+                        Событие
+                      </p>
+                      <p className="text-sm font-semibold line-clamp-2" style={{ color: 'var(--text)' }}>
+                        {eventMeta.title}
+                      </p>
+                      {eventMeta.dateLabel && (
+                        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                          {eventMeta.dateLabel}
+                        </p>
+                      )}
+                    </div>
+                    <Link
+                      href={eventMeta.href}
+                      className="text-xs font-semibold whitespace-nowrap"
+                      style={{ color: 'var(--primary)' }}
+                    >
+                      К событию →
+                    </Link>
+                  </div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h1 className="text-2xl font-black" style={{ color: 'var(--text)' }}>{party.title}</h1>
                     {eventEnded && (

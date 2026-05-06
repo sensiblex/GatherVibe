@@ -45,11 +45,21 @@ function MapViewInnerComponent({ coords, landmark }: MapViewInnerProps) {
   function FlyToController({ target }: { target: LatLngTuple }) {
     const map = useMap();
     useEffect(() => {
-      // Avoid animated transitions here: when the component unmounts during mode switches,
-      // Leaflet animation frames can touch a removed DOM node and throw `_leaflet_pos` errors.
-      map.setView(target, PIN_ZOOM, { animate: false });
+      // Guard against transient unmount/remount timing in Next dev + React strict effects.
+      // Any animated Leaflet movement here may outlive the DOM node and throw `_leaflet_pos`.
+      map.whenReady(() => {
+        try {
+          map.setView(target, PIN_ZOOM, { animate: false });
+        } catch {
+          // Map container may already be disposed during navigation; ignore safely.
+        }
+      });
       return () => {
-        map.stop();
+        try {
+          map.stop();
+        } catch {
+          // noop
+        }
       };
     }, [map, target]);
     return null;
@@ -61,6 +71,9 @@ function MapViewInnerComponent({ coords, landmark }: MapViewInnerProps) {
       zoom={PIN_ZOOM}
       scrollWheelZoom={false}
       attributionControl={false}
+      zoomAnimation={false}
+      fadeAnimation={false}
+      markerZoomAnimation={false}
       style={{ height: '100%', width: '100%' }}
     >
       <TileLayer
@@ -118,6 +131,9 @@ function MapEditInnerComponent({ coords, onPick }: MapEditInnerProps) {
       zoom={zoom}
       scrollWheelZoom={false}
       attributionControl={false}
+      zoomAnimation={false}
+      fadeAnimation={false}
+      markerZoomAnimation={false}
       style={{ height: '100%', width: '100%', cursor: 'crosshair' }}
     >
       <TileLayer

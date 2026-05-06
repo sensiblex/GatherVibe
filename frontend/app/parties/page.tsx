@@ -7,6 +7,7 @@ import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../lib/apiFetch';
 import { capitalizeFirstDisplayChar } from '../lib/text';
+import { buildEventIdentityMeta } from '../lib/event-identity';
 
 const PAGE_SIZE = 20;
 
@@ -21,6 +22,9 @@ interface PartyItem {
   is_open: boolean;
   city: string | null;
   member_count: number;
+  event_title?: string | null;
+  event_date_ts?: number | null;
+  event_image_url?: string | null;
   created_at: string;
 }
 
@@ -40,10 +44,14 @@ function PartyCard({ party }: { party: PartyItem }) {
   const pct = Math.min(100, Math.round((filled / capacity) * 100));
   const isFull = filled >= capacity;
   const displayTitle = capitalizeFirstDisplayChar(party.title);
+  const eventMeta = buildEventIdentityMeta({
+    eventId: party.event_id,
+    eventTitle: party.event_title,
+    eventDateTs: party.event_date_ts,
+  });
 
   return (
-    <Link
-      href={`/parties/${party.id}`}
+    <div
       className="group block rounded-2xl overflow-hidden transition-all duration-200"
       style={{
         background: 'var(--surface)',
@@ -73,7 +81,7 @@ function PartyCard({ party }: { party: PartyItem }) {
         }}
       />
 
-      <div className="p-5">
+      <Link href={`/parties/${party.id}`} className="block p-5">
         {/* Badges row */}
         <div className="flex items-center gap-2 mb-3 flex-wrap">
           <span
@@ -102,6 +110,26 @@ function PartyCard({ party }: { party: PartyItem }) {
         >
           {displayTitle}
         </h3>
+
+        <div
+          className="mb-3 rounded-xl px-3 py-2"
+          style={{
+            border: '1px solid var(--border)',
+            background: 'var(--surface-2)',
+          }}
+        >
+          <p className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>
+            Событие
+          </p>
+          <p className="text-sm font-semibold line-clamp-2" style={{ color: 'var(--text)' }}>
+            {eventMeta.title}
+          </p>
+          {eventMeta.dateLabel && (
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              {eventMeta.dateLabel}
+            </p>
+          )}
+        </div>
 
         {/* Description */}
         {party.description && (
@@ -156,8 +184,18 @@ function PartyCard({ party }: { party: PartyItem }) {
             })}
           </span>
         </div>
+      </Link>
+
+      <div className="px-5 pb-5 -mt-1">
+        <Link
+          href={eventMeta.href}
+          className="inline-flex items-center gap-1 text-xs font-semibold"
+          style={{ color: 'var(--primary)' }}
+        >
+          Открыть событие →
+        </Link>
       </div>
-    </Link>
+    </div>
   );
 }
 
