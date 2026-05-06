@@ -44,7 +44,14 @@ function MapViewInnerComponent({ coords, landmark }: MapViewInnerProps) {
   // Re-center map when coords change via real-time socket update
   function FlyToController({ target }: { target: LatLngTuple }) {
     const map = useMap();
-    useEffect(() => { map.flyTo(target, PIN_ZOOM); }, [target[0], target[1]]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => {
+      // Avoid animated transitions here: when the component unmounts during mode switches,
+      // Leaflet animation frames can touch a removed DOM node and throw `_leaflet_pos` errors.
+      map.setView(target, PIN_ZOOM, { animate: false });
+      return () => {
+        map.stop();
+      };
+    }, [map, target]);
     return null;
   }
 
