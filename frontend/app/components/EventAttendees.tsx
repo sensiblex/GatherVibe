@@ -511,7 +511,7 @@ export default function EventAttendees({ eventId, eventMeta }: { eventId: string
                 border: `1px solid ${filterInterest === int ? 'var(--accent, #4f46e5)' : 'var(--border)'}`,
               }}
             >
-              {myInterests.includes(int) ? '⭐ ' : ''}{int}
+              {myInterests.includes(int) ? '⭐ ' : ''}{getInterestLabel(int)}
             </button>
           ))}
         </div>

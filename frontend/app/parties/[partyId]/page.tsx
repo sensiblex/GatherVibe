@@ -507,6 +507,39 @@ export default function PartyDetailPage() {
     && (Date.now() / 1000) > (party.event_date_ts + ACTIVE_GRACE_SECONDS);
   const canJoin = !!token && !isCreator && !myMembership && party.is_open && !isFull && !eventEnded;
   const canLeave = !!token && !isCreator && myMembership?.status === 'accepted' && !eventEnded;
+  const partyStatus = eventEnded
+    ? 'finished'
+    : !party.is_open
+      ? 'closed'
+      : isFull
+        ? 'full'
+        : 'open';
+
+  const partyStatusLabel = {
+    open: 'Набор открыт',
+    full: 'Мест нет',
+    closed: 'Набор закрыт',
+    finished: 'Событие завершено',
+  }[partyStatus];
+
+  const partyStatusColor = {
+    open: 'var(--success)',
+    full: 'var(--warning)',
+    closed: 'var(--text-faint)',
+    finished: 'var(--primary)',
+  }[partyStatus];
+
+  const nextStepHint = !token
+    ? 'Войдите в аккаунт, чтобы подать заявку или принять приглашение.'
+    : isCreator
+      ? 'Вы управляете компанией.'
+      : myMembership?.status === 'pending'
+        ? 'Заявка отправлена. Дождитесь решения создателя компании.'
+        : myMembership?.status === 'accepted'
+          ? 'Вы участник. Используйте чат и блок координации ниже.'
+          : canJoin
+            ? 'Похоже, компания вам подходит. Можно отправить заявку прямо сейчас.'
+            : 'Сейчас вступление недоступно. Проверьте статус набора и количество мест.';
 
   const statusBadgeStyle = (status: string): React.CSSProperties => ({
     pending:  { background: 'var(--warning-hl)',  color: 'var(--warning)',  border: '1px solid color-mix(in oklch, var(--warning) 30%, transparent)' },
@@ -824,6 +857,30 @@ export default function PartyDetailPage() {
 
           {/* RIGHT */}
           <div className="space-y-5">
+            {/* Summary */}
+            <div
+              className="rounded-2xl p-6 space-y-3"
+              style={{
+                ...cardStyle,
+                background: 'linear-gradient(180deg, color-mix(in oklch, var(--primary) 8%, var(--surface)), var(--surface))',
+              }}
+            >
+              <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                Состояние компании
+              </h3>
+              <div className="flex items-center justify-between text-sm">
+                <span style={{ color: 'var(--text-muted)' }}>Текущий статус</span>
+                <span className="font-semibold" style={{ color: partyStatusColor }}>{partyStatusLabel}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm" style={{ borderTop: '1px solid var(--divider)', paddingTop: '0.75rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Участников</span>
+                <span className="font-semibold" style={{ color: 'var(--text)' }}>{acceptedCount + 1} / {party.max_members}</span>
+              </div>
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                {nextStepHint}
+              </p>
+            </div>
+
             {/* Actions */}
             <div className="rounded-2xl p-6 space-y-3" style={cardStyle}>
               <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Действия</h3>
