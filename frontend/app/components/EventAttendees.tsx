@@ -408,6 +408,7 @@ export default function EventAttendees({
     const status = partyMemberStatusByUserId.get(userId);
     if (status === 'accepted') return { disabled: true, label: 'В группе' };
     if (status === 'invited') return { disabled: true, label: 'Уже приглашен' };
+    if (status === 'pending') return { disabled: true, label: 'Заявка отправлена' };
     if (locallyInvitedUserIds.has(userId)) return { disabled: true, label: 'Уже приглашен' };
     return { disabled: false, label: 'Пригласить' };
   }, [invitingUserIds, locallyInvitedUserIds, partyMemberStatusByUserId]);

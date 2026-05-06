@@ -8,6 +8,12 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Ensure backend imports use test-safe settings in this process.
+os.environ.setdefault("DATABASE_URL", "sqlite://")
+os.environ.setdefault("SECRET_KEY", "test-secret")
+os.environ.setdefault("SCHEMA_CHECK_MODE", "soft")
+os.environ.setdefault("SKIP_BACKGROUND_LOOPS", "1")
+
 import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.pool import StaticPool
