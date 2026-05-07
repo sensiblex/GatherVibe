@@ -121,7 +121,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_LOCATIONS = ["kzn", "msk", "spb"]
 # Сколько страниц грузить на одну локацию за один синк
 PAGES_PER_SYNC = 5
-PAGE_SIZE = 100
+PAGE_SIZE = 40
 
 
 def _parse_age(val) -> Optional[int]:

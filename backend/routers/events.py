@@ -496,6 +496,53 @@ def kudago_get_events(
                 return cached
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Ошибка кэша: {str(e)}")
+    else:
+        # Cold cache for this location: try a lightweight on-demand warm-up first.
+        # This is crucial for msk where direct large API calls often timeout.
+        try:
+            synced = kudago_cache.sync_location(location, pages=1)
+            if synced > 0:
+                warmed = kudago_cache.query_cache(
+                    db=db,
+                    location=location,
+                    categories=categories,
+                    is_free=is_free,
+                    search=search,
+                    page=page,
+                    page_size=page_size,
+                    actual_since=actual_since,
+                    actual_until=actual_until,
+                    max_age=max_age,
+                    tags=tags,
+                    place_search=place_search,
+                    lat=lat,
+                    lon=lon,
+                    radius_m=radius_m,
+                    order_by=order_by,
+                    has_party=has_party,
+                    min_attendees=min_attendees,
+                    has_free_spots=has_free_spots,
+                    time_of_day=time_of_day,
+                    only_permanent=only_permanent,
+                    exclude_permanent=exclude_permanent,
+                    has_cover=has_cover,
+                    starting_within_hours=starting_within_hours,
+                    is_short=is_short,
+                    is_long=is_long,
+                    has_schedules=has_schedules,
+                    only_verified_place=only_verified_place,
+                    from_hour=from_hour,
+                    to_hour=to_hour,
+                    weekdays=weekdays,
+                    hide_started=hide_started,
+                    min_price=min_price,
+                    max_price=max_price,
+                )
+                if warmed.get("count", 0) > 0:
+                    return warmed
+        except Exception:
+            # Keep old fallback path below.
+            pass
 
     # Кэш пустой — фоллбэк на KudaGo API. Но KudaGo не поддерживает
     # социальные/качественные/гео фильтры, поэтому если они заданы — возвращаем пусто,
@@ -533,7 +580,7 @@ def kudago_get_events(
         effective_since = max(actual_since, now_ts) if actual_since else now_ts
         raw = kudago_api.get_events(
             location=location, categories=categories, is_free=is_free,
-            page=page, page_size=page_size,
+            page=page, page_size=min(page_size, 30),
             actual_since=effective_since, actual_until=actual_until,
         )
         events = kudago_api.parse_events(raw)

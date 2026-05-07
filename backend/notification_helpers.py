@@ -7,6 +7,7 @@ from models.notification import Notification
 from push_helpers import send_push_to_user
 
 logger = logging.getLogger(__name__)
+_INTERNAL_TYPE_PREFIX = "__internal:"
 
 
 def create_notification(
@@ -50,7 +51,10 @@ def get_user_notifications(
 ) -> list[Notification]:
     return (
         db.query(Notification)
-        .filter(Notification.user_id == user_id)
+        .filter(
+            Notification.user_id == user_id,
+            ~Notification.type.startswith(_INTERNAL_TYPE_PREFIX),
+        )
         .order_by(Notification.created_at.desc())
         .offset(offset)
         .limit(limit)
@@ -74,7 +78,11 @@ def mark_all_as_read(db: Session, user_id: int) -> int:
     """Mark all unread notifications for user as read. Returns count updated."""
     updated = (
         db.query(Notification)
-        .filter(Notification.user_id == user_id, Notification.is_read == False)  # noqa: E712
+        .filter(
+            Notification.user_id == user_id,
+            Notification.is_read == False,  # noqa: E712
+            ~Notification.type.startswith(_INTERNAL_TYPE_PREFIX),
+        )
         .all()
     )
     for n in updated:
@@ -85,6 +93,10 @@ def mark_all_as_read(db: Session, user_id: int) -> int:
 def get_unread_count(db: Session, user_id: int) -> int:
     return (
         db.query(Notification)
-        .filter(Notification.user_id == user_id, Notification.is_read == False)  # noqa: E712
+        .filter(
+            Notification.user_id == user_id,
+            Notification.is_read == False,  # noqa: E712
+            ~Notification.type.startswith(_INTERNAL_TYPE_PREFIX),
+        )
         .count()
     )

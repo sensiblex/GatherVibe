@@ -58,11 +58,35 @@ export async function apiFetch(
 
   // Cookie-based auth: браузер сам отправит HttpOnly `token`.
   // `credentials: 'include'` нужен при cross-origin (dev-режим без Docker).
-  const response = await fetch(url, {
+  let response = await fetch(url, {
     ...fetchInit,
     headers,
     credentials: fetchInit.credentials ?? 'include',
   });
+
+  // In Docker dev we usually go through Next rewrite (/api -> backend:8000).
+  // If that proxy path drops the connection (seen as 5xx for some heavy KudaGo calls),
+  // retry once directly against local backend from the browser.
+  if (
+    typeof window !== 'undefined' &&
+    response.status >= 500 &&
+    typeof url === 'string' &&
+    url.startsWith('/api/')
+  ) {
+    const directUrl = `http://localhost:8000${url.slice('/api'.length)}`;
+    try {
+      const retried = await fetch(directUrl, {
+        ...fetchInit,
+        headers,
+        credentials: fetchInit.credentials ?? 'include',
+      });
+      if (retried.ok) {
+        response = retried;
+      }
+    } catch {
+      // keep original response
+    }
+  }
 
   if (response.status === 401 && !skipAuthRedirect) {
     handle401();

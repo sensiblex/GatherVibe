@@ -8,6 +8,7 @@ import time
 import asyncio
 import logging
 from typing import Optional, List, Dict, Any
+from zoneinfo import ZoneInfo
 
 from kudago_api_models import (
     EventsRequest, SearchRequest,
@@ -20,6 +21,14 @@ logger = logging.getLogger("kudago_api_async")
 
 BASE_URL = "https://kudago.com/public-api/v1.4"
 DEFAULT_TIMEOUT = 10.0
+KUDAGO_TIMEZONE = ZoneInfo("Europe/Moscow")
+
+
+def _format_kudago_timestamp(ts: int) -> tuple[str, str]:
+    import datetime
+
+    dt = datetime.datetime.fromtimestamp(ts, tz=KUDAGO_TIMEZONE)
+    return dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M")
 
 
 # ==================== Асинхронный HTTP-клиент ====================
@@ -280,7 +289,6 @@ async def parse_events(raw: Dict[str, Any]) -> List[Dict[str, Any]]:
     Returns:
         Список событий
     """
-    import datetime
     import time
     now_ts = int(time.time())
     results = raw.get("results", [])
@@ -307,13 +315,9 @@ async def parse_events(raw: Dict[str, Any]) -> List[Dict[str, Any]]:
                 sd = st = ed = et = None
                 
                 if start_ts:
-                    dt = datetime.datetime.fromtimestamp(start_ts)
-                    sd = dt.strftime("%Y-%m-%d")
-                    st = dt.strftime("%H:%M")
+                    sd, st = _format_kudago_timestamp(start_ts)
                 if end_ts:
-                    dt2 = datetime.datetime.fromtimestamp(end_ts)
-                    ed = dt2.strftime("%Y-%m-%d")
-                    et = dt2.strftime("%H:%M")
+                    ed, et = _format_kudago_timestamp(end_ts)
                 
                 all_dates.append({
                     "start": sd, "end": ed,
@@ -332,9 +336,7 @@ async def parse_events(raw: Dict[str, Any]) -> List[Dict[str, Any]]:
                     selected_date = d
             
             if selected_date and selected_date.get("start"):
-                dt = datetime.datetime.fromtimestamp(selected_date["start"])
-                start_date = dt.strftime("%Y-%m-%d")
-                start_time = dt.strftime("%H:%M")
+                start_date, start_time = _format_kudago_timestamp(selected_date["start"])
         else:
             # Нет будущих дат — событие уже прошло, пропускаем
             continue  # ← ИСПРАВЛЕНИЕ
@@ -389,7 +391,6 @@ async def parse_event_detail(e: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Детали события
     """
-    import datetime
     import time
     now_ts = int(time.time())
     raw_dates = e.get("dates") or []
@@ -411,13 +412,9 @@ async def parse_event_detail(e: Dict[str, Any]) -> Dict[str, Any]:
             sd = st = ed = et = None
             
             if start_ts:
-                dt = datetime.datetime.fromtimestamp(start_ts)
-                sd = dt.strftime("%Y-%m-%d")
-                st = dt.strftime("%H:%M")
+                sd, st = _format_kudago_timestamp(start_ts)
             if end_ts:
-                dt2 = datetime.datetime.fromtimestamp(end_ts)
-                ed = dt2.strftime("%Y-%m-%d")
-                et = dt2.strftime("%H:%M")
+                ed, et = _format_kudago_timestamp(end_ts)
             
             all_dates.append({
                 "start": sd, "end": ed,
@@ -436,9 +433,7 @@ async def parse_event_detail(e: Dict[str, Any]) -> Dict[str, Any]:
                 selected_date = d
         
         if selected_date and selected_date.get("start"):
-            dt = datetime.datetime.fromtimestamp(selected_date["start"])
-            start_date = dt.strftime("%Y-%m-%d")
-            start_time = dt.strftime("%H:%M")
+            start_date, start_time = _format_kudago_timestamp(selected_date["start"])
     else:
         # Нет будущих дат — событие уже прошло, не добавляем даты
         # start_date и start_time остаются None, all_dates пуст

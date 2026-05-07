@@ -54,6 +54,9 @@ import { FILTER_DRAWER_Z_INDEX, FILTER_OVERLAY_Z_INDEX } from './map-layering';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 const PAGE_SIZE = 60;
+const DIRECT_BACKEND_BASE =
+  (process.env.NEXT_PUBLIC_DIRECT_API_URL && process.env.NEXT_PUBLIC_DIRECT_API_URL.trim()) ||
+  'http://localhost:8000';
 
 interface Category { slug: string; name: string; }
 
@@ -147,6 +150,7 @@ export default function EventsPage() {
   const [todayStr, setTodayStr] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadingRef  = useRef(false);
+  const requestSeqRef = useRef(0);
   const hasLoadedOnceRef = useRef(false);
   const router = useRouter();
 
@@ -283,7 +287,7 @@ export default function EventsPage() {
     fh: number | null, th: number | null,
     wds: number[], hst: boolean,
   ) => {
-    if (loadingRef.current) return;
+    const reqSeq = ++requestSeqRef.current;
     loadingRef.current = true;
     const showInitialLoader = !hasLoadedOnceRef.current;
     if (showInitialLoader) setLoading(true);
@@ -331,9 +335,13 @@ export default function EventsPage() {
         pageSize: PAGE_SIZE,
       });
 
-      const res = await apiFetch(`/kudago/events?${qs}`);
+      // Important: go directly to backend for event feed.
+      // Next.js rewrite proxy (/api -> backend) can intermittently reset long msk responses (ECONNRESET),
+      // causing false 500 while backend itself returns data.
+      const res = await apiFetch(`${DIRECT_BACKEND_BASE}/kudago/events?${qs}`);
       if (!res.ok) throw new Error(`Ошибка ${res.status}`);
       const data = await res.json();
+      if (reqSeq !== requestSeqRef.current) return;
       const incoming: KudaGoEvent[] = data.results || [];
       setTotal(data.count ?? null);
       setEvents(incoming);
@@ -342,14 +350,16 @@ export default function EventsPage() {
       // Fetch attendee counts in background
       if (incoming.length > 0) {
         const ids = incoming.map(e => String(e.kudago_id)).join(',');
-        apiFetch(`/attendees/batch-counts?ids=${ids}`)
+        apiFetch(`${DIRECT_BACKEND_BASE}/attendees/batch-counts?ids=${ids}`)
           .then(r => r.ok ? r.json() : {})
           .then((counts: Record<string, number>) => setAttendeeCounts(counts))
           .catch(() => {});
       }
     } catch (e: unknown) {
+      if (reqSeq !== requestSeqRef.current) return;
       setError(e instanceof Error ? e.message : 'Неизвестная ошибка');
     } finally {
+      if (reqSeq !== requestSeqRef.current) return;
       setLoading(false);
       setIsRefreshing(false);
       loadingRef.current = false;
@@ -357,7 +367,6 @@ export default function EventsPage() {
   }, []);
 
   useEffect(() => {
-    loadingRef.current = false;
     load(
       city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
       maxAge, tags, placeSearch, geo, sortBy,

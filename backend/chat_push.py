@@ -8,17 +8,22 @@ State is in-process. Single-worker deployment. Move to Redis if we ever
 go multi-process.
 """
 import asyncio
+import json
 import logging
 import time
+from datetime import datetime, timezone
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from models.notification import Notification
 from models.party import EventParty, PartyMember
 import push_helpers
 
 logger = logging.getLogger(__name__)
 
 CHAT_PUSH_THROTTLE_SECONDS = 5 * 60
+_THROTTLE_NOTIF_TYPE = "__internal:chat_push_throttle"
 
 _last_pushed: dict[tuple[int, int], int] = {}
 
@@ -84,6 +89,59 @@ def _truncate(text: str, limit: int = 100) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def _ensure_cross_worker_throttle(db: Session, user_id: int, party_id: int, now: int) -> bool:
+    """Return True when push is allowed and atomically update throttle marker."""
+    marker_key = f"party:{party_id}"
+    now_dt = datetime.fromtimestamp(now, tz=timezone.utc)
+
+    # Serialize per-(user,party) checks in Postgres so multiple workers do not duplicate pushes.
+    try:
+        if db.bind is not None and db.bind.dialect.name == "postgresql":
+            lock_key = (user_id << 32) + party_id
+            db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
+    except Exception:
+        # Fall back to best-effort behavior if advisory lock is unavailable.
+        pass
+
+    marker = (
+        db.query(Notification)
+        .filter(
+            Notification.user_id == user_id,
+            Notification.type == _THROTTLE_NOTIF_TYPE,
+            Notification.title == marker_key,
+        )
+        .order_by(Notification.id.desc())
+        .first()
+    )
+    if marker and marker.created_at:
+        created = marker.created_at
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        last_ts = int(created.timestamp())
+        if now - last_ts < CHAT_PUSH_THROTTLE_SECONDS:
+            return False
+
+    payload = json.dumps({"party_id": party_id, "ts": now}, ensure_ascii=False)
+    if marker:
+        marker.created_at = now_dt
+        marker.data = payload
+        marker.is_read = True
+    else:
+        db.add(
+            Notification(
+                user_id=user_id,
+                type=_THROTTLE_NOTIF_TYPE,
+                title=marker_key,
+                body=None,
+                data=payload,
+                is_read=True,
+                created_at=now_dt,
+            )
+        )
+    db.flush()
+    return True
+
+
 async def notify_chat_message(
     db: Session,
     party: EventParty,
@@ -104,20 +162,23 @@ async def notify_chat_message(
     title = f"{sender_username} в «{party.title}»"
     payload = {"party_id": party.id, "type": "chat_message"}
 
+    loop = asyncio.get_running_loop()
     for uid in _participant_user_ids(db, party):
         if uid == sender_id:
             continue
-        last = _last_pushed.get((uid, party.id), 0)
-        if now - last < CHAT_PUSH_THROTTLE_SECONDS:
-            continue
         if is_user_online_in_party(uid, party.id):
             continue
+        if not _ensure_cross_worker_throttle(db, uid, party.id, now):
+            continue
         try:
-            push_helpers.send_push_to_user(db, uid, title, body, payload)
+            await loop.run_in_executor(
+                None,
+                lambda: push_helpers.send_push_to_user(db, uid, title, body, payload),
+            )
         except Exception as exc:
             logger.warning("chat_push send failed for user_id=%s: %s", uid, exc)
             continue
-        _last_pushed[(uid, party.id)] = now
         pushed.add(uid)
 
+    db.commit()
     return pushed
