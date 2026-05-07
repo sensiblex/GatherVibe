@@ -69,6 +69,14 @@ def get_messages(
     db: Session = Depends(get_db),
 ):
     current_user = get_current_user_from_token(token, db)
+    if room.startswith("event_"):
+        event_id = room.split("_", 1)[1]
+        is_attendee = db.query(EventAttendee).filter(
+            EventAttendee.event_id == event_id,
+            EventAttendee.user_id == current_user.id,
+        ).first()
+        if not is_attendee:
+            raise HTTPException(status_code=403, detail="Нет доступа к чату этого события")
     if room.startswith("party_"):
         try:
             room_party_id = int(room.split("_", 1)[1])
@@ -140,6 +148,18 @@ ALLOWED_MIME_TYPES = {
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 
 
+def _has_supported_image_signature(payload: bytes) -> bool:
+    if payload.startswith(b"\x89PNG\r\n\x1a\n"):
+        return True
+    if payload.startswith(b"\xff\xd8\xff"):
+        return True
+    if payload.startswith((b"GIF87a", b"GIF89a")):
+        return True
+    if payload.startswith(b"RIFF") and payload[8:12] == b"WEBP":
+        return True
+    return False
+
+
 @router.post("/upload/chat")
 async def upload_chat_file(
     file: UploadFile = File(...),
@@ -163,6 +183,8 @@ async def upload_chat_file(
     contents = await file.read()
     if len(contents) > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=413, detail="Файл превышает допустимый размер (макс. 10 MB)")
+    if content_type.startswith("image/") and not _has_supported_image_signature(contents):
+        raise HTTPException(status_code=400, detail="Содержимое файла не соответствует image MIME")
 
     if content_type.startswith("image/"):
         file_type = "image"

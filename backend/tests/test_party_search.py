@@ -21,6 +21,7 @@ def _make_party(
     city: str | None = None,
     created_at: datetime | None = None,
     event_id: str = "event_1",
+    event_date_ts: int | None = None,
 ) -> EventParty:
     party = EventParty(
         event_id=event_id,
@@ -30,6 +31,7 @@ def _make_party(
         creator_id=creator_id,
         is_open=True,
         city=city,
+        event_date_ts=event_date_ts,
     )
     if created_at is not None:
         party.created_at = created_at
@@ -87,9 +89,30 @@ def test_filter_by_city(client: TestClient, db, user_a, user_b, token_a):
 
 def test_filter_by_date_range(client: TestClient, db, user_a, token_a):
     now = datetime.utcnow()
-    _make_party(db, user_a.id, title="Past party", created_at=now - timedelta(days=10))
-    _make_party(db, user_a.id, title="Recent party", created_at=now - timedelta(days=1))
-    _make_party(db, user_a.id, title="Future party", created_at=now + timedelta(days=5))
+    _make_party(
+        db,
+        user_a.id,
+        title="Past party",
+        created_at=now - timedelta(days=1),
+        event_date_ts=int((now - timedelta(days=10)).timestamp()),
+        event_id="event_past_old",
+    )
+    _make_party(
+        db,
+        user_a.id,
+        title="Recent party",
+        created_at=now + timedelta(days=5),
+        event_date_ts=int((now - timedelta(days=1)).timestamp()),
+        event_id="event_recent",
+    )
+    _make_party(
+        db,
+        user_a.id,
+        title="Future party",
+        created_at=now - timedelta(days=10),
+        event_date_ts=int((now + timedelta(days=5)).timestamp()),
+        event_id="event_future_new",
+    )
 
     date_from = (now - timedelta(days=3)).strftime("%Y-%m-%dT%H:%M:%S")
     date_to = (now + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
@@ -182,3 +205,62 @@ def test_per_page_max_100(client: TestClient, db, user_a, token_a):
 def test_page_zero_rejected(client: TestClient, db, user_a, token_a):
     resp = client.get("/parties/search?page=0", headers=_auth_headers(token_a))
     assert resp.status_code == 422
+
+
+def test_filter_by_date_range_uses_event_date_not_created_at(client: TestClient, db, user_a, token_a):
+    now = datetime.utcnow()
+    future_event_ts = int((now + timedelta(days=7)).timestamp())
+    past_event_ts = int((now - timedelta(days=7)).timestamp())
+
+    _make_party(
+        db,
+        user_a.id,
+        title="Future event party",
+        created_at=now,
+        event_date_ts=future_event_ts,
+        event_id="event_future",
+    )
+    _make_party(
+        db,
+        user_a.id,
+        title="Past event party",
+        created_at=now,
+        event_date_ts=past_event_ts,
+        event_id="event_past",
+    )
+
+    date_from = datetime.utcfromtimestamp(future_event_ts - 3600).strftime("%Y-%m-%dT%H:%M:%S")
+    date_to = datetime.utcfromtimestamp(future_event_ts + 3600).strftime("%Y-%m-%dT%H:%M:%S")
+    resp = client.get(
+        f"/parties/search?date_from={date_from}&date_to={date_to}",
+        headers=_auth_headers(token_a),
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["items"][0]["title"] == "Future event party"
+
+
+def test_filter_by_min_members_uses_actual_accepted_members(client: TestClient, db, user_a, user_b, token_a):
+    _make_party(
+        db,
+        user_a.id,
+        title="Big capacity empty party",
+        max_members=10,
+        event_id="event_empty",
+    )
+    has_member_party = _make_party(
+        db,
+        user_a.id,
+        title="Small capacity with member",
+        max_members=2,
+        event_id="event_member",
+    )
+    _accept_member(db, has_member_party.id, user_b.id)
+
+    resp = client.get("/parties/search?min_members=1", headers=_auth_headers(token_a))
+    assert resp.status_code == 200
+    data = resp.json()
+    titles = [item["title"] for item in data["items"]]
+    assert "Small capacity with member" in titles
+    assert "Big capacity empty party" not in titles

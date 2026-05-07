@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 from typing import Literal, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 import asyncio
@@ -375,6 +375,14 @@ def search_parties(
     db: Session = Depends(get_db),
 ):
     get_current_user_from_token(token, db)
+    def _to_unix_ts(dt: Optional[datetime]) -> Optional[int]:
+        if dt is None:
+            return None
+        normalized = dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+        return int(normalized.timestamp())
+
+    date_from_ts = _to_unix_ts(date_from)
+    date_to_ts = _to_unix_ts(date_to)
 
     member_count_sq = (
         db.query(
@@ -385,12 +393,13 @@ def search_parties(
         .group_by(PartyMember.party_id)
         .subquery()
     )
+    member_count_expr = sa_func.coalesce(member_count_sq.c.member_count, 0)
 
     base_q = (
         db.query(
             EventParty,
             User,
-            sa_func.coalesce(member_count_sq.c.member_count, 0).label("member_count"),
+            member_count_expr.label("member_count"),
         )
         .join(User, EventParty.creator_id == User.id)
         .outerjoin(member_count_sq, EventParty.id == member_count_sq.c.party_id)
@@ -406,17 +415,23 @@ def search_parties(
     if city and city.strip():
         base_q = base_q.filter(EventParty.city.ilike(f"%{city.strip()}%"))
 
-    if date_from is not None:
-        base_q = base_q.filter(EventParty.created_at >= date_from)
+    if date_from_ts is not None:
+        base_q = base_q.filter(
+            EventParty.event_date_ts.isnot(None),
+            EventParty.event_date_ts >= date_from_ts,
+        )
 
-    if date_to is not None:
-        base_q = base_q.filter(EventParty.created_at <= date_to)
+    if date_to_ts is not None:
+        base_q = base_q.filter(
+            EventParty.event_date_ts.isnot(None),
+            EventParty.event_date_ts <= date_to_ts,
+        )
 
     if min_members is not None:
-        base_q = base_q.filter(EventParty.max_members >= min_members)
+        base_q = base_q.filter(member_count_expr >= min_members)
 
     if max_members is not None:
-        base_q = base_q.filter(EventParty.max_members <= max_members)
+        base_q = base_q.filter(member_count_expr <= max_members)
 
     if is_open is not None:
         base_q = base_q.filter(EventParty.is_open == is_open)
@@ -424,8 +439,10 @@ def search_parties(
     # Count на отдельном лёгком запросе — без JOIN'ов на User/member_count_sq.
     # `base_q.count()` обёртывает всё в `SELECT count(*) FROM (... JOINs ...)` —
     # у нас для count нужны только фильтры по EventParty.
-    count_q = db.query(sa_func.count(EventParty.id)).filter(
-        EventParty.is_hidden == False  # noqa: E712
+    count_q = (
+        db.query(sa_func.count(EventParty.id))
+        .outerjoin(member_count_sq, EventParty.id == member_count_sq.c.party_id)
+        .filter(EventParty.is_hidden == False)  # noqa: E712
     )
     if q and q.strip():
         pattern = f"%{q.strip()}%"
@@ -434,20 +451,26 @@ def search_parties(
         )
     if city and city.strip():
         count_q = count_q.filter(EventParty.city.ilike(f"%{city.strip()}%"))
-    if date_from is not None:
-        count_q = count_q.filter(EventParty.created_at >= date_from)
-    if date_to is not None:
-        count_q = count_q.filter(EventParty.created_at <= date_to)
+    if date_from_ts is not None:
+        count_q = count_q.filter(
+            EventParty.event_date_ts.isnot(None),
+            EventParty.event_date_ts >= date_from_ts,
+        )
+    if date_to_ts is not None:
+        count_q = count_q.filter(
+            EventParty.event_date_ts.isnot(None),
+            EventParty.event_date_ts <= date_to_ts,
+        )
     if min_members is not None:
-        count_q = count_q.filter(EventParty.max_members >= min_members)
+        count_q = count_q.filter(member_count_expr >= min_members)
     if max_members is not None:
-        count_q = count_q.filter(EventParty.max_members <= max_members)
+        count_q = count_q.filter(member_count_expr <= max_members)
     if is_open is not None:
         count_q = count_q.filter(EventParty.is_open == is_open)
     total = count_q.scalar() or 0
 
     if sort_by == "popular":
-        base_q = base_q.order_by(sa_func.coalesce(member_count_sq.c.member_count, 0).desc())
+        base_q = base_q.order_by(member_count_expr.desc())
     elif sort_by == "date":
         base_q = base_q.order_by(EventParty.created_at.asc())
     else:
