@@ -25,6 +25,9 @@ interface ReviewSummary {
   top_tags: string[];
   top_positive_tags?: string[];
   top_negative_tags?: string[];
+  page?: number;
+  per_page?: number;
+  total_pages?: number;
 }
 
 interface UserReviewsBlockProps {
@@ -35,6 +38,64 @@ interface UserReviewsBlockProps {
   maxReviews?: number;
   /** Whether to show a "report" button on reviews. */
   showReport?: boolean;
+}
+
+const TAG_TRANSLATIONS: Record<string, string> = {
+  friendly: 'Дружелюбный',
+  reliable: 'Надёжный',
+  organizer: 'Организованный',
+  punctual: 'Пунктуальный',
+  sociable: 'Общительный',
+  positive: 'Позитивный',
+  helpful: 'Помогает другим',
+  cultured: 'Культурный',
+  interesting: 'Интересный собеседник',
+  late: 'Опоздал',
+  no_show: 'Не пришёл',
+  rude: 'Грубый',
+  unfriendly: 'Недружелюбный',
+  boring: 'Скучный',
+  unreliable: 'Ненадёжный',
+};
+
+const TOKEN_SPLIT_ORDER: Array<keyof typeof TAG_TRANSLATIONS> = [
+  'friendly',
+  'reliable',
+  'organizer',
+  'punctual',
+  'sociable',
+  'positive',
+  'helpful',
+  'cultured',
+  'interesting',
+  'late',
+  'no_show',
+  'rude',
+  'unfriendly',
+  'boring',
+  'unreliable',
+];
+
+function normalizeTag(raw: string): string[] {
+  const value = String(raw || '').trim();
+  if (!value) return [];
+
+  const direct = TAG_TRANSLATIONS[value.toLowerCase()];
+  if (direct) return [direct];
+
+  const hits: string[] = [];
+  const lower = value.toLowerCase();
+  for (const token of TOKEN_SPLIT_ORDER) {
+    if (lower.includes(token)) hits.push(TAG_TRANSLATIONS[token]);
+  }
+  if (hits.length > 0) return Array.from(new Set(hits));
+
+  return [value];
+}
+
+function normalizeTags(tags: string[] | null | undefined): string[] {
+  if (!tags || tags.length === 0) return [];
+  return Array.from(new Set(tags.flatMap(normalizeTag)));
 }
 
 function StarRow({ rating, size = 14 }: { rating: number; size?: number }) {
@@ -65,17 +126,52 @@ export default function UserReviewsBlock({
   showReport = false,
 }: UserReviewsBlockProps) {
   const [summary, setSummary] = useState<ReviewSummary | null>(null);
+  const [loadedReviews, setLoadedReviews] = useState<ReviewOut[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [reportedIds, setReportedIds] = useState<Set<number>>(new Set());
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     if (!userId) return;
-    setLoading(true);
-    apiFetch(`${API_BASE}/users/${userId}/reviews`)
+    const isFirstPage = page === 1;
+    if (isFirstPage) setLoading(true);
+    else setLoadingMore(true);
+
+    apiFetch(`${API_BASE}/users/${userId}/reviews?page=${page}&per_page=${maxReviews}`)
       .then(r => (r.ok ? r.json() : null))
-      .then(data => setSummary(data ?? null))
-      .catch(() => setSummary(null))
-      .finally(() => setLoading(false));
+      .then((data: ReviewSummary | null) => {
+        if (!data) {
+          setSummary(null);
+          setLoadedReviews([]);
+          return;
+        }
+        setSummary(data);
+        setLoadedReviews(prev => {
+          if (isFirstPage) return data.reviews ?? [];
+          const seen = new Set(prev.map(r => r.id));
+          const next = [...prev];
+          for (const r of data.reviews ?? []) {
+            if (!seen.has(r.id)) next.push(r);
+          }
+          return next;
+        });
+      })
+      .catch(() => {
+        if (isFirstPage) {
+          setSummary(null);
+          setLoadedReviews([]);
+        }
+      })
+      .finally(() => {
+        if (isFirstPage) setLoading(false);
+        else setLoadingMore(false);
+      });
+  }, [userId, page, maxReviews]);
+
+  useEffect(() => {
+    setPage(1);
+    setLoadedReviews([]);
   }, [userId]);
 
   async function handleReport(reviewId: number) {
@@ -122,6 +218,14 @@ export default function UserReviewsBlock({
         <EmptyState />
       ) : (
         <>
+          {(() => {
+            const derivedTop = normalizeTags(summary.top_tags);
+            const derivedPositive = normalizeTags(summary.top_positive_tags);
+            const derivedNegative = normalizeTags(summary.top_negative_tags);
+            const positiveToShow = derivedPositive.length > 0 ? derivedPositive : derivedTop;
+
+            return (
+              <>
           {/* Summary */}
           <div className="flex items-start gap-6 mb-5">
             {/* Average rating */}
@@ -166,9 +270,9 @@ export default function UserReviewsBlock({
           </div>
 
           {/* Top tags (split by polarity) */}
-          {(summary.top_positive_tags && summary.top_positive_tags.length > 0) && (
+          {positiveToShow.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-2">
-              {summary.top_positive_tags.slice(0, 5).map(tag => (
+              {positiveToShow.slice(0, 5).map(tag => (
                 <span
                   key={tag}
                   className="text-xs px-2.5 py-1 rounded-full font-medium"
@@ -179,9 +283,9 @@ export default function UserReviewsBlock({
               ))}
             </div>
           )}
-          {(summary.top_negative_tags && summary.top_negative_tags.length > 0) && (
+          {derivedNegative.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-5">
-              {summary.top_negative_tags.slice(0, 5).map(tag => (
+              {derivedNegative.slice(0, 5).map(tag => (
                 <span
                   key={tag}
                   className="text-xs px-2.5 py-1 rounded-full font-medium"
@@ -195,24 +299,13 @@ export default function UserReviewsBlock({
               ))}
             </div>
           )}
-          {/* Fallback: old clients that don't yet split */}
-          {(!summary.top_positive_tags && !summary.top_negative_tags && summary.top_tags.length > 0) && (
-            <div className="flex flex-wrap gap-1.5 mb-5">
-              {summary.top_tags.slice(0, 5).map(tag => (
-                <span
-                  key={tag}
-                  className="text-xs px-2.5 py-1 rounded-full font-medium"
-                  style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
+              </>
+            );
+          })()}
 
           {/* Review list */}
           <div className="space-y-3">
-            {summary.reviews.slice(0, maxReviews).map(review => (
+            {loadedReviews.map(review => (
               <div
                 key={review.id}
                 className="rounded-2xl p-4"
@@ -249,7 +342,7 @@ export default function UserReviewsBlock({
                 {/* Tags */}
                 {review.tags && review.tags.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1.5">
-                    {review.tags.map(tag => (
+                    {normalizeTags(review.tags).map(tag => (
                       <span
                         key={tag}
                         className="text-[11px] px-2 py-0.5 rounded-full"
@@ -299,6 +392,22 @@ export default function UserReviewsBlock({
                 </div>
               </div>
             ))}
+          </div>
+
+          <div className="mt-4 flex flex-col items-center gap-2">
+            {page < (summary.total_pages ?? 1) && (
+              <button
+                type="button"
+                onClick={() => setPage(prev => prev + 1)}
+                disabled={loadingMore}
+                className="btn btn-ghost btn-sm"
+              >
+                {loadingMore ? 'Загрузка...' : 'Загрузить ещё'}
+              </button>
+            )}
+            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              Показано {loadedReviews.length} из {summary.total_reviews}
+            </p>
           </div>
         </>
       )}
