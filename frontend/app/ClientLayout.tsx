@@ -1,0 +1,154 @@
+'use client';
+
+import { useEffect, useRef } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
+import { Socket } from 'socket.io-client';
+import { AuthProvider } from './context/AuthContext';
+import { useAuth } from './context/AuthContext';
+import { NotificationsProvider, useNotifications, NotificationItem } from './context/NotificationsContext';
+import { InvitesProvider, useInvites } from './context/InvitesContext';
+import { ToastContainer, toast } from './components/Toast';
+import MuteBanner from './components/MuteBanner';
+import { getSocket, connectSocket, disconnectSocket } from './lib/socket';
+import { registerServiceWorker, refreshSubscription } from './lib/push';
+
+const toastTypeMap: Record<string, 'success' | 'error' | 'info'> = {
+  request_status_changed: 'success',
+  kicked_from_party: 'error',
+  new_party_request: 'info',
+  party_closed: 'info',
+  party_invite_received: 'info',
+  party_invite_response: 'success',
+  party_deleted_for_user: 'error',
+};
+
+function getToastType(notifType: string, notifTitle: string): 'success' | 'error' | 'info' {
+  if (notifType === 'request_status_changed' && notifTitle.toLowerCase().includes('отклон')) {
+    return 'error';
+  }
+  if (notifType === 'party_invite_response' && notifTitle.toLowerCase().includes('отклон')) {
+    return 'error';
+  }
+  return toastTypeMap[notifType] ?? 'info';
+}
+
+function UserNotificationSocket() {
+  const { token } = useAuth();
+  const { addNotification } = useNotifications();
+  const socketRef = useRef<Socket | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const routerRef = useRef(router);
+  const pathnameRef = useRef(pathname);
+  const addNotificationRef = useRef(addNotification);
+  useEffect(() => { routerRef.current = router; }, [router]);
+  useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
+  useEffect(() => { addNotificationRef.current = addNotification; }, [addNotification]);
+
+  useEffect(() => {
+    if (!token) {
+      disconnectSocket();
+      return;
+    }
+
+    connectSocket();
+    const socket = getSocket();
+    socketRef.current = socket;
+
+    const onConnect = () => {
+      // Auth теперь идёт через cookie в handshake; token не нужен в payload.
+      socket.emit('subscribe_notifications', {});
+    };
+
+    if (socket.connected) onConnect();
+    socket.on('connect', onConnect);
+
+    const onNewNotification = (data: NotificationItem) => {
+      addNotificationRef.current(data);
+
+      let parsedData: Record<string, unknown> = {};
+      try { parsedData = data.data ? JSON.parse(data.data) : {}; } catch { /* ignore parse errors */ }
+
+      const partyId = parsedData.party_id as number | undefined;
+      const toastType = getToastType(data.type, data.title);
+
+      // party_deleted_for_user has no valid destination anymore
+      const linkable = partyId && data.type !== 'party_deleted_for_user';
+
+      toast(
+        data.title,
+        toastType,
+        linkable
+          ? { label: 'Смотреть', onClick: () => routerRef.current.push(`/parties/${partyId}`) }
+          : undefined,
+      );
+
+      // Редирект при кике или удалении party, если пользователь находится на странице этой пати
+      if ((data.type === 'kicked_from_party' || data.type === 'party_deleted_for_user') && partyId) {
+        if (pathnameRef.current === `/parties/${partyId}`) {
+          routerRef.current.push('/my-events');
+        }
+      }
+    };
+
+    socket.on('new_notification', onNewNotification);
+
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('new_notification', onNewNotification);
+      socketRef.current = null;
+    };
+  }, [token]);
+
+  return null;
+}
+
+function ServiceWorkerBootstrap() {
+  const { token } = useAuth();
+  useEffect(() => {
+    registerServiceWorker();
+  }, []);
+  useEffect(() => {
+    if (!token) return;
+    refreshSubscription();
+  }, [token]);
+  return null;
+}
+
+function TitleUpdater() {
+  const { unreadCount } = useNotifications();
+  const { count: inviteCount } = useInvites();
+
+  useEffect(() => {
+    const total = unreadCount + inviteCount;
+    const base = 'GatherVibe';
+    document.title = total > 0 ? `(${total}) ${base}` : base;
+  }, [unreadCount, inviteCount]);
+
+  return null;
+}
+
+function InnerLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <ServiceWorkerBootstrap />
+      <UserNotificationSocket />
+      <TitleUpdater />
+      <MuteBanner />
+      {children}
+      <ToastContainer />
+    </>
+  );
+}
+
+export default function ClientLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <AuthProvider>
+      <NotificationsProvider>
+        <InvitesProvider>
+          <InnerLayout>{children}</InnerLayout>
+        </InvitesProvider>
+      </NotificationsProvider>
+    </AuthProvider>
+  );
+}

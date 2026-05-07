@@ -2,6 +2,11 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
+import { apiFetch } from '../lib/apiFetch';
+import { getInterestLabel } from '../lib/interests';
+import { sendInvite } from '../lib/partyInviteApi';
+import { extractApiErrorMessage } from '../lib/apiErrors';
+import { toast } from './Toast';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -14,6 +19,13 @@ interface Attendee {
   comment: string | null;
   is_looking: boolean;
   created_at: string;
+}
+
+type PartyMemberInviteStatus = 'pending' | 'accepted' | 'rejected' | 'left' | 'invited' | 'declined';
+
+interface InviteMemberState {
+  user_id: number;
+  status: PartyMemberInviteStatus;
 }
 
 interface MyStatus {
@@ -45,7 +57,7 @@ function InterestBadge({ interest, highlight }: { interest: string; highlight?: 
         color: highlight ? '#fff' : 'var(--accent, #4f46e5)',
       }}
     >
-      {interest.trim()}
+      {getInterestLabel(interest.trim())}
     </span>
   );
 }
@@ -80,12 +92,20 @@ function AttendeeCard({
   isTopMatch,
   commonInterests,
   matchScore,
+  canInvite,
+  inviteLabel,
+  inviteDisabled,
+  onInvite,
 }: {
   attendee: Attendee;
   isMe: boolean;
   isTopMatch: boolean;
   commonInterests: string[];
   matchScore: number;
+  canInvite: boolean;
+  inviteLabel?: string;
+  inviteDisabled?: boolean;
+  onInvite?: (userId: number) => void;
 }) {
   const initials = attendee.username.slice(0, 2).toUpperCase();
   const interests = attendee.interests
@@ -204,13 +224,50 @@ function AttendeeCard({
           Ищет компанию
         </div>
       )}
+
+      {canInvite && !isMe && (
+        <button
+          type="button"
+          disabled={inviteDisabled}
+          onClick={() => onInvite?.(attendee.user_id)}
+          className="text-xs font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-60"
+          style={{
+            background: inviteDisabled ? 'var(--surface-2)' : 'var(--primary-hl)',
+            color: inviteDisabled ? 'var(--text-muted)' : 'var(--primary)',
+            border: '1px solid color-mix(in oklch, var(--primary) 30%, transparent)',
+          }}
+        >
+          {inviteLabel ?? 'Пригласить'}
+        </button>
+      )}
     </div>
   );
 }
 
 // ─── main component ──────────────────────────────────────────────────────────
 
-export default function EventAttendees({ eventId }: { eventId: string }) {
+interface EventMeta {
+  title: string;
+  date_ts: number | null;
+  city: string | null;
+  image_url: string | null;
+  category: string | null;
+  location: string | null;
+}
+
+export default function EventAttendees({
+  eventId,
+  eventMeta,
+  partyId,
+  partyCreatorId,
+  partyMembers,
+}: {
+  eventId: string;
+  eventMeta?: EventMeta;
+  partyId?: number | null;
+  partyCreatorId?: number | null;
+  partyMembers?: InviteMemberState[];
+}) {
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [myStatus, setMyStatus] = useState<MyStatus>({ attending: false });
   const [myInterests, setMyInterests] = useState<string[]>([]);
@@ -222,25 +279,31 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
   const [onlyLooking, setOnlyLooking] = useState(false);
   const [sortBy, setSortBy] = useState<'date' | 'match'>('match');
   const [filterInterest, setFilterInterest] = useState<string>('');
+  const [invitingUserIds, setInvitingUserIds] = useState<Set<number>>(new Set());
+  const [locallyInvitedUserIds, setLocallyInvitedUserIds] = useState<Set<number>>(new Set());
+  // `token` здесь только как маркер "залогинен ли". Реальный JWT в HttpOnly cookie.
   const [token, setToken] = useState<string | null>(null);
   const [myUserId, setMyUserId] = useState<number | null>(null);
 
   useEffect(() => {
-    const t = localStorage.getItem('token');
-    setToken(t);
-    if (t) {
-      try {
-        const payload = JSON.parse(atob(t.split('.')[1]));
-        setMyUserId(payload.user_id ?? null);
-      } catch {
-        setMyUserId(null);
-      }
-    }
+    // /users/me → и проверка сессии, и получение myUserId одним запросом.
+    apiFetch('/users/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && typeof data.id === 'number') {
+          setToken('session');
+          setMyUserId(data.id);
+        } else {
+          setToken(null);
+          setMyUserId(null);
+        }
+      })
+      .catch(() => { setToken(null); setMyUserId(null); });
   }, []);
 
   useEffect(() => {
     if (!token) return;
-    fetch(`${API_BASE}/users/me`, { headers: { Authorization: `Bearer ${token}` } })
+    apiFetch('/users/me')
       .then(r => (r.ok ? r.json() : null))
       .then(u => {
         if (u?.interests) setMyInterests(splitInterests(u.interests));
@@ -250,8 +313,8 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
 
   const fetchAttendees = useCallback(async () => {
     try {
-      const res = await fetch(
-        `${API_BASE}/attendees/${eventId}${onlyLooking ? '?only_looking=true' : ''}`
+      const res = await apiFetch(
+        `/attendees/${eventId}${onlyLooking ? '?only_looking=true' : ''}`
       );
       if (res.ok) setAttendees(await res.json());
     } catch {}
@@ -260,9 +323,7 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
   const fetchMyStatus = useCallback(async () => {
     if (!token) { setMyStatus({ attending: false }); return; }
     try {
-      const res = await fetch(`${API_BASE}/attendees/${eventId}/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`/attendees/${eventId}/me`);
       if (res.ok) {
         const data = await res.json();
         setMyStatus(data);
@@ -334,14 +395,67 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
     return bestScore > 0 ? best?.user_id ?? null : null;
   }, [attendees, getMatchScore, myUserId]);
 
+  const canManageInvites = !!partyId && !!myUserId && partyCreatorId === myUserId;
+
+  const partyMemberStatusByUserId = useMemo(() => {
+    const map = new Map<number, PartyMemberInviteStatus>();
+    (partyMembers ?? []).forEach((member) => map.set(member.user_id, member.status));
+    return map;
+  }, [partyMembers]);
+
+  const resolveInviteState = useCallback((userId: number): { disabled: boolean; label: string } => {
+    if (invitingUserIds.has(userId)) return { disabled: true, label: 'Отправка...' };
+    const status = partyMemberStatusByUserId.get(userId);
+    if (status === 'accepted') return { disabled: true, label: 'В группе' };
+    if (status === 'invited') return { disabled: true, label: 'Уже приглашен' };
+    if (status === 'pending') return { disabled: true, label: 'Заявка отправлена' };
+    if (locallyInvitedUserIds.has(userId)) return { disabled: true, label: 'Уже приглашен' };
+    return { disabled: false, label: 'Пригласить' };
+  }, [invitingUserIds, locallyInvitedUserIds, partyMemberStatusByUserId]);
+
+  const handleInvite = useCallback(async (userId: number) => {
+    if (!partyId || !canManageInvites) return;
+    const state = resolveInviteState(userId);
+    if (state.disabled) return;
+
+    setInvitingUserIds((prev) => new Set(prev).add(userId));
+    try {
+      const res = await sendInvite(partyId, userId, null);
+      if (res.ok) {
+        setLocallyInvitedUserIds((prev) => new Set(prev).add(userId));
+        toast('Приглашение отправлено', 'success');
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast(extractApiErrorMessage((data as { detail?: unknown }).detail), 'error');
+      }
+    } catch {
+      toast('Ошибка сети при отправке приглашения', 'error');
+    } finally {
+      setInvitingUserIds((prev) => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
+    }
+  }, [canManageInvites, partyId, resolveInviteState]);
+
   const handleJoin = async () => {
     if (!token) { window.location.href = '/login'; return; }
     setJoining(true);
     try {
-      const res = await fetch(`${API_BASE}/attendees/${eventId}`, {
+      const res = await apiFetch(`/attendees/${eventId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ comment: comment.trim() || null, is_looking: isLooking }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          comment:         comment.trim() || null,
+          is_looking:      isLooking,
+          event_title:     eventMeta?.title     ?? null,
+          event_date_ts:   eventMeta?.date_ts   ?? null,
+          event_city:      eventMeta?.city       ?? null,
+          event_image_url: eventMeta?.image_url  ?? null,
+          event_category:  eventMeta?.category   ?? null,
+          event_location:  eventMeta?.location   ?? null,
+        }),
       });
       if (res.ok) {
         setMyStatus({ attending: true, is_looking: isLooking, comment: comment.trim() || null });
@@ -356,10 +470,7 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
     if (!token) return;
     setJoining(true);
     try {
-      await fetch(`${API_BASE}/attendees/${eventId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      await apiFetch(`/attendees/${eventId}`, { method: 'DELETE' });
       setMyStatus({ attending: false });
       setComment('');
       setShowForm(false);
@@ -492,7 +603,7 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
                 border: `1px solid ${filterInterest === int ? 'var(--accent, #4f46e5)' : 'var(--border)'}`,
               }}
             >
-              {myInterests.includes(int) ? '⭐ ' : ''}{int}
+              {myInterests.includes(int) ? '⭐ ' : ''}{getInterestLabel(int)}
             </button>
           ))}
         </div>
@@ -605,7 +716,9 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {processedAttendees.map(a => (
+            {processedAttendees.map(a => {
+              const inviteState = resolveInviteState(a.user_id);
+              return (
               <AttendeeCard
                 key={a.id}
                 attendee={a}
@@ -613,8 +726,13 @@ export default function EventAttendees({ eventId }: { eventId: string }) {
                 isTopMatch={a.user_id === topMatchUserId}
                 commonInterests={getCommonInterests(a)}
                 matchScore={getMatchScore(a)}
+                canInvite={canManageInvites}
+                inviteLabel={inviteState.label}
+                inviteDisabled={inviteState.disabled}
+                onInvite={handleInvite}
               />
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

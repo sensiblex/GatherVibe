@@ -1,723 +1,1215 @@
-'use client';
+﻿'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+
 import Navbar from '../components/Navbar';
-import EventCard, { KudaGoEvent } from '../components/EventCard';
+import EventsMap from '../components/EventsMap';
+import { KudaGoEvent } from '../components/EventCard';
+import EventDetailDrawer from './EventDetailDrawer';
+import DateStrip from './DateStrip';
+import MasonryEventCard from './MasonryEventCard';
+import FeaturedCard from './FeaturedCard';
+import CategoryPills from './CategoryPills';
+import CityFilter from './CityFilter';
+import PriceToggle from './PriceToggle';
+import AgeFilter from './AgeFilter';
+import GeoFilter from './GeoFilter';
+import TagPills from './TagPills';
+import PlaceSearchInput from './PlaceSearchInput';
+import QuickDateChips from './QuickDateChips';
+import TimeOfDayFilter from './TimeOfDayFilter';
+import SocialFilters from './SocialFilters';
+import QualityFilters from './QualityFilters';
+import TimingFilters from './TimingFilters';
+import TimeRangeSlider from './TimeRangeSlider';
+import WeekdayPicker from './WeekdayPicker';
+import {
+  buildKudaGoQuery,
+  toggleCategory,
+  isValidCity,
+  quickDateRange,
+  SORT_OPTIONS,
+  KUDAGO_CITIES,
+  type CitySlug,
+  type PriceMode,
+  type SortMode,
+  type GeoPoint,
+  type TimeOfDay,
+  type PermanenceMode,
+  type QuickDate,
+} from './event-filters';
+import { apiFetch } from '../lib/apiFetch';
+import { hasMoreEvents, mergeEventPages } from './events-pagination';
+import {
+  displayDate,
+  getEventCategoryBadges,
+  localEndTs,
+  localIsoDate,
+  localStartTs,
+  translateCategory,
+} from './utils';
+import { readViewedEventIds } from './viewed-events';
+import { eventDetailHref, pickRandomEvent } from './random-event';
+import { FILTER_DRAWER_Z_INDEX, FILTER_OVERLAY_Z_INDEX } from './map-layering';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const PAGE_SIZE = 12;
+// ─── Constants ───────────────────────────────────────────────────────────────
+const PAGE_SIZE = 60;
+const DIRECT_BACKEND_BASE =
+  (process.env.NEXT_PUBLIC_DIRECT_API_URL && process.env.NEXT_PUBLIC_DIRECT_API_URL.trim()) ||
+  'http://localhost:8000';
 
 interface Category { slug: string; name: string; }
 
-function localIsoDate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-function localStartTs(dateStr: string): number {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  return Math.floor(new Date(y, m - 1, d, 0, 0, 0).getTime() / 1000);
-}
-function localEndTs(dateStr: string): number {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  return Math.floor(new Date(y, m - 1, d, 23, 59, 59).getTime() / 1000);
-}
-function displayDate(dateStr: string, opts: Intl.DateTimeFormatOptions): string {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString('ru-RU', opts);
-}
-function daysInMonth(year: number, month: number) {
-  return new Date(year, month + 1, 0).getDate();
-}
-function firstDayOfMonth(year: number, month: number) {
-  const day = new Date(year, month, 1).getDay();
-  return (day + 6) % 7;
+function parsePriceInput(value: string): number | null {
+  if (!value.trim()) return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
-const RU_MONTHS = [
-  'Январь','Февраль','Март','Апрель','Май','Июнь',
-  'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь',
-];
-const RU_DAYS_SHORT = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+function normalizePriceInputValue(value: string): string {
+  if (value === '') return '';
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '';
+  return n < 0 ? '0' : value;
+}
 
-function EventCalendar({
-  events, selectedDate, onSelectDate,
-}: {
-  events: KudaGoEvent[];
-  selectedDate: string | null;
-  onSelectDate: (d: string | null) => void;
-}) {
-  const today = new Date();
-  const todayStr = localIsoDate(today);
-  const [viewYear, setViewYear]   = useState(today.getFullYear());
-  const [viewMonth, setViewMonth] = useState(today.getMonth());
-
-  const eventDates = new Set<string>();
-  events.forEach(e => { if (e.start_date) eventDates.add(e.start_date); });
-
-  const days     = daysInMonth(viewYear, viewMonth);
-  const firstDay = firstDayOfMonth(viewYear, viewMonth);
-
-  const prevMonth = () => {
-    if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); }
-    else setViewMonth(m => m - 1);
-  };
-  const nextMonth = () => {
-    if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); }
-    else setViewMonth(m => m + 1);
-  };
-
-  const handleDay = (day: number) => {
-    const m = String(viewMonth + 1).padStart(2, '0');
-    const d = String(day).padStart(2, '0');
-    const cellStr = `${viewYear}-${m}-${d}`;
-    onSelectDate(selectedDate === cellStr ? null : cellStr);
-  };
-
-  const cells: (number | null)[] = [
-    ...Array(firstDay).fill(null),
-    ...Array.from({ length: days }, (_, i) => i + 1),
-  ];
-  while (cells.length % 7 !== 0) cells.push(null);
-
+// ─── Masonry skeleton ────────────────────────────────────────────────────────
+function MasonrySkeleton() {
+  const heights = [180, 260, 220, 310, 200, 250, 190, 280, 240, 170, 300, 210];
   return (
-    <div
-      className="rounded-2xl p-5 select-none"
-      style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        boxShadow: 'var(--shadow-sm)',
-      }}
-    >
-      <div className="flex items-center justify-between mb-4">
-        <button
-          onClick={prevMonth}
-          className="w-8 h-8 flex items-center justify-center rounded-xl transition"
-          style={{ color: 'var(--text-muted)' }}
-        >&#8249;</button>
-        <h2 className="font-bold text-sm" style={{ color: 'var(--text)' }}>
-          {RU_MONTHS[viewMonth]} {viewYear}
-        </h2>
-        <button
-          onClick={nextMonth}
-          className="w-8 h-8 flex items-center justify-center rounded-xl transition"
-          style={{ color: 'var(--text-muted)' }}
-        >&#8250;</button>
-      </div>
-
-      <div className="grid grid-cols-7 mb-1">
-        {RU_DAYS_SHORT.map(d => (
-          <div key={d} className="text-center text-[10px] font-semibold py-1"
-            style={{ color: 'var(--text-faint)' }}>{d}</div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-7 gap-0.5">
-        {cells.map((day, idx) => {
-          if (!day) return <div key={idx} />;
-          const m = String(viewMonth + 1).padStart(2, '0');
-          const dd = String(day).padStart(2, '0');
-          const cellStr = `${viewYear}-${m}-${dd}`;
-          const isToday    = cellStr === todayStr;
-          const hasEvent   = eventDates.has(cellStr);
-          const isSelected = selectedDate === cellStr;
-          const isPast     = cellStr < todayStr;
-
-          let bg = 'transparent';
-          let color = 'var(--text)';
-          let ring = '';
-
-          if (isSelected) { bg = 'var(--primary)'; color = 'var(--text-inverse)'; }
-          else if (isToday) { bg = 'var(--primary-hl)'; color = 'var(--primary)'; ring = '1px solid var(--primary)'; }
-          else if (hasEvent) { bg = 'var(--surface-off)'; color = 'var(--primary)'; }
-          else if (isPast) { color = 'var(--text-faint)'; }
-
-          return (
-            <button
-              key={idx}
-              onClick={() => handleDay(day)}
-              disabled={isPast && !hasEvent}
-              className="relative flex flex-col items-center justify-center h-9 w-full rounded-xl text-xs font-semibold transition"
-              style={{ background: bg, color, outline: ring ? `${ring}` : undefined, cursor: isPast && !hasEvent ? 'not-allowed' : 'pointer' }}
-            >
-              {day}
-              {hasEvent && !isSelected && (
-                <span
-                  className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full"
-                  style={{ background: 'var(--primary)' }}
-                />
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {selectedDate && (
+    <div className="gv-masonry animate-pulse">
+      {heights.map((h, i) => (
         <div
-          className="mt-3 pt-3 flex items-center justify-between"
-          style={{ borderTop: '1px solid var(--divider)' }}
+          key={i}
+          className="gv-masonry-card rounded-2xl overflow-hidden"
+          style={{ height: h, background: 'var(--surface)', border: '1px solid var(--border)' }}
         >
-          <p className="text-xs font-semibold" style={{ color: 'var(--primary)' }}>
-            📅 {displayDate(selectedDate, { day: 'numeric', month: 'long', year: 'numeric' })}
-          </p>
-          <button
-            onClick={() => onSelectDate(null)}
-            className="text-xs transition"
-            style={{ color: 'var(--text-faint)' }}
-          >
-            Сбросить ×
-          </button>
+          {h > 220 && (
+            <div style={{ height: '55%', background: 'var(--surface-2)' }} />
+          )}
+          <div style={{ padding: '0.875rem' }}>
+            <div className="h-3 w-3/4 rounded mb-2" style={{ background: 'var(--surface-2)' }} />
+            <div className="h-3 w-1/2 rounded mb-2" style={{ background: 'var(--surface-2)' }} />
+            <div className="h-3 w-2/3 rounded" style={{ background: 'var(--surface-2)' }} />
+          </div>
         </div>
-      )}
+      ))}
     </div>
   );
 }
 
+// ─── Main page ────────────────────────────────────────────────────────────────
 export default function EventsPage() {
-  const [events, setEvents]           = useState<KudaGoEvent[]>([]);
-  const [loading, setLoading]         = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError]             = useState<string | null>(null);
-  const [page, setPage]               = useState(1);
-  const [hasMore, setHasMore]         = useState(true);
-  const [total, setTotal]             = useState<number | null>(null);
-  const [allEvents, setAllEvents]     = useState<KudaGoEvent[]>([]);
+  const [events, setEvents]       = useState<KudaGoEvent[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError]         = useState<string | null>(null);
+  const [total, setTotal]         = useState<number | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
 
+  // Filters
+  const [city, setCity]               = useState<CitySlug>('kzn');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch]           = useState('');
-  const [category, setCategory]       = useState('');
-  const [isFree, setIsFree]           = useState(false);
-  const [categories, setCategories]   = useState<Category[]>([]);
-
+  const [selectedCats, setSelectedCats] = useState<string[]>([]);
+  const [priceMode, setPriceMode]     = useState<PriceMode>('all');
+  const [minPrice, setMinPrice]       = useState('');
+  const [maxPrice, setMaxPrice]       = useState('');
   const [dateFrom, setDateFrom]       = useState('');
   const [dateTo, setDateTo]           = useState('');
-  const [calSelectedDate, setCalSelectedDate] = useState<string | null>(null);
-  const [calOpen, setCalOpen]         = useState(true);
-  const [isSingleDayFilter, setIsSingleDayFilter] = useState(false);
+  const [sortBy, setSortBy]           = useState<SortMode>('date');
+  const [maxAge, setMaxAge]           = useState<number | null>(null);
+  const [tags, setTags]               = useState<string[]>([]);
+  const [placeSearchInput, setPlaceSearchInput] = useState('');
+  const [placeSearch, setPlaceSearch] = useState('');
+  const [geo, setGeo]                 = useState<GeoPoint | null>(null);
+  const [quickDate, setQuickDate]     = useState<QuickDate | null>(null);
+  const [timeOfDay, setTimeOfDay]     = useState<TimeOfDay | null>(null);
+  const [permanence, setPermanence]   = useState<PermanenceMode>('all');
+  const [hasCover, setHasCover]       = useState(false);
+  const [hasParty, setHasParty]       = useState(false);
+  const [hasFreeSpots, setHasFreeSpots] = useState(false);
+  const [minAttendees, setMinAttendees] = useState<number | null>(null);
+  const [startingWithinHours, setStartingWithinHours] = useState<number | null>(null);
+  const [durationMode, setDurationMode] = useState<'short' | 'long' | null>(null);
+  const [hasSchedules, setHasSchedules]   = useState(false);
+  const [onlyVerifiedPlace, setOnlyVerifiedPlace] = useState(false);
+  const [fromHour, setFromHour] = useState<number | null>(null);
+  const [toHour,   setToHour]   = useState<number | null>(null);
+  const [weekdays, setWeekdays] = useState<number[]>([]);
+  const [hideStarted, setHideStarted] = useState(false);
+  const [hideViewed, setHideViewed] = useState(false);
+  const [viewedEventIds, setViewedEventIds] = useState<Set<string>>(() => new Set());
 
-  const debounceRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const sentinelRef  = useRef<HTMLDivElement>(null);
-  const loadingRef   = useRef(false);
-  const todayStr = localIsoDate(new Date());
+  // Calendar & drawer state
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<KudaGoEvent | null>(null);
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+  const [attendeeCounts, setAttendeeCounts] = useState<Record<string, number>>({});
+  const [page, setPage] = useState(1);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [mapEvents, setMapEvents] = useState<KudaGoEvent[]>([]);
 
+  const [todayStr, setTodayStr] = useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadingRef  = useRef(false);
+  const requestSeqRef = useRef(0);
+  const hasLoadedOnceRef = useRef(false);
+  const router = useRouter();
+
+  const refreshViewedEventIds = useCallback(() => {
+    setViewedEventIds(new Set(readViewedEventIds()));
+  }, []);
+
+  // SSR-safe today
   useEffect(() => {
-    fetch(`${API_BASE}/kudago/categories`)
+    setTodayStr(localIsoDate(new Date()));
+  }, []);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    refreshViewedEventIds();
+
+    const handleFocus = () => refreshViewedEventIds();
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshViewedEventIds();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('pageshow', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('pageshow', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [refreshViewedEventIds]);
+  useEffect(() => {
+    if (!filterDrawerOpen || typeof window === 'undefined') return;
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFilterDrawerOpen(false);
+    };
+
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const prevOverflow = document.body.style.overflow;
+    const prevPaddingRight = document.body.style.paddingRight;
+
+    document.addEventListener('keydown', handleKey);
+    document.body.style.overflow = 'hidden';
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = prevOverflow;
+      document.body.style.paddingRight = prevPaddingRight;
+    };
+  }, [filterDrawerOpen]);
+
+  // Read initial filters from URL
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const p = new URLSearchParams(window.location.search);
+    const cityParam = p.get('city');
+    if (cityParam && isValidCity(cityParam)) setCity(cityParam);
+    const q = p.get('search') || '';
+    if (q) { setSearchInput(q); setSearch(q); }
+    const cats = p.get('categories');
+    if (cats) setSelectedCats(cats.split(',').filter(Boolean));
+    const priceParam = p.get('price');
+    if (priceParam === 'free' || priceParam === 'paid') setPriceMode(priceParam);
+    const minPriceParam = p.get('min_price');
+    if (minPriceParam !== null && parsePriceInput(minPriceParam) !== null) setMinPrice(minPriceParam);
+    const maxPriceParam = p.get('max_price');
+    if (maxPriceParam !== null && parsePriceInput(maxPriceParam) !== null) setMaxPrice(maxPriceParam);
+    if (p.get('date_from')) setDateFrom(p.get('date_from')!);
+    if (p.get('date_to'))   setDateTo(p.get('date_to')!);
+    if (p.get('sort_by') === 'popularity') setSortBy('popularity');
+    const ma = p.get('max_age');
+    if (ma !== null && ma !== '') setMaxAge(parseInt(ma, 10));
+    const tagsParam = p.get('tags');
+    if (tagsParam) setTags(tagsParam.split(',').filter(Boolean));
+    const ps = p.get('place_search');
+    if (ps) { setPlaceSearchInput(ps); setPlaceSearch(ps); }
+    const lat = p.get('lat'), lon = p.get('lon'), rad = p.get('radius_m');
+    if (lat && lon && rad) setGeo({ lat: parseFloat(lat), lon: parseFloat(lon), radiusM: parseInt(rad, 10) });
+    if (p.get('hide_viewed') === '1') setHideViewed(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Fetch categories once
+  useEffect(() => {
+    apiFetch('/kudago/categories')
       .then(r => r.json())
       .then((d: Category[]) => { if (Array.isArray(d)) setCategories(d); })
       .catch(() => {});
-    fetch(`${API_BASE}/kudago/events?location=kzn&page=1&page_size=100`)
-      .then(r => r.json())
-      .then(d => setAllEvents(d.results || []))
-      .catch(() => {});
   }, []);
 
-  const handleCalendarDate = (d: string | null) => {
-    setCalSelectedDate(d);
-    setDateFrom(d ?? '');
-    setDateTo(d ?? '');
-    setIsSingleDayFilter(!!d);
-  };
+  // Sync filters to URL
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const p = new URLSearchParams();
+    if (city !== 'kzn') p.set('city', city);
+    if (search)   p.set('search',     search);
+    if (selectedCats.length) p.set('categories', selectedCats.join(','));
+    if (priceMode !== 'all') p.set('price', priceMode);
+    const minPriceValue = parsePriceInput(minPrice);
+    const maxPriceValue = parsePriceInput(maxPrice);
+    if (minPriceValue !== null && maxPriceValue !== null) {
+      p.set('min_price', String(Math.min(minPriceValue, maxPriceValue)));
+      p.set('max_price', String(Math.max(minPriceValue, maxPriceValue)));
+    } else {
+      if (minPriceValue !== null) p.set('min_price', String(minPriceValue));
+      if (maxPriceValue !== null) p.set('max_price', String(maxPriceValue));
+    }
+    if (dateFrom) p.set('date_from',  dateFrom);
+    if (dateTo)   p.set('date_to',    dateTo);
+    if (sortBy !== 'date') p.set('sort_by', sortBy);
+    if (maxAge !== null) p.set('max_age', String(maxAge));
+    if (tags.length) p.set('tags', tags.join(','));
+    if (placeSearch) p.set('place_search', placeSearch);
+    if (geo) {
+      p.set('lat', String(geo.lat));
+      p.set('lon', String(geo.lon));
+      p.set('radius_m', String(geo.radiusM));
+    }
+    if (hideViewed) p.set('hide_viewed', '1');
+    const qs = p.toString();
+    router.replace(qs ? `/events?${qs}` : '/events', { scroll: false });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo, sortBy, maxAge, tags, placeSearch, geo, hideViewed]);
 
+  // Load events from API
   const load = useCallback(async (
-    pageNum: number, s: string, cat: string,
-    free: boolean, from: string, to: string,
-    append: boolean, singleDay: boolean,
+    loc: CitySlug, s: string, cats: string[], price: PriceMode, minP: string, maxP: string, from: string, to: string,
+    age: number | null, ts: string[], ps: string, gp: GeoPoint | null, sort: SortMode,
+    qd: QuickDate | null, tod: TimeOfDay | null, perm: PermanenceMode,
+    hc: boolean, hp: boolean, hfs: boolean, mna: number | null,
+    swh: number | null, dm: 'short' | 'long' | null, hs: boolean, ovp: boolean,
+    fh: number | null, th: number | null,
+    wds: number[], hst: boolean,
+    pageNum: number,
+    append: boolean,
   ) => {
-    if (loadingRef.current) return;
+    const reqSeq = ++requestSeqRef.current;
     loadingRef.current = true;
-    append ? setLoadingMore(true) : setLoading(true);
+    const showInitialLoader = !hasLoadedOnceRef.current && !append;
+    if (append) setIsLoadingMore(true);
+    else if (showInitialLoader) setLoading(true);
+    else setIsRefreshing(true);
     setError(null);
     try {
-      const params = new URLSearchParams({
-        location: 'kzn', page: String(pageNum), page_size: String(PAGE_SIZE),
-      });
-      if (s.trim()) params.set('search', s.trim());
-      if (cat)      params.set('categories', cat);
-      if (free)     params.set('is_free', 'true');
-      if (from) params.set('actual_since', String(localStartTs(from)));
-      if (to)   params.set('actual_until', String(localEndTs(to)));
+      // Quick-date preset overrides manual date range.
+      let sinceTs: number | undefined = from ? localStartTs(from) : undefined;
+      let untilTs: number | undefined = to   ? localEndTs(to)     : undefined;
+      if (qd) {
+        const r = quickDateRange(qd);
+        sinceTs = r.since;
+        untilTs = r.until;
+      }
 
-      const res = await fetch(`${API_BASE}/kudago/events?${params}`);
+      const buildQuery = (queryPage: number, queryPageSize: number) => buildKudaGoQuery({
+        location: loc,
+        search: s,
+        categories: cats,
+        priceMode: price,
+        minPrice: parsePriceInput(minP),
+        maxPrice: parsePriceInput(maxP),
+        actualSince: sinceTs,
+        actualUntil: untilTs,
+        maxAge: age,
+        tags: ts,
+        placeSearch: ps,
+        geo: gp,
+        sort,
+        timeOfDay: tod,
+        permanence: perm,
+        hasCover: hc,
+        hasParty: hp,
+        hasFreeSpots: hfs,
+        minAttendees: mna,
+        startingWithinHours: swh,
+        durationMode: dm,
+        hasSchedules: hs,
+        onlyVerifiedPlace: ovp,
+        fromHour: fh,
+        toHour: th,
+        weekdays: wds,
+        hideStarted: hst,
+        page: queryPage,
+        pageSize: queryPageSize,
+      });
+      const qs = buildQuery(pageNum, PAGE_SIZE);
+
+      // Important: go directly to backend for event feed.
+      // Next.js rewrite proxy (/api -> backend) can intermittently reset long msk responses (ECONNRESET),
+      // causing false 500 while backend itself returns data.
+      const res = await apiFetch(`${DIRECT_BACKEND_BASE}/kudago/events?${qs}`);
       if (!res.ok) throw new Error(`Ошибка ${res.status}`);
       const data = await res.json();
+      if (reqSeq !== requestSeqRef.current) return;
       const incoming: KudaGoEvent[] = data.results || [];
       setTotal(data.count ?? null);
-      setHasMore(!!data.next || incoming.length === PAGE_SIZE);
+      setEvents((prev) => append ? mergeEventPages(prev, incoming) : incoming);
+      setMapEvents((prev) => append ? mergeEventPages(prev, incoming) : incoming);
+      setPage(pageNum);
+      hasLoadedOnceRef.current = true;
 
-      const filtered = singleDay && (from || to)
-        ? incoming.filter(e => {
-            if (!e.start_date) return false;
-            if (from && e.start_date < from) return false;
-            if (to && e.start_date > to) return false;
-            return true;
+      if (!append) {
+        const totalCount = typeof data.count === 'number' ? data.count : null;
+        if (totalCount !== null && totalCount > incoming.length) {
+          const mapPageSize = 100;
+          const totalPages = Math.ceil(totalCount / mapPageSize);
+          let allMapEvents = incoming;
+          for (let p = 1; p <= totalPages; p += 1) {
+            if (p === 1) {
+              if (incoming.length !== mapPageSize) {
+                const resPage1 = await apiFetch(`${DIRECT_BACKEND_BASE}/kudago/events?${buildQuery(1, mapPageSize)}`);
+                if (reqSeq !== requestSeqRef.current) return;
+                if (!resPage1.ok) break;
+                const page1Data = await resPage1.json();
+                if (reqSeq !== requestSeqRef.current) return;
+                const page1Events: KudaGoEvent[] = page1Data.results || [];
+                allMapEvents = mergeEventPages([], page1Events);
+                setMapEvents(allMapEvents);
+              }
+              continue;
+            }
+            const resNext = await apiFetch(`${DIRECT_BACKEND_BASE}/kudago/events?${buildQuery(p, mapPageSize)}`);
+            if (reqSeq !== requestSeqRef.current) return;
+            if (!resNext.ok) break;
+            const nextData = await resNext.json();
+            if (reqSeq !== requestSeqRef.current) return;
+            const nextEvents: KudaGoEvent[] = nextData.results || [];
+            allMapEvents = mergeEventPages(allMapEvents, nextEvents);
+            setMapEvents(allMapEvents);
+            if (nextEvents.length === 0) break;
+          }
+        }
+      }
+
+      // Fetch attendee counts in background
+      if (incoming.length > 0) {
+        const ids = incoming.map(e => String(e.kudago_id)).join(',');
+        apiFetch(`${DIRECT_BACKEND_BASE}/attendees/batch-counts?ids=${ids}`)
+          .then(r => r.ok ? r.json() : {})
+          .then((counts: Record<string, number>) => {
+            setAttendeeCounts((prev) => append ? { ...prev, ...counts } : counts);
           })
-        : incoming;
-
-      setEvents(prev => append ? [...prev, ...filtered] : filtered);
+          .catch(() => {});
+      }
     } catch (e: unknown) {
+      if (reqSeq !== requestSeqRef.current) return;
       setError(e instanceof Error ? e.message : 'Неизвестная ошибка');
     } finally {
+      if (reqSeq !== requestSeqRef.current) return;
       setLoading(false);
-      setLoadingMore(false);
+      setIsRefreshing(false);
+      setIsLoadingMore(false);
       loadingRef.current = false;
     }
   }, []);
 
   useEffect(() => {
-    setPage(1);
-    load(1, search, category, isFree, dateFrom, dateTo, false, isSingleDayFilter);
-  }, [search, category, isFree, dateFrom, dateTo, isSingleDayFilter, load]);
-
-  const pageRef    = useRef(page);
-  const hasMoreRef = useRef(hasMore);
-  const searchRef        = useRef(search);
-  const categoryRef      = useRef(category);
-  const isFreeRef        = useRef(isFree);
-  const dateFromRef      = useRef(dateFrom);
-  const dateToRef        = useRef(dateTo);
-  const isSingleDayRef   = useRef(isSingleDayFilter);
-  const isFallbackRef    = useRef(false);
-
-  pageRef.current          = page;
-  hasMoreRef.current       = hasMore;
-  searchRef.current        = search;
-  categoryRef.current      = category;
-  isFreeRef.current        = isFree;
-  dateFromRef.current      = dateFrom;
-  dateToRef.current        = dateTo;
-  isSingleDayRef.current   = isSingleDayFilter;
-
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
-        if (
-          entry.isIntersecting &&
-          hasMoreRef.current &&
-          !loadingRef.current &&
-          !isFallbackRef.current
-        ) {
-          const next = pageRef.current + 1;
-          setPage(next);
-          load(
-            next,
-            searchRef.current,
-            categoryRef.current,
-            isFreeRef.current,
-            dateFromRef.current,
-            dateToRef.current,
-            true,
-            isSingleDayRef.current,
-          );
-        }
-      },
-      {
-        rootMargin: '0px 0px 200px 0px',
-        threshold: 0,
-      },
+    load(
+      city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
+      maxAge, tags, placeSearch, geo, sortBy,
+      quickDate, timeOfDay, permanence, hasCover, hasParty, hasFreeSpots, minAttendees,
+      startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace,
+      fromHour, toHour,
+      weekdays, hideStarted,
+      1, false,
     );
+  }, [
+    city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
+    maxAge, tags, placeSearch, geo, sortBy,
+    quickDate, timeOfDay, permanence, hasCover, hasParty, hasFreeSpots, minAttendees,
+    startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace,
+    fromHour, toHour, weekdays, hideStarted,
+    load,
+  ]);
 
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [load]);
+  const canLoadMore = hasMoreEvents(events.length, total);
+  const handleLoadMore = useCallback(() => {
+    if (isLoadingMore || !canLoadMore) return;
+    load(
+      city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
+      maxAge, tags, placeSearch, geo, sortBy,
+      quickDate, timeOfDay, permanence, hasCover, hasParty, hasFreeSpots, minAttendees,
+      startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace,
+      fromHour, toHour,
+      weekdays, hideStarted,
+      page + 1, true,
+    );
+  }, [
+    isLoadingMore, canLoadMore, load, city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
+    maxAge, tags, placeSearch, geo, sortBy, quickDate, timeOfDay, permanence, hasCover, hasParty, hasFreeSpots,
+    minAttendees, startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace, fromHour, toHour, weekdays,
+    hideStarted, page,
+  ]);
 
-  const onSearchChange = (val: string) => {
+  // Debounced place search
+  const onPlaceSearchChange = useCallback((v: string) => {
+    setPlaceSearchInput(v);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!v.trim()) setPlaceSearch('');
+    else debounceRef.current = setTimeout(() => setPlaceSearch(v.trim()), 500);
+  }, []);
+
+  // Debounced search
+  const onSearchChange = useCallback((val: string) => {
     setSearchInput(val);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => setSearch(val), 500);
-  };
+    if (!val.trim()) {
+      setSearch('');
+    } else {
+      debounceRef.current = setTimeout(() => setSearch(val), 500);
+    }
+  }, []);
 
-  const loadMore = () => {
-    const next = page + 1;
-    setPage(next);
-    load(next, search, category, isFree, dateFrom, dateTo, true, isSingleDayFilter);
-  };
+  const addCategoryFilter = useCallback((slug: string) => {
+    setSelectedCats(current => (
+      current.includes(slug) ? current : toggleCategory(current, slug)
+    ));
+  }, []);
 
-  const clearFilters = () => {
-    setSearchInput(''); setSearch(''); setCategory('');
-    setIsFree(false); setDateFrom(''); setDateTo('');
-    setCalSelectedDate(null); setIsSingleDayFilter(false);
-  };
+  const clearFilters = useCallback(() => {
+    setSearchInput(''); setSearch(''); setSelectedCats([]);
+    setPriceMode('all'); setMinPrice(''); setMaxPrice(''); setDateFrom(''); setDateTo('');
+    setSortBy('date'); setSelectedDate(null);
+    setMaxAge(null); setTags([]);
+    setPlaceSearchInput(''); setPlaceSearch(''); setGeo(null);
+    setQuickDate(null); setTimeOfDay(null); setPermanence('all');
+    setHasCover(false); setHasParty(false); setHasFreeSpots(false); setMinAttendees(null);
+    setStartingWithinHours(null); setDurationMode(null);
+    setHasSchedules(false); setOnlyVerifiedPlace(false);
+    setFromHour(null); setToHour(null);
+    setWeekdays([]); setHideStarted(false); setHideViewed(false);
+  }, []);
 
-  const hasActive = !!(search || category || isFree || dateFrom || dateTo);
-
-  const calDateFallbackEvents: KudaGoEvent[] = (
-    calSelectedDate && !loading && events.length === 0 && !error
-      ? allEvents.filter(e => e.start_date === calSelectedDate)
-      : []
+  const hasActive = !!(
+    search || selectedCats.length || priceMode !== 'all' || minPrice || maxPrice || dateFrom || dateTo ||
+    sortBy !== 'date' || maxAge !== null || tags.length || placeSearch || geo ||
+    quickDate || timeOfDay || permanence !== 'all' ||
+    hasCover || hasParty || hasFreeSpots || minAttendees ||
+    startingWithinHours || durationMode || hasSchedules || onlyVerifiedPlace ||
+    fromHour !== null || toHour !== null ||
+    weekdays.length > 0 || hideStarted || hideViewed
   );
-  const displayEvents = calDateFallbackEvents.length > 0 ? calDateFallbackEvents : events;
-  const isFallback = calDateFallbackEvents.length > 0;
-  isFallbackRef.current = isFallback;
+  const activeFilterCount = useMemo(() => {
+    return [
+      city !== 'kzn',
+      selectedCats.length > 0,
+      priceMode !== 'all',
+      !!minPrice,
+      !!maxPrice,
+      !!dateFrom || !!dateTo,
+      sortBy !== 'date',
+      maxAge !== null,
+      tags.length > 0,
+      !!placeSearch,
+      !!geo,
+      !!quickDate,
+      !!timeOfDay,
+      permanence !== 'all',
+      hasCover,
+      hasParty,
+      hasFreeSpots,
+      minAttendees !== null,
+      startingWithinHours !== null,
+      durationMode !== null,
+      hasSchedules,
+      onlyVerifiedPlace,
+      fromHour !== null || toHour !== null,
+      weekdays.length > 0,
+      hideStarted,
+      hideViewed,
+    ].filter(Boolean).length;
+  }, [
+    city, selectedCats.length, priceMode, minPrice, maxPrice, dateFrom, dateTo, sortBy, maxAge,
+    tags.length, placeSearch, geo, quickDate, timeOfDay, permanence, hasCover,
+    hasParty, hasFreeSpots, minAttendees, startingWithinHours, durationMode,
+    hasSchedules, onlyVerifiedPlace, fromHour, toHour, weekdays.length, hideStarted, hideViewed,
+  ]);
 
-  const inputStyle = {
-    background: 'var(--surface-2)',
-    border: '1px solid var(--border)',
-    borderRadius: '0.75rem',
-    color: 'var(--text)',
-    fontSize: '0.875rem',
-    padding: '0.625rem 1rem',
-    outline: 'none',
-    transition: 'border-color 160ms, box-shadow 160ms',
-  } as React.CSSProperties;
+  const showInitialLoading = loading && !hasLoadedOnceRef.current;
+
+  // Backend already handles sorting via order_by; keep a noop memo for downstream code.
+  const sortedEvents = events;
+  const visibleEvents = useMemo(() => {
+    if (!hideViewed) return sortedEvents;
+    return sortedEvents.filter(event => !viewedEventIds.has(String(event.kudago_id)));
+  }, [hideViewed, sortedEvents, viewedEventIds]);
+  const visibleMapEvents = useMemo(() => {
+    if (!hideViewed) return mapEvents;
+    return mapEvents.filter(event => !viewedEventIds.has(String(event.kudago_id)));
+  }, [hideViewed, mapEvents, viewedEventIds]);
+
+  const categoryFilterOptions = useMemo(() => {
+    const bySlug = new Map<string, Category>();
+
+    categories.forEach(category => {
+      if (category.slug) bySlug.set(category.slug, category);
+    });
+
+    visibleEvents.forEach(event => {
+      getEventCategoryBadges(event.categories, Number.MAX_SAFE_INTEGER).forEach(category => {
+        if (!bySlug.has(category.slug)) {
+          bySlug.set(category.slug, { slug: category.slug, name: category.label });
+        }
+      });
+    });
+
+    selectedCats.forEach(slug => {
+      if (!bySlug.has(slug)) {
+        bySlug.set(slug, { slug, name: translateCategory(slug) });
+      }
+    });
+
+    return Array.from(bySlug.values());
+  }, [categories, visibleEvents, selectedCats]);
+
+  // Events filtered by selected calendar date
+  // Permanent events (is_permanent=true or start_date=null) always show
+  const calendarEvents = useMemo(() => {
+    if (!selectedDate) return visibleEvents;
+    return visibleEvents.filter(e =>
+      e.start_date === selectedDate ||
+      e.is_permanent ||
+      e.start_date === null
+    );
+  }, [visibleEvents, selectedDate]);
+
+  const randomEventDisabled = showInitialLoading || isRefreshing || calendarEvents.length === 0;
+  const handleRandomEventClick = useCallback(() => {
+    if (randomEventDisabled) return;
+    const event = pickRandomEvent(calendarEvents);
+    if (!event) return;
+    router.push(eventDetailHref(event));
+  }, [calendarEvents, randomEventDisabled, router]);
+
+  // Set of dates that have events (for calendar dots)
+  const eventDatesSet = useMemo(() => {
+    const s = new Set<string>();
+    visibleEvents.forEach(e => { if (e.start_date) s.add(e.start_date); });
+    return s;
+  }, [visibleEvents]);
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
+    <div style={{ background: 'var(--bg)', minHeight: '100vh' }}>
       <Navbar />
 
-      <div style={{ background: 'var(--surface)', borderBottom: '1px solid var(--divider)' }}>
-        <div className="container mx-auto px-4 py-8">
-          <h1 className="text-3xl font-black" style={{ color: 'var(--text)' }}>События в Казани</h1>
-          {total !== null && !loading && (
-            <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
-              {total.toLocaleString('ru-RU')} мероприятий
-            </p>
-          )}
+      <section className="events-section" style={{ borderTop: 'none' }}>
 
-          <div className="mt-5 flex flex-wrap gap-3 items-center">
-            {/* Search */}
-            <div className="relative flex-1 min-w-[200px] max-w-sm">
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
-                style={{ color: 'var(--text-faint)' }}
-                fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text" value={searchInput}
-                onChange={e => onSearchChange(e.target.value)}
-                placeholder="Поиск событий..."
-                style={{ ...inputStyle, paddingLeft: '2.25rem', width: '100%' }}
-                onFocus={e => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.boxShadow = '0 0 0 3px var(--primary-ring)'; }}
-                onBlur={e  => { e.currentTarget.style.borderColor = 'var(--border)';   e.currentTarget.style.boxShadow = 'none'; }}
-              />
-            </div>
-
-            {/* Category */}
-            {categories.length > 0 && (
-              <select value={category} onChange={e => setCategory(e.target.value)}
-                style={inputStyle}
-                onFocus={e => { e.currentTarget.style.borderColor = 'var(--primary)'; }}
-                onBlur={e  => { e.currentTarget.style.borderColor = 'var(--border)'; }}
-              >
-                <option value="">Все категории</option>
-                {categories.map(cat => <option key={cat.slug} value={cat.slug}>{cat.name}</option>)}
-              </select>
-            )}
-
-            {/* Free */}
-            <button
-              onClick={() => setIsFree(v => !v)}
-              className="px-4 py-2.5 rounded-xl text-sm font-medium transition"
-              style={{
-                background: isFree ? 'var(--success)' : 'var(--surface-2)',
-                color: isFree ? '#fff' : 'var(--text-muted)',
-                border: '1px solid var(--border)',
-              }}
-            >
-              🆓 Бесплатно
-            </button>
-
-            {/* Date from */}
-            <div className="flex items-center gap-1.5">
-              <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>С</label>
-              <input type="date" value={dateFrom} min={todayStr}
-                onChange={e => {
-                  setDateFrom(e.target.value);
-                  setCalSelectedDate(null);
-                  setIsSingleDayFilter(false);
-                  if (dateTo && e.target.value > dateTo) setDateTo(e.target.value);
-                }}
-                style={{ ...inputStyle, cursor: 'pointer' }}
-                onFocus={e => { e.currentTarget.style.borderColor = 'var(--primary)'; }}
-                onBlur={e  => { e.currentTarget.style.borderColor = 'var(--border)'; }}
-              />
-            </div>
-
-            {/* Date to */}
-            <div className="flex items-center gap-1.5">
-              <label className="text-xs font-medium whitespace-nowrap" style={{ color: 'var(--text-faint)' }}>По</label>
-              <input type="date" value={dateTo} min={dateFrom || todayStr}
-                onChange={e => {
-                  setDateTo(e.target.value);
-                  setCalSelectedDate(null);
-                  setIsSingleDayFilter(false);
-                }}
-                style={{ ...inputStyle, cursor: 'pointer' }}
-                onFocus={e => { e.currentTarget.style.borderColor = 'var(--primary)'; }}
-                onBlur={e  => { e.currentTarget.style.borderColor = 'var(--border)'; }}
-              />
-            </div>
-
-            {hasActive && (
-              <button onClick={clearFilters}
-                className="px-4 py-2.5 rounded-xl text-sm transition"
-                style={{
-                  background: 'var(--surface-2)',
-                  color: 'var(--text-muted)',
-                  border: '1px solid var(--border)',
-                }}
-              >
-                Сбросить ×
-              </button>
+        {/* Header */}
+        <div className="events-head">
+          <div>
+            <div className="t-label" style={{ marginBottom: 8 }}>Афиша</div>
+            <h1 className="t-display">
+              События в {KUDAGO_CITIES.find(c => c.slug === city)?.locative ?? ''}
+            </h1>
+            {total !== null && !showInitialLoading && (
+              <p className="t-sm" style={{ marginTop: 8 }}>
+                {total.toLocaleString('ru-RU')} мероприятий
+                <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>
+                  Показано: {events.length.toLocaleString('ru-RU')}
+                </span>
+              </p>
             )}
           </div>
         </div>
-      </div>
 
-      <main className="container mx-auto px-4 py-8">
-        <div className="flex flex-col lg:flex-row gap-8">
-
-          {/* Sidebar */}
-          <aside className="lg:w-72 shrink-0">
-            <div className="sticky top-4 space-y-4">
-              <button
-                onClick={() => setCalOpen(v => !v)}
-                className="w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-semibold transition"
+        {/* Search */}
+        <div className="events-search-row" style={{ flexWrap: 'wrap' }}>
+          <div className="input-wrap" style={{ flex: 1 }}>
+            <svg className="input-ico" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+            </svg>
+            <input
+              type="search"
+              value={searchInput}
+              onChange={e => onSearchChange(e.target.value)}
+              placeholder="Поиск по событиям, площадкам, исполнителям…"
+              className="input input-padl"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleRandomEventClick}
+            disabled={randomEventDisabled}
+            className="btn"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '.65rem 1rem',
+              borderRadius: 'var(--r-full)',
+              background: randomEventDisabled ? 'var(--surface-2)' : 'var(--ink)',
+              color: randomEventDisabled ? 'var(--text-dim)' : 'var(--text-inverse)',
+              border: `1px solid ${randomEventDisabled ? 'var(--border)' : 'var(--ink)'}`,
+              boxShadow: randomEventDisabled ? 'none' : 'var(--shadow-sm)',
+              fontWeight: 800,
+              whiteSpace: 'nowrap',
+              cursor: randomEventDisabled ? 'not-allowed' : 'pointer',
+              opacity: randomEventDisabled ? 0.65 : 1,
+            }}
+            aria-label={
+              randomEventDisabled
+                ? 'Случайное событие недоступно: список пуст или загружается'
+                : 'Перейти на случайное событие из текущего списка'
+            }
+            title={randomEventDisabled ? 'Нет доступных событий' : 'Перейти на случайное событие'}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M16 3h5v5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M4 20 21 3" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M21 16v5h-5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M15 15l6 6" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M4 4l5 5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Случайное событие
+          </button>
+          <button
+            type="button"
+            onClick={() => setFilterDrawerOpen(true)}
+            className="btn"
+            style={{
+              position: 'relative',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '.65rem 1rem',
+              borderRadius: 'var(--r-full)',
+              background: activeFilterCount > 0 ? 'var(--primary)' : 'var(--surface)',
+              color: activeFilterCount > 0 ? 'var(--text-inverse)' : 'var(--text)',
+              border: `1px solid ${activeFilterCount > 0 ? 'var(--primary)' : 'var(--border)'}`,
+              boxShadow: activeFilterCount > 0 ? '0 6px 18px var(--primary-ring)' : 'var(--shadow-sm)',
+              fontWeight: 800,
+              whiteSpace: 'nowrap',
+            }}
+            aria-haspopup="dialog"
+            aria-expanded={filterDrawerOpen}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M22 3H2l8 9.46V19l4 2v-8.54z" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Фильтр
+            {activeFilterCount > 0 && (
+              <span
+                className="inline-flex items-center justify-center"
                 style={{
-                  background: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                  color: 'var(--text)',
-                  boxShadow: 'var(--shadow-sm)',
+                  minWidth: 20,
+                  height: 20,
+                  padding: '0 6px',
+                  borderRadius: 'var(--r-full)',
+                  background: 'rgba(255,255,255,0.24)',
+                  color: 'inherit',
+                  fontSize: 11,
+                  fontWeight: 900,
+                  lineHeight: 1,
                 }}
               >
-                <span>📅 Календарь событий</span>
-                <span style={{ color: 'var(--text-faint)' }}>{calOpen ? '▲' : '▼'}</span>
-              </button>
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+        </div>
 
-              {calOpen && (
-                <EventCalendar
-                  events={allEvents}
-                  selectedDate={calSelectedDate}
-                  onSelectDate={handleCalendarDate}
-                />
-              )}
+        {filterDrawerOpen && (
+          <>
+            <div
+              className="fixed inset-0"
+              style={{
+                background: 'rgba(0,0,0,0.45)',
+                backdropFilter: 'blur(2px)',
+                zIndex: FILTER_OVERLAY_Z_INDEX,
+              }}
+              onClick={() => setFilterDrawerOpen(false)}
+              aria-hidden="true"
+            />
 
-              {calSelectedDate && (() => {
-                const dayEvents = allEvents.filter(e => e.start_date === calSelectedDate);
-                return (
-                  <div
-                    className="rounded-2xl p-4"
+            <aside
+              className="events-filter-drawer fixed top-0 right-0 h-full overflow-y-auto flex flex-col"
+              style={{
+                width: 460,
+                maxWidth: '100vw',
+                background: 'var(--surface)',
+                borderLeft: '1px solid var(--border)',
+                boxShadow: 'var(--shadow-lg)',
+                animation: 'filterDrawerSlideIn 0.25s cubic-bezier(0.16,1,0.3,1) forwards',
+                zIndex: FILTER_DRAWER_Z_INDEX,
+              }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Фильтры"
+            >
+              <div
+                className="sticky top-0 z-10 flex items-center justify-between gap-3"
+                style={{
+                  padding: '1rem 1.25rem',
+                  background: 'var(--surface)',
+                  borderBottom: '1px solid var(--divider)',
+                }}
+              >
+                <div>
+                  <h2 className="text-xl font-black" style={{ color: 'var(--text)' }}>Фильтры</h2>
+                  {activeFilterCount > 0 && (
+                    <p className="t-xs" style={{ marginTop: 2, color: 'var(--text-muted)' }}>
+                      Активно: {activeFilterCount}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => setFilterDrawerOpen(false)}
+                  className="flex items-center justify-center w-9 h-9 rounded-full transition"
+                  style={{
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border)',
+                    color: 'var(--text-muted)',
+                  }}
+                  aria-label="Закрыть фильтры"
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                    <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-5" style={{ padding: '1.25rem' }}>
+                <section className="flex flex-col gap-3">
+                  <h3 className="t-label">Основное</h3>
+                  <CityFilter value={city} onChange={setCity} />
+                  <PriceToggle value={priceMode} onChange={setPriceMode} />
+                  <div className="flex flex-col gap-2">
+                    <span className="t-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Цена</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 8 }}>
+                      <input
+                        type="number"
+                        min="0"
+                        inputMode="numeric"
+                        value={minPrice}
+                        onChange={e => setMinPrice(normalizePriceInputValue(e.target.value))}
+                        placeholder="от"
+                        aria-label="Цена от"
+                        className="input"
+                        style={{ width: '100%', padding: '.65rem 1rem', fontSize: '.875rem' }}
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        inputMode="numeric"
+                        value={maxPrice}
+                        onChange={e => setMaxPrice(normalizePriceInputValue(e.target.value))}
+                        placeholder="до"
+                        aria-label="Цена до"
+                        className="input"
+                        style={{ width: '100%', padding: '.65rem 1rem', fontSize: '.875rem' }}
+                      />
+                    </div>
+                  </div>
+                  <select
+                    value={sortBy}
+                    onChange={e => setSortBy(e.target.value as SortMode)}
+                    className="input"
+                    style={{ width: '100%', padding: '.65rem 1rem', fontSize: '.875rem' }}
+                    aria-label="Сортировка"
+                  >
+                    {SORT_OPTIONS.map(o => (
+                      <option
+                        key={o.value}
+                        value={o.value}
+                        disabled={o.value === 'nearest' && !geo}
+                      >
+                        {o.label}{o.value === 'nearest' && !geo ? ' (нужна геолокация)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <label
+                    className="flex items-center justify-between gap-3"
                     style={{
-                      background: 'var(--primary-hl)',
-                      border: '1px solid var(--border)',
+                      padding: '0.75rem 0.9rem',
+                      borderRadius: 'var(--r-xl)',
+                      background: 'var(--surface-2)',
+                      border: `1px solid ${hideViewed ? 'var(--primary)' : 'var(--border)'}`,
+                      cursor: 'pointer',
                     }}
                   >
-                    <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: 'var(--primary)' }}>
-                      События {displayDate(calSelectedDate, { day: 'numeric', month: 'long' })}
-                    </p>
-                    {dayEvents.length === 0 ? (
-                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Событий не найдено</p>
-                    ) : (
-                      <ul className="space-y-2">
-                        {dayEvents.slice(0, 5).map(e => (
-                          <li key={e.kudago_id}>
-                            <a href={`/events/${e.kudago_id}`}
-                              className="text-xs font-semibold hover:underline line-clamp-2 leading-tight block"
-                              style={{ color: 'var(--primary)' }}>
-                              {e.title}
-                            </a>
-                            {e.place_title && (
-                              <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                {e.place_title}
-                              </p>
-                            )}
-                          </li>
-                        ))}
-                        {dayEvents.length > 5 && (
-                          <p className="text-[10px]" style={{ color: 'var(--primary)' }}>
-                            и ещё {dayEvents.length - 5}...
-                          </p>
-                        )}
-                      </ul>
-                    )}
-                  </div>
-                );
-              })()}
+                    <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
+                      Убрать просмотренные
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={hideViewed}
+                      onChange={e => setHideViewed(e.target.checked)}
+                      aria-label="Убрать просмотренные события"
+                      style={{
+                        width: 18,
+                        height: 18,
+                        accentColor: 'var(--primary)',
+                        flexShrink: 0,
+                      }}
+                    />
+                  </label>
+                </section>
 
-              {/* Quick filters */}
+                <section className="flex flex-col gap-3">
+                  <h3 className="t-label">Дата и время</h3>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <input
+                      type="date"
+                      value={dateFrom}
+                      min={todayStr}
+                      suppressHydrationWarning
+                      onChange={e => {
+                        setDateFrom(e.target.value);
+                        if (dateTo && e.target.value > dateTo) setDateTo(e.target.value);
+                      }}
+                      className="input"
+                      style={{ width: '100%', padding: '.65rem 1rem', fontSize: '.875rem' }}
+                    />
+                    <span className="t-xs" style={{ color: 'var(--text-dim)' }}>-</span>
+                    <input
+                      type="date"
+                      value={dateTo}
+                      min={dateFrom || todayStr}
+                      suppressHydrationWarning
+                      onChange={e => setDateTo(e.target.value)}
+                      className="input"
+                      style={{ width: '100%', padding: '.65rem 1rem', fontSize: '.875rem' }}
+                    />
+                  </div>
+
+                  {(dateFrom || dateTo) && (
+                    <span className="badge badge-ink" style={{ gap: 6, width: 'fit-content' }}>
+                      {dateFrom && dateTo && dateFrom === dateTo
+                        ? displayDate(dateFrom, { day: 'numeric', month: 'long' })
+                        : [
+                            dateFrom && `с ${displayDate(dateFrom, { day: 'numeric', month: 'short' })}`,
+                            dateTo   && `по ${displayDate(dateTo, { day: 'numeric', month: 'short' })}`,
+                          ].filter(Boolean).join(' ')}
+                      <button
+                        onClick={() => { setDateFrom(''); setDateTo(''); }}
+                        style={{ marginLeft: 4, background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, lineHeight: 1 }}
+                        aria-label="Сбросить даты"
+                      >x</button>
+                    </span>
+                  )}
+
+                  <QuickDateChips active={quickDate} onSelect={setQuickDate} />
+                  <TimeOfDayFilter value={timeOfDay} onChange={setTimeOfDay} />
+                  <TimeRangeSlider from={fromHour} to={toHour} onChange={(f, t) => { setFromHour(f); setToHour(t); }} />
+                  <WeekdayPicker selected={weekdays} onChange={setWeekdays} />
+                  <button
+                    aria-pressed={hideStarted}
+                    onClick={() => setHideStarted(v => !v)}
+                    style={{
+                      width: 'fit-content',
+                      padding: '0.4rem 0.9rem',
+                      borderRadius: 'var(--r-full)',
+                      fontSize: '.8125rem',
+                      background: hideStarted ? 'var(--primary)' : 'var(--surface-2)',
+                      color: hideStarted ? 'var(--text-inverse)' : 'var(--text-muted)',
+                      border: `1px solid ${hideStarted ? 'var(--primary)' : 'var(--border)'}`,
+                      cursor: 'pointer',
+                      fontWeight: 600,
+                      boxShadow: hideStarted ? '0 2px 8px var(--primary-ring)' : 'none',
+                    }}
+                  >
+                    Еще не начались
+                  </button>
+                </section>
+
+                <section className="flex flex-col gap-3">
+                  <h3 className="t-label">Место и возраст</h3>
+                  <AgeFilter value={maxAge} onChange={setMaxAge} />
+                  <PlaceSearchInput value={placeSearchInput} onChange={onPlaceSearchChange} />
+                  <GeoFilter value={geo} onChange={setGeo} />
+                </section>
+
+                <section className="flex flex-col gap-3">
+                  <h3 className="t-label">Социальные и качество</h3>
+                  <SocialFilters
+                    hasParty={hasParty}
+                    hasFreeSpots={hasFreeSpots}
+                    minAttendees={minAttendees}
+                    onChange={(patch) => {
+                      if (patch.hasParty !== undefined) setHasParty(patch.hasParty);
+                      if (patch.hasFreeSpots !== undefined) setHasFreeSpots(patch.hasFreeSpots);
+                      if (patch.minAttendees !== undefined) setMinAttendees(patch.minAttendees);
+                    }}
+                  />
+                  <QualityFilters
+                    permanence={permanence}
+                    hasCover={hasCover}
+                    onChange={(patch) => {
+                      if (patch.permanence !== undefined) setPermanence(patch.permanence);
+                      if (patch.hasCover !== undefined) setHasCover(patch.hasCover);
+                    }}
+                  />
+                  <TimingFilters
+                    startingWithinHours={startingWithinHours}
+                    durationMode={durationMode}
+                    hasSchedules={hasSchedules}
+                    onlyVerifiedPlace={onlyVerifiedPlace}
+                    onChange={(patch) => {
+                      if (patch.startingWithinHours !== undefined) setStartingWithinHours(patch.startingWithinHours);
+                      if (patch.durationMode !== undefined) setDurationMode(patch.durationMode);
+                      if (patch.hasSchedules !== undefined) setHasSchedules(patch.hasSchedules);
+                      if (patch.onlyVerifiedPlace !== undefined) setOnlyVerifiedPlace(patch.onlyVerifiedPlace);
+                    }}
+                  />
+                </section>
+
+                <section className="flex flex-col gap-3">
+                  <h3 className="t-label">Теги и категории</h3>
+                  <TagPills selected={tags} onChange={setTags} />
+                  {categoryFilterOptions.length > 0 && (
+                    <div style={{ overflow: 'hidden' }}>
+                      <CategoryPills
+                        categories={categoryFilterOptions}
+                        selected={selectedCats}
+                        onToggle={(slug) => setSelectedCats(cur => toggleCategory(cur, slug))}
+                      />
+                    </div>
+                  )}
+                </section>
+              </div>
+
               <div
-                className="rounded-2xl p-4 space-y-2"
+                className="sticky bottom-0 flex gap-3"
                 style={{
+                  padding: '1rem 1.25rem',
                   background: 'var(--surface)',
-                  border: '1px solid var(--border)',
-                  boxShadow: 'var(--shadow-sm)',
+                  borderTop: '1px solid var(--divider)',
                 }}
               >
-                <p className="text-xs font-bold uppercase tracking-wide mb-3" style={{ color: 'var(--text-faint)' }}>
-                  Быстрые фильтры
-                </p>
-                {([
-                  { label: '🕐 Сегодня',     offset: 0 },
-                  { label: '📆 Завтра',      offset: 1 },
-                  { label: '🗓 Эта неделя',  offset: 7 },
-                  { label: '📅 Этот месяц', offset: 30 },
-                ] as { label: string; offset: number }[]).map(({ label, offset }) => {
-                  const fromDate = new Date();
-                  if (offset === 1) fromDate.setDate(fromDate.getDate() + 1);
-                  const toDate = new Date();
-                  toDate.setDate(toDate.getDate() + offset);
-                  const fromStr = localIsoDate(fromDate);
-                  const toStr   = localIsoDate(toDate);
-                  const isActv  = dateFrom === fromStr && dateTo === toStr;
-                  const isSingle = offset <= 1;
-
-                  return (
-                    <button key={label}
-                      onClick={() => {
-                        if (isActv) {
-                          setDateFrom(''); setDateTo('');
-                          setCalSelectedDate(null);
-                          setIsSingleDayFilter(false);
-                        } else {
-                          setDateFrom(fromStr); setDateTo(toStr);
-                          setCalSelectedDate(isSingle ? fromStr : null);
-                          setIsSingleDayFilter(isSingle);
-                        }
-                      }}
-                      className="w-full text-left px-3 py-2 rounded-xl text-sm transition font-medium"
-                      style={{
-                        background: isActv ? 'var(--primary)' : 'transparent',
-                        color: isActv ? 'var(--text-inverse)' : 'var(--text-muted)',
-                      }}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </aside>
-
-          {/* Main content */}
-          <div className="flex-1 min-w-0">
-            {(dateFrom || dateTo) && (
-              <div className="mb-5 flex items-center gap-2 flex-wrap">
-                <span
-                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full"
-                  style={{
-                    background: 'var(--primary-hl)',
-                    border: '1px solid var(--border)',
-                    color: 'var(--primary)',
-                  }}
-                >
-                  📅
-                  {dateFrom && dateTo && dateFrom === dateTo
-                    ? displayDate(dateFrom, { day: 'numeric', month: 'long' })
-                    : [
-                        dateFrom && `с ${displayDate(dateFrom, { day: 'numeric', month: 'short' })}`,
-                        dateTo   && `по ${displayDate(dateTo,   { day: 'numeric', month: 'short' })}`,
-                      ].filter(Boolean).join(' ')}
-                  <button
-                    onClick={() => { setDateFrom(''); setDateTo(''); setCalSelectedDate(null); setIsSingleDayFilter(false); }}
-                    className="ml-1 transition"
-                    style={{ color: 'var(--text-faint)' }}
-                  >×</button>
-                </span>
-                {isFallback && (
-                  <span
-                    className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-full"
-                    style={{ background: 'var(--warning-hl)', color: 'var(--warning)', border: '1px solid var(--warning-hl)' }}
-                  >
-                    ⚡ Показаны события из общей выборки
-                  </span>
+                {hasActive && (
+                  <button onClick={clearFilters} className="btn btn-ghost" style={{ flex: 1 }}>
+                    Сбросить
+                  </button>
                 )}
+                <button onClick={() => setFilterDrawerOpen(false)} className="gv-btn-primary" style={{ flex: 1 }}>
+                  Применить
+                </button>
+              </div>
+            </aside>
+
+            <style>{`
+              @keyframes filterDrawerSlideIn {
+                from { transform: translateX(100%); opacity: 0.6; }
+                to   { transform: translateX(0);    opacity: 1; }
+              }
+
+              @media (max-width: 640px) {
+                .events-filter-drawer {
+                  width: 100vw !important;
+                  border-left: none !important;
+                }
+              }
+            `}</style>
+          </>
+        )}
+
+      {/* ── Events map: synced 1:1 with the filtered list below ── */}
+      {!error && (
+        <EventsMap
+          events={visibleMapEvents}
+          city={city}
+          onEventClick={setSelectedEvent}
+        />
+      )}
+
+      {/* ── Main content ── */}
+      <main className="events-body">
+
+        {/* ── Error state ── */}
+        {error && (
+          <div className="flex flex-col items-center py-24 gap-4">
+            <span className="text-5xl select-none">😕</span>
+            <p className="text-lg" style={{ color: 'var(--text)' }}>Не удалось загрузить события</p>
+            <p className="text-sm" style={{ color: 'var(--error)' }}>{error}</p>
+            <button
+              onClick={() => load(
+                city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
+                maxAge, tags, placeSearch, geo, sortBy,
+                quickDate, timeOfDay, permanence, hasCover, hasParty, hasFreeSpots, minAttendees,
+                startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace,
+                fromHour, toHour,
+                weekdays, hideStarted,
+                1, false,
+              )}
+              className="gv-btn-primary"
+            >
+              Попробовать снова
+            </button>
+          </div>
+        )}
+
+        {/* ── SECTION 1: Calendar + Masonry ── */}
+        {!error && (
+          <section className="mb-12">
+            {/* Section heading */}
+            <div className="flex items-center gap-3 mb-6">
+              <div
+                className="w-1 h-7 rounded-full"
+                style={{ background: 'var(--primary)' }}
+              />
+              <h2 className="text-xl font-black" style={{ color: 'var(--text)' }}>
+                Выберите дату
+              </h2>
+              {selectedDate && (
+                <span
+                  className="text-sm font-semibold px-3 py-1 rounded-full"
+                  style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
+                >
+                  {displayDate(selectedDate, { day: 'numeric', month: 'long', weekday: 'short' })}
+                </span>
+              )}
+            </div>
+
+            {/* Date strip */}
+            {!error && (
+              <div className="mb-8">
+                <DateStrip
+                  selectedDate={selectedDate}
+                  onSelectDate={setSelectedDate}
+                  eventDates={eventDatesSet}
+                />
               </div>
             )}
 
             {/* Skeleton */}
-            {loading && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                {Array.from({ length: PAGE_SIZE }).map((_, i) => (
-                  <div key={i} className="rounded-2xl overflow-hidden animate-pulse"
-                    style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                    <div className="h-48" style={{ background: 'var(--surface-2)' }} />
-                    <div className="p-4 space-y-3">
-                      <div className="h-3 rounded w-1/3" style={{ background: 'var(--surface-2)' }} />
-                      <div className="h-4 rounded w-full" style={{ background: 'var(--surface-2)' }} />
-                      <div className="h-4 rounded w-2/3" style={{ background: 'var(--surface-2)' }} />
-                      <div className="h-3 rounded w-1/2" style={{ background: 'var(--surface-2)' }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {showInitialLoading && <MasonrySkeleton />}
 
-            {/* Error */}
-            {error && (
-              <div className="flex flex-col items-center py-24 gap-4">
-                <span className="text-5xl">😕</span>
-                <p className="text-lg" style={{ color: 'var(--text)' }}>Не удалось загрузить события</p>
-                <p className="text-sm" style={{ color: 'var(--error)' }}>{error}</p>
-                <button
-                  onClick={() => load(1, search, category, isFree, dateFrom, dateTo, false, isSingleDayFilter)}
-                  className="gv-btn-primary"
-                >
-                  Попробовать снова
-                </button>
-              </div>
-            )}
-
-            {/* Results */}
-            {!loading && !error && (
+            {/* Featured + Masonry grid */}
+            {!showInitialLoading && calendarEvents.length > 0 && (
               <>
-                {displayEvents.length === 0 ? (
-                  <div className="flex flex-col items-center py-24 gap-4 text-center">
-                    <span className="text-6xl">🎭</span>
-                    <p className="text-lg" style={{ color: 'var(--text-muted)' }}>Ничего не найдено</p>
-                    {hasActive && (
-                      <button onClick={clearFilters}
-                        className="text-sm font-medium transition"
-                        style={{ color: 'var(--primary)' }}
-                      >
-                        Сбросить фильтры
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                    {displayEvents.map(event => <EventCard key={event.kudago_id} event={event} />)}
-                  </div>
-                )}
+                {/* Featured card — first event */}
+                <div className="mb-6">
+                  <FeaturedCard
+                    event={calendarEvents[0]}
+                    attendeeCount={attendeeCounts[String(calendarEvents[0].kudago_id)] ?? 0}
+                    isViewed={viewedEventIds.has(String(calendarEvents[0].kudago_id))}
+                    onClick={setSelectedEvent}
+                    onCategoryClick={addCategoryFilter}
+                  />
+                </div>
 
-                {/* sentinel — невидимый div, за которым следит IntersectionObserver */}
-                {!isFallback && hasMore && events.length > 0 && (
-                  <div ref={sentinelRef} className="mt-10 flex flex-col items-center gap-3">
-                    {loadingMore && (
-                      <div className="flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
-                        <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10"
-                            stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor"
-                            d="M4 12a8 8 0 018-8v8H4z" />
-                        </svg>
-                        <span className="text-sm font-medium">Загружаем...</span>
-                      </div>
-                    )}
-                    {!loadingMore && (
-                      <button
-                        onClick={loadMore}
-                        className="flex items-center gap-2 px-8 py-3 rounded-2xl font-semibold transition"
-                        style={{
-                          background: 'var(--surface)',
-                          border: '2px solid var(--primary)',
-                          color: 'var(--primary)',
-                        }}
-                      >
-                        Загрузить ещё
-                      </button>
-                    )}
+                {/* Masonry grid — the rest */}
+                {calendarEvents.length > 1 && (
+                  <div className="gv-masonry">
+                    {calendarEvents.slice(1).map(event => (
+                      <MasonryEventCard
+                        key={event.kudago_id}
+                        event={event}
+                        attendeeCount={attendeeCounts[String(event.kudago_id)] ?? 0}
+                        isViewed={viewedEventIds.has(String(event.kudago_id))}
+                        onClick={setSelectedEvent}
+                        onCategoryClick={addCategoryFilter}
+                      />
+                    ))}
                   </div>
                 )}
               </>
             )}
-          </div>
-        </div>
+
+            {isRefreshing && (
+              <div
+                aria-live="polite"
+                style={{
+                  position: 'sticky',
+                  top: 14,
+                  zIndex: 2,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '0.45rem 0.75rem',
+                  borderRadius: 'var(--r-full)',
+                  marginBottom: 12,
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text-muted)',
+                  fontSize: '.8125rem',
+                  fontWeight: 600,
+                  pointerEvents: 'none',
+                }}
+              >
+                <span
+                  className="inline-block h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+                />
+                Updating...
+              </div>
+            )}
+
+            {/* Empty masonry state */}
+            {!showInitialLoading && calendarEvents.length === 0 && visibleEvents.length > 0 && (
+              <div
+                className="flex flex-col items-center py-12 gap-3 rounded-2xl"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+              >
+                <span className="text-4xl select-none">📅</span>
+                <p className="text-base font-semibold" style={{ color: 'var(--text-muted)' }}>
+                  На {displayDate(selectedDate!, { day: 'numeric', month: 'long' })} событий нет
+                </p>
+                <button
+                  onClick={() => setSelectedDate(null)}
+                  className="text-sm font-medium transition"
+                  style={{ color: 'var(--primary)' }}
+                >
+                  Показать все события
+                </button>
+              </div>
+            )}
+
+            {/* Global empty state */}
+            {!showInitialLoading && visibleEvents.length === 0 && !error && (
+              <div className="flex flex-col items-center py-20 gap-4 text-center">
+                <span className="text-6xl select-none">🎭</span>
+                <p className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Ничего не найдено</p>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                  Попробуйте изменить фильтры или выбрать другой период
+                </p>
+                {hasActive && (
+                  <button
+                    onClick={clearFilters}
+                    className="gv-btn-primary"
+                  >
+                    Сбросить фильтры
+                  </button>
+                )}
+              </div>
+            )}
+
+            {!showInitialLoading && !error && canLoadMore && (
+              <div className="flex justify-center mt-8">
+                <button
+                  type="button"
+                  onClick={handleLoadMore}
+                  disabled={isLoadingMore}
+                  className="gv-btn-primary"
+                  style={{ minWidth: 220, opacity: isLoadingMore ? 0.75 : 1 }}
+                >
+                  {isLoadingMore ? 'Загружаем...' : `Загрузить еще (${Math.max((total ?? 0) - events.length, 0)})`}
+                </button>
+              </div>
+            )}
+          </section>
+        )}
+
       </main>
+
+      </section>
+
+      {/* ── Event detail drawer ── */}
+      {selectedEvent && (
+        <EventDetailDrawer
+          event={selectedEvent}
+          onClose={() => setSelectedEvent(null)}
+          onViewed={refreshViewedEventIds}
+        />
+      )}
     </div>
   );
 }

@@ -1,25 +1,26 @@
-import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
-import { AuthProvider } from './context/AuthContext';
-import { ToastContainer } from './components/Toast';
-
-const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
-const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });
+import ClientLayout from './ClientLayout';
 
 export const metadata: Metadata = {
   title: 'GatherVibe',
   description: 'Найди компанию для похода на мероприятия',
+  manifest: '/manifest.webmanifest',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export const viewport: Viewport = {
+  themeColor: '#610bef',
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="ru">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <AuthProvider>
-          {children}
-          <ToastContainer />
-        </AuthProvider>
+    <html lang="ru" data-theme="dark" data-scroll-behavior="smooth">
+      <body>
+        <ClientLayout>{children}</ClientLayout>
       </body>
     </html>
   );

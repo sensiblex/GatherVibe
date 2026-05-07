@@ -2,118 +2,40 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
-export interface KudaGoEvent {
-  kudago_id: number;
-  title: string;
-  short_title: string;
-  description: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  categories: any[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tags: any[];
-  price: string;
-  is_free: boolean;
-  age_restriction: string | number | null;
-  start_date: string | null;
-  start_time: string | null;
-  place_title: string;
-  place_address: string;
-  lat: number | null;
-  lon: number | null;
-  cover_url: string | null;
-  site_url: string;
-}
-
-const CATEGORY_RU: Record<string, string> = {
-  concert: 'Концерт', theater: 'Театр', theatre: 'Театр',
-  exhibition: 'Выставка', movie: 'Кино', cinema: 'Кино',
-  festival: 'Фестиваль', sport: 'Спорт', sports: 'Спорт',
-  other: 'Разное', holiday: 'Праздник', 'kids-holiday': 'Детский праздник',
-  education: 'Образование', lecture: 'Лекция', 'business-events': 'Бизнес',
-  business: 'Бизнес', tour: 'Экскурсия', excursion: 'Экскурсия',
-  party: 'Вечеринка', nightlife: 'Ночная жизнь',
-  'stand-up': 'Стэндап', standup: 'Стэндап', comedy: 'Комедия',
-  opera: 'Опера', ballet: 'Балет', musical: 'Мюзикл',
-  'open-air': 'Опен-эйр', 'art-object': 'Искусство', art: 'Искусство',
-  circus: 'Цирк', magic: 'Фокус',
-  'master-class': 'Мастер-класс', masterclass: 'Мастер-класс', workshop: 'Мастер-класс',
-  'photo-video': 'Фото/Видео', photography: 'Фотография',
-  literature: 'Литература', book: 'Книги',
-  food: 'Еда', 'food-wine': 'Еда и вино',
-  yoga: 'Йога', fitness: 'Фитнес', dance: 'Танцы',
-  gaming: 'Игры', 'computer-games': 'Игры', quest: 'Квест',
-  charity: 'Благотворительность', fashion: 'Мода',
-  science: 'Наука', technology: 'Технологии', health: 'Здоровье',
-  nature: 'Природа', animals: 'Животные', religion: 'Религия',
-  'social-activity': 'Общество', networking: 'Нетворкинг',
-  'speed-dating': 'Спид-дейтинг',
-  'rock-music': 'Рок', 'jazz-blues': 'Джаз / Блюз', jazz: 'Джаз',
-  blues: 'Блюз', 'classical-music': 'Классика', classical: 'Классика',
-  'electronic-music': 'Электронная музыка', electronic: 'Электронная музыка',
-  'hip-hop': 'Хип-хоп', pop: 'Поп', 'pop-music': 'Поп', metal: 'Метал',
-  folk: 'Фольк', reggae: 'Регги', 'r-n-b': 'R&B', soul: 'Саул',
-  funk: 'Фанк', acoustic: 'Акустика', 'world-music': 'Этническая музыка',
-  'action-movie': 'Боевик', comedy_film: 'Комедия', drama: 'Драма',
-  horror: 'Ужасы', thriller: 'Триллер', cartoon: 'Мультфильм',
-  animation: 'Анимация', documentary: 'Документальный',
-  'sci-fi': 'Фантастика', fantasy: 'Фэнтези', adventure: 'Приключения',
-  drama_play: 'Драма', puppet: 'Кукольный театр',
-  improvisation: 'Импровизация', 'performance-art': 'Перформанс',
-  performance: 'Перформанс',
-  'for-kids': 'Для детей', kids: 'Для детей', children: 'Для детей',
-  family: 'Семейное', free: 'Бесплатно', online: 'Онлайн',
-  outdoor: 'На улице', indoor: 'В помещении',
-};
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toLabel(val: any): string {
-  if (!val && val !== 0) return '';
-  if (typeof val === 'string') return val;
-  if (typeof val === 'number') return String(val);
-  if (typeof val === 'object') return String(val.name ?? val.slug ?? val.id ?? '');
-  return String(val);
-}
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toKey(val: any, idx: number): string {
-  return toLabel(val) || String(idx);
-}
-function translateTag(raw: string): string {
-  return CATEGORY_RU[raw.toLowerCase().trim()] ?? raw;
-}
+import { getCategoryBadges } from '../lib/kudagoUi';
+import type { KudaGoEvent } from '../lib/kudagoUi';
+import { formatEventDateTimeLabel, formatPermanentScheduleLabel } from '../events/utils';
+import { capitalizeFirstDisplayChar } from '../lib/text';
+import { proxiedImageUrl } from '../lib/imageProxy';
+export type { KudaGoEvent, KudaGoParty, UnknownTagLike } from '../lib/kudagoUi';
 function formatDate(dateStr: string | null, timeStr: string | null): string {
   if (!dateStr) return '';
-  return (
-    new Date(dateStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) +
-    (timeStr ? ` в ${timeStr.slice(0, 5)}` : '')
-  );
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const eventDate = new Date(y, m - 1, d);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Don't show date for past events
+  if (eventDate < today) {
+    return '';
+  }
+
+  return formatEventDateTimeLabel(dateStr, timeStr, { month: 'short' });
+}
+
+interface AttendeeBasic {
+  user_id: number;
+  username: string;
+  avatar_url?: string | null;
 }
 
 // ──────────────────────────────────────────────────────────────────────
-export default function EventCard({ event }: { event: KudaGoEvent }) {
-  const ageLabel = event.age_restriction ? `${event.age_restriction}+` : null;
-
-  // ── Задача 5: счётчик участников ──
-  const [attendeeCount, setAttendeeCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (!event.kudago_id) return;
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/attendees/${event.kudago_id}`);
-        if (!res.ok) return;
-        const data: { id: number }[] = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setAttendeeCount(data.length);
-        }
-      } catch {
-        // не блокируем рендер карточки
-      }
-    })();
-  }, [event.kudago_id]);
+export default function EventCard({ event, attendees = [] }: { event: KudaGoEvent; attendees?: AttendeeBasic[] }) {
+  const ageLabel = event.age_restriction ? (typeof event.age_restriction === 'string' && event.age_restriction.endsWith('+') ? event.age_restriction : `${event.age_restriction}+`) : null;
+  const displayTitle = capitalizeFirstDisplayChar(event.title);
+  const coverUrl = proxiedImageUrl(event.cover_url);
+  const permanentScheduleLabel = formatPermanentScheduleLabel(event);
+  const eventTimeLabel = formatDate(event.start_date, event.start_time) || permanentScheduleLabel;
 
   return (
     <Link
@@ -129,10 +51,10 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
         className="relative w-full h-48 overflow-hidden"
         style={{ background: 'var(--surface-2)' }}
       >
-        {event.cover_url ? (
+        {coverUrl ? (
           <Image
-            src={event.cover_url}
-            alt={event.title}
+            src={coverUrl}
+            alt={displayTitle}
             fill
             className="object-cover group-hover:scale-105 transition-transform duration-500"
             unoptimized
@@ -158,7 +80,7 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
           )}
         </div>
 
-        {event.start_date && (
+        {eventTimeLabel && (
           <span
             className="absolute bottom-3 right-3 text-xs font-semibold px-2.5 py-1 rounded-lg shadow-md"
             style={{
@@ -168,7 +90,7 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
               WebkitBackdropFilter: 'blur(4px)',
             }}
           >
-            {formatDate(event.start_date, event.start_time)}
+            {eventTimeLabel}
           </span>
         )}
       </div>
@@ -177,19 +99,17 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
       <div className="flex flex-col flex-1 p-4 gap-2">
         {event.categories?.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            {event.categories.slice(0, 2).map((cat, i) => {
-              const raw = toLabel(cat);
-              if (!raw) return null;
+            {getCategoryBadges(event.categories, 2).map(({ key, label }) => {
               return (
                 <span
-                  key={toKey(cat, i)}
+                  key={key}
                   className="text-xs font-medium px-2 py-0.5 rounded-full"
                   style={{
                     background: 'var(--primary-hl)',
                     color: 'var(--primary)',
                   }}
                 >
-                  {translateTag(raw)}
+                  {label}
                 </span>
               );
             })}
@@ -200,21 +120,34 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
           className="font-bold text-base leading-snug line-clamp-2 transition-colors"
           style={{ color: 'var(--text)' }}
         >
-          {event.title}
+          {displayTitle}
         </h3>
 
-        {event.place_title && (
+        {(event.place_title || eventTimeLabel) && (
           <div
-            className="flex items-center gap-1.5 text-sm"
-            style={{ color: 'var(--text-muted)' }}
+            className="rounded-xl px-3 py-2 space-y-1"
+            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
           >
-            <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            <span className="line-clamp-1">{event.place_title}</span>
+            {eventTimeLabel && (
+              <div className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--text-muted)' }}>
+                <span aria-hidden="true">🗓️</span>
+                <span className="line-clamp-1">{eventTimeLabel}</span>
+              </div>
+            )}
+            {event.place_title && (
+              <div
+                className="flex items-center gap-1.5 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span className="line-clamp-1">{event.place_title}</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -234,12 +167,48 @@ export default function EventCard({ event }: { event: KudaGoEvent }) {
             )}
           </div>
 
-          {/* ── Счётчик + ссылка ── */}
+          {/* ── Мини-аватары + счётчик + ссылка ── */}
           <div className="flex items-center gap-3">
-            {attendeeCount !== null && attendeeCount > 0 && (
-              <span className="text-xs text-indigo-500 font-semibold flex items-center gap-1">
-                👥 {attendeeCount} идут
-              </span>
+            {attendees.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                {/* Мини-аватары первых 3 участников */}
+                <div className="flex -space-x-2">
+                  {attendees.slice(0, 3).map((a, i) => (
+                    <div
+                      key={a.user_id}
+                      className="w-6 h-6 rounded-full overflow-hidden border-2 shrink-0"
+                      style={{
+                        borderColor: 'var(--surface)',
+                        zIndex: 3 - i,
+                        position: 'relative',
+                      }}
+                      title={a.username}
+                    >
+                      {a.avatar_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={a.avatar_url}
+                          alt={a.username}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div
+                          className="w-full h-full flex items-center justify-center text-white font-bold"
+                          style={{
+                            fontSize: '9px',
+                            background: 'linear-gradient(135deg, var(--primary), #a855f7)',
+                          }}
+                        >
+                          {a.username.slice(0, 1).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <span className="text-xs font-semibold" style={{ color: 'var(--primary)' }}>
+                  {attendees.length} идут
+                </span>
+              </div>
             )}
             <span
               className="text-xs font-medium"

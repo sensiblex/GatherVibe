@@ -1,114 +1,112 @@
 /**
  * apiFetch — глобальный fetch-wrapper для GatherVibe.
  *
- * Автоматически:
- *  1. Добавляет заголовок Authorization: Bearer <token>, если токен доступен.
- *  2. При получении HTTP 401 от бэкенда:
- *     - Очищает токен из localStorage, sessionStorage и cookie.
- *     - Перенаправляет пользователя на /login.
- *     - Показывает toast «Сессия истекла, войдите снова».
- *  3. Диспатчит кастомное событие auth:logout, чтобы AuthContext
- *     среагировал в той же вкладке без перезагрузки.
+ * - В Docker все API-запросы идут через Next.js реврайты:
+ *   /api/* → http://backend:8000/*
+ *   /socket.io/* → http://backend:8000/socket.io/*
+ * - В dev-режиме без Docker можно задать NEXT_PUBLIC_API_URL=http://localhost:8000
  *
- * Использование:
- *   import { apiFetch } from '@/app/lib/apiFetch';
- *   const res = await apiFetch('/parties/my-pending-requests');
- *   const res = await apiFetch('/parties/1', { method: 'DELETE' });
- *
- * Принимает те же аргументы, что и нативный fetch().
- * Если первый аргумент — относительный путь (начинается с /),
- * он будет дополнен значением NEXT_PUBLIC_API_URL.
+ * Аутентификация — только через HttpOnly cookie `token` (ставится backend'ом при /login).
+ * Все запросы идут с `credentials: 'include'`, чтобы браузер сам прикреплял cookie.
+ * В localStorage токен НЕ кладётся — защищает от XSS (его JS просто не может прочитать).
  */
 
 import { toast } from '../components/Toast';
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+/** Если задана NEXT_PUBLIC_API_URL (Docker = "/api", dev = "http://localhost:8000") */
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-/** Читает токен из cookie (SSR-safe) */
-function getTokenFromCookie(): string | null {
-  if (typeof document === 'undefined') return null;
-  const match = document.cookie.match(/(?:^|; )token=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
-/** Читает токен из localStorage (CSR only) */
-function getTokenFromStorage(): string | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    return localStorage.getItem('token');
-  } catch {
-    return null;
-  }
-}
-
-/** Получает актуальный токен (cookie приоритетнее localStorage) */
-function getToken(): string | null {
-  return getTokenFromCookie() ?? getTokenFromStorage();
-}
-
-/** Сбрасывает всё аутентификационное состояние на клиенте */
 function clearAuth(): void {
-  // Удалить cookie
-  document.cookie = 'token=; path=/; max-age=0';
-
-  // Удалить из localStorage
-  ['token', 'user_id', 'username', 'email'].forEach((key) => {
-    try {
-      localStorage.removeItem(key);
-    } catch {
-      /* ignore */
-    }
+  // localStorage уже не хранит token, но могли остаться кэши от старых версий.
+  ['token', 'user_id', 'username', 'email', 'email_notifications'].forEach((k) => {
+    try { localStorage.removeItem(k); } catch { /* ignore */ }
   });
-
-  // Уведомить AuthContext (и любые другие подписчики) в текущей вкладке
   window.dispatchEvent(new Event('auth:logout'));
 }
 
-/** Обрабатывает 401-ответ: очищает auth-данные, показывает toast, редиректит */
 function handle401(): void {
   clearAuth();
   toast('Сессия истекла, войдите снова', 'error');
-  // Используем window.location.replace чтобы не оставлять текущую страницу в истории
   window.location.replace('/login');
 }
 
-/**
- * Обёртка над нативным fetch.
- * Подписи полностью совместимы с fetch(input, init).
- */
+export interface ApiFetchOptions extends RequestInit {
+  /** Если true — 401 не триггерит глобальный редирект на /login.
+   * Используй на самой странице логина, чтобы ошибка входа не крутилась в цикле. */
+  skipAuthRedirect?: boolean;
+}
+
 export async function apiFetch(
   input: RequestInfo | URL,
-  init: RequestInit = {},
+  init: ApiFetchOptions = {},
 ): Promise<Response> {
-  // Нормализуем URL: относительные пути дополняем API_BASE
   let url: RequestInfo | URL = input;
   if (typeof input === 'string' && input.startsWith('/')) {
-    url = `${API_BASE}${input}`;
-  }
-
-  // Формируем заголовки
-  const headers = new Headers(init.headers);
-
-  // Добавляем Authorization только если токен доступен и ещё не установлен вручную
-  if (!headers.has('Authorization')) {
-    const token = getToken();
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`);
+    // Если путь уже начинается с API_BASE (/api или http://...), не дублируем
+    if (API_BASE && (
+      input.startsWith(API_BASE + '/') ||
+      (API_BASE.startsWith('/') && input.startsWith(API_BASE))
+    )) {
+      url = input;
+    } else {
+      url = `${API_BASE}${input}`;
     }
   }
 
-  const response = await fetch(url, {
-    ...init,
+  const { skipAuthRedirect, ...fetchInit } = init;
+  const headers = new Headers(fetchInit.headers);
+
+  // Cookie-based auth: браузер сам отправит HttpOnly `token`.
+  // `credentials: 'include'` нужен при cross-origin (dev-режим без Docker).
+  let response = await fetch(url, {
+    ...fetchInit,
     headers,
+    credentials: fetchInit.credentials ?? 'include',
   });
 
-  // Глобальная обработка 401
-  if (response.status === 401) {
+  // In Docker dev we usually go through Next rewrite (/api -> backend:8000).
+  // If that proxy path drops the connection (seen as 5xx for some heavy KudaGo calls),
+  // retry once directly against local backend from the browser.
+  if (
+    typeof window !== 'undefined' &&
+    response.status >= 500 &&
+    typeof url === 'string' &&
+    url.startsWith('/api/')
+  ) {
+    const directUrl = `http://localhost:8000${url.slice('/api'.length)}`;
+    try {
+      const retried = await fetch(directUrl, {
+        ...fetchInit,
+        headers,
+        credentials: fetchInit.credentials ?? 'include',
+      });
+      if (retried.ok) {
+        response = retried;
+      }
+    } catch {
+      // keep original response
+    }
+  }
+
+  if (response.status === 401 && !skipAuthRedirect) {
     handle401();
-    // Возвращаем response, чтобы вызывающий код мог завершиться штатно,
-    // но редирект уже запущен — дальнейший код не будет заметен пользователю.
     return response;
+  }
+
+  // Detect ban response and redirect to /banned screen
+  if (response.status === 403) {
+    try {
+      const cloned = response.clone();
+      const body = await cloned.json();
+      const detail = body?.detail;
+      if (detail && typeof detail === 'object' && detail.code === 'banned') {
+        const until = detail.banned_until ? encodeURIComponent(detail.banned_until) : '';
+        const reason = detail.reason ? encodeURIComponent(detail.reason) : '';
+        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/banned')) {
+          window.location.replace(`/banned?until=${until}&reason=${reason}`);
+        }
+      }
+    } catch { /* ignore */ }
   }
 
   return response;

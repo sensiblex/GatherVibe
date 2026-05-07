@@ -1,3 +1,45 @@
 .env
 *.env
 .env.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# Database
+*.db
+*.sqlite3
+
+# Node / Next.js
+node_modules/
+.next/
+/out/
+/build
+
+# Misc
+.DS_Store
+*.pem
+*.bak
+*.backup
+*.old
+
+# Backend artifacts / uploads
+backend/_openapi.json
+backend/_pytest_out.log
+backend/uploads/chat/
+backend/uploads/recap/
+backend/uploads/avatars/
+
+# IDE
+.vscode/settings.json
+
+# Claude Code / AI settings
+hooks/
+scripts/
+pyproject.toml
+uv.lock
+.venv/
+

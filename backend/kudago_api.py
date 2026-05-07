@@ -1,15 +1,41 @@
 import httpx
+import logging
 import time
+from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
+
+from kudago_common import safe_str as _safe_str
 
 BASE_URL = "https://kudago.com/public-api/v1.4"
+KUDAGO_TIMEZONE = ZoneInfo("Europe/Moscow")
+
+_logger = logging.getLogger(__name__)
 
 
 def _get(path: str, params: dict) -> dict:
-    with httpx.Client(timeout=10) as client:
-        r = client.get(f"{BASE_URL}/{path}/", params=params)
-        r.raise_for_status()
-        return r.json()
+    """GET с лёгким retry для 429/503. Raises на 4xx (кроме 429) и 5xx после последней попытки."""
+    backoff = 1.0
+    last_exc: Optional[Exception] = None
+    for attempt in range(3):
+        try:
+            with httpx.Client(timeout=10) as client:
+                r = client.get(f"{BASE_URL}/{path}/", params=params)
+                if r.status_code in (429, 502, 503, 504):
+                    _logger.warning("KudaGo %s returned %s (attempt %d/3)", path, r.status_code, attempt + 1)
+                    time.sleep(backoff)
+                    backoff *= 2
+                    continue
+                r.raise_for_status()
+                return r.json()
+        except (httpx.TimeoutException, httpx.TransportError) as e:
+            _logger.warning("KudaGo %s transport error (attempt %d/3): %s", path, attempt + 1, e)
+            last_exc = e
+            time.sleep(backoff)
+            backoff *= 2
+    if last_exc is not None:
+        raise last_exc
+    raise httpx.HTTPStatusError("KudaGo rate-limited/unavailable after retries", request=None, response=None)
 
 
 def get_events(
@@ -26,10 +52,9 @@ def get_events(
         "location": location,
         "page": page,
         "page_size": page_size,
-        "fields": "id,title,short_title,description,body_text,categories,tags,price,is_free,age_restriction,images,dates,place,site_url",
+        "fields": "id,title,short_title,description,body_text,categories,tags,price,is_free,age_restriction,images,dates,place,site_url,favorites_count,comments_count,publication_date",
         "expand": "images,place,dates",
         "order_by": "date",
-        # Always filter to show only upcoming / ongoing events
         "actual_since": actual_since if actual_since else now_ts,
     }
     if actual_until:
@@ -58,7 +83,7 @@ def search(
         "location": location,
         "page": page,
         "page_size": page_size,
-        "fields": "id,title,short_title,description,body_text,categories,tags,price,is_free,age_restriction,images,dates,place,site_url",
+        "fields": "id,title,short_title,description,body_text,categories,tags,price,is_free,age_restriction,images,dates,place,site_url,favorites_count,comments_count,publication_date",
         "expand": "images,place,dates",
         "actual_since": actual_since if actual_since else now_ts,
     }
@@ -108,26 +133,69 @@ def get_locations() -> list:
         return data.get("results", data)
 
 
-def _safe_str(val) -> str:
-    if not val and val != 0:
-        return ""
-    if isinstance(val, str):
-        return val
-    if isinstance(val, dict):
-        return str(val.get("name") or val.get("slug") or val.get("title") or val.get("id") or "")
-    return str(val)
+def _is_permanent_date(d: dict) -> bool:
+    """Возвращает True если дата постоянная (is_endless или is_startless или use_place_schedule)."""
+    return bool(d.get("is_endless") or d.get("is_startless") or d.get("use_place_schedule"))
 
 
-def parse_events(raw: dict) -> list:
+def _event_date_entry(
+    d: dict,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+) -> dict:
+    schedules = d.get("schedules")
+    return {
+        "start": start_date,
+        "end": end_date,
+        "start_time": start_time,
+        "end_time": end_time,
+        "is_continuous": d.get("is_continuous", False),
+        "is_endless": d.get("is_endless", False),
+        "is_startless": d.get("is_startless", False),
+        "use_place_schedule": d.get("use_place_schedule", False),
+        "schedules": schedules if schedules is not None else [],
+    }
+
+
+def _format_kudago_timestamp(ts: int) -> tuple[str, str]:
+    dt = datetime.fromtimestamp(ts, tz=KUDAGO_TIMEZONE)
+    return dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M")
+
+
+def parse_events(raw: dict, skip_date_filter: bool = False) -> list:
+    import time
+    now_ts = int(time.time())
     results = raw.get("results", [])
     out = []
     for e in results:
-        dates = e.get("dates") or []
+        raw_dates = e.get("dates") or []
         start_date = None
         start_time = None
         all_dates = []
-        if dates:
-            for d in dates:
+        is_permanent = False
+
+        # Проверяем, есть ли постоянные даты (is_endless / is_startless / use_place_schedule)
+        permanent_dates = [d for d in raw_dates if _is_permanent_date(d)]
+
+        # Отфильтровать только будущие разовые даты (start >= now_ts)
+        future_dates = []
+        for d in raw_dates:
+            if _is_permanent_date(d):
+                continue
+            start_ts = d.get("start")
+            if start_ts is not None and start_ts >= now_ts:
+                future_dates.append(d)
+
+        if permanent_dates:
+            # Постоянное событие — круглый год, расписание по месту
+            is_permanent = True
+            start_date = None
+            start_time = None
+            all_dates = [_event_date_entry(d) for d in permanent_dates]
+        elif future_dates:
+            for d in future_dates:
                 start_ts = d.get("start")
                 end_ts = d.get("end")
                 sd = None
@@ -135,27 +203,26 @@ def parse_events(raw: dict) -> list:
                 ed = None
                 et = None
                 if start_ts:
-                    import datetime
-                    dt = datetime.datetime.fromtimestamp(start_ts)
-                    sd = dt.strftime("%Y-%m-%d")
-                    st = dt.strftime("%H:%M")
+                    sd, st = _format_kudago_timestamp(start_ts)
                 if end_ts:
-                    import datetime
-                    dt2 = datetime.datetime.fromtimestamp(end_ts)
-                    ed = dt2.strftime("%Y-%m-%d")
-                    et = dt2.strftime("%H:%M")
-                all_dates.append({
-                    "start": sd, "end": ed,
-                    "start_time": st, "end_time": et,
-                    "is_continuous": d.get("is_continuous", False),
-                    "is_endless": d.get("is_endless", False),
-                })
-            first = dates[0]
-            if first.get("start"):
-                import datetime
-                dt = datetime.datetime.fromtimestamp(first["start"])
-                start_date = dt.strftime("%Y-%m-%d")
-                start_time = dt.strftime("%H:%M")
+                    ed, et = _format_kudago_timestamp(end_ts)
+                all_dates.append(_event_date_entry(d, sd, ed, st, et))
+
+            # Выбрать ближайшую будущую дату
+            selected_date = None
+            nearest_future_ts = float('inf')
+            for d in future_dates:
+                start_ts = d.get("start")
+                if start_ts and start_ts < nearest_future_ts:
+                    nearest_future_ts = start_ts
+                    selected_date = d
+
+            if selected_date and selected_date.get("start"):
+                start_date, start_time = _format_kudago_timestamp(selected_date["start"])
+        else:
+            # Нет ни постоянных, ни будущих дат — либо прошло, либо даты не развёрнуты
+            if not skip_date_filter:
+                continue
 
         place = e.get("place") or {}
         images = e.get("images") or []
@@ -163,6 +230,18 @@ def parse_events(raw: dict) -> list:
 
         cats = e.get("categories") or []
         cat_list = [_safe_str(c) for c in cats if _safe_str(c)]
+        raw_tags = e.get("tags") or []
+        tag_list = [_safe_str(t) for t in raw_tags if _safe_str(t)]
+
+        _raw_dates = e.get("dates") or []
+        has_sched = any(bool(d.get("schedules")) for d in all_dates)
+        nearest_end_ts = None
+        if not is_permanent:
+            future_ends = [d.get("end") for d in _raw_dates
+                           if d.get("start") and d.get("start") >= now_ts and d.get("end")]
+            if future_ends:
+                nearest_end_ts = min(future_ends)
+        place_is_stub_v = place.get("is_stub") if isinstance(place, dict) and place else None
 
         out.append({
             "kudago_id": e.get("id"),
@@ -170,6 +249,13 @@ def parse_events(raw: dict) -> list:
             "short_title": e.get("short_title", ""),
             "description": e.get("description", ""),
             "categories": cat_list,
+            "tags": tag_list,
+            "favorites_count": e.get("favorites_count") or 0,
+            "comments_count": e.get("comments_count") or 0,
+            "publication_ts": e.get("publication_date"),
+            "has_schedules": has_sched,
+            "end_ts": nearest_end_ts,
+            "place_is_stub": place_is_stub_v,
             "price": e.get("price", ""),
             "is_free": e.get("is_free", False),
             "age_restriction": e.get("age_restriction"),
@@ -178,6 +264,7 @@ def parse_events(raw: dict) -> list:
             "start_date": start_date,
             "start_time": start_time,
             "all_dates": all_dates,
+            "is_permanent": is_permanent,
             "place_title": _safe_str(place.get("title")),
             "place_address": _safe_str(place.get("address")),
             "place_phone": _safe_str(place.get("phone")),
@@ -190,34 +277,54 @@ def parse_events(raw: dict) -> list:
 
 
 def parse_event_detail(e: dict) -> dict:
-    dates = e.get("dates") or []
+    import time
+    now_ts = int(time.time())
+    raw_dates = e.get("dates") or []
     start_date = None
     start_time = None
     all_dates = []
-    if dates:
-        for d in dates:
+    is_permanent = False
+
+    # Проверяем постоянные даты
+    permanent_dates = [d for d in raw_dates if _is_permanent_date(d)]
+
+    # Отфильтровать только будущие разовые даты (start >= now_ts)
+    future_dates = []
+    for d in raw_dates:
+        if _is_permanent_date(d):
+            continue
+        start_ts = d.get("start")
+        if start_ts is not None and start_ts >= now_ts:
+            future_dates.append(d)
+
+    if permanent_dates:
+        is_permanent = True
+        all_dates = [_event_date_entry(d) for d in permanent_dates]
+    elif future_dates:
+        for d in future_dates:
             start_ts = d.get("start")
             end_ts = d.get("end")
             sd = st = ed = et = None
             if start_ts:
-                import datetime
-                dt = datetime.datetime.fromtimestamp(start_ts)
-                sd = dt.strftime("%Y-%m-%d")
-                st = dt.strftime("%H:%M")
+                sd, st = _format_kudago_timestamp(start_ts)
             if end_ts:
-                import datetime
-                dt2 = datetime.datetime.fromtimestamp(end_ts)
-                ed = dt2.strftime("%Y-%m-%d")
-                et = dt2.strftime("%H:%M")
-            all_dates.append({"start": sd, "end": ed, "start_time": st, "end_time": et,
-                               "is_continuous": d.get("is_continuous", False),
-                               "is_endless": d.get("is_endless", False)})
-        first = dates[0]
-        if first.get("start"):
-            import datetime
-            dt = datetime.datetime.fromtimestamp(first["start"])
-            start_date = dt.strftime("%Y-%m-%d")
-            start_time = dt.strftime("%H:%M")
+                ed, et = _format_kudago_timestamp(end_ts)
+            all_dates.append(_event_date_entry(d, sd, ed, st, et))
+
+        # Выбрать ближайшую будущую дату
+        selected_date = None
+        nearest_future_ts = float('inf')
+        for d in future_dates:
+            start_ts = d.get("start")
+            if start_ts and start_ts < nearest_future_ts:
+                nearest_future_ts = start_ts
+                selected_date = d
+
+        if selected_date and selected_date.get("start"):
+            start_date, start_time = _format_kudago_timestamp(selected_date["start"])
+    else:
+        # Нет ни постоянных, ни будущих дат
+        pass
 
     place = e.get("place") or {}
     images = e.get("images") or []
@@ -249,6 +356,8 @@ def parse_event_detail(e: dict) -> dict:
         "start_date": start_date,
         "start_time": start_time,
         "all_dates": all_dates,
+        "is_permanent": is_permanent,
+        "has_schedules": any(bool(d.get("schedules")) for d in all_dates),
         "place_title": _safe_str(place.get("title")),
         "place_address": _safe_str(place.get("address")),
         "place_phone": _safe_str(place.get("phone")),

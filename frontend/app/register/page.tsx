@@ -5,18 +5,21 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '../components/Navbar';
 import { INTERESTS_LIST } from '../lib/interests';
+import { KUDAGO_CITIES } from '../events/event-filters';
+import { validateRegisterStep1 } from './register-city';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [step, setStep]           = useState<1 | 2>(1);
+  const [step, setStep]           = useState<1 | 2 | 3>(1);
+  const [registeredEmail, setRegisteredEmail] = useState('');
   const [form, setForm]           = useState({ email: '', username: '', password: '', city: '' });
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) =>
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
 
   const toggleInterest = (id: string) =>
@@ -28,8 +31,9 @@ export default function RegisterPage() {
 
   const handleStep1 = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.email || !form.username || !form.password) {
-      setError('Заполните все обязательные поля');
+    const validationError = validateRegisterStep1(form);
+    if (validationError) {
+      setError(validationError);
       return;
     }
     setError(null);
@@ -43,6 +47,7 @@ export default function RegisterPage() {
       const res = await fetch(`${API_BASE}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           ...form,
           // Хранить без пробелов: "concert,cinema" — единый формат с profile
@@ -51,9 +56,14 @@ export default function RegisterPage() {
       });
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.detail || 'Ошибка регистрации');
+        const detail = data.detail;
+        const message = Array.isArray(detail)
+          ? detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join('; ')
+          : (typeof detail === 'string' ? detail : 'Ошибка регистрации');
+        throw new Error(message);
       }
-      router.push('/login');
+      setRegisteredEmail(form.email);
+      setStep(3);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Неизвестная ошибка');
       setStep(1);
@@ -69,23 +79,27 @@ export default function RegisterPage() {
         <div className="w-full max-w-md">
 
           <div className="text-center mb-8">
-            <span className="text-4xl">{step === 1 ? '🎭' : '✨'}</span>
+            <span className="text-4xl">{step === 1 ? '🎭' : step === 2 ? '✨' : '📬'}</span>
             <h1 className="text-2xl font-black mt-3" style={{ color: 'var(--text)' }}>
-              {step === 1 ? 'Создать аккаунт' : 'Твои интересы'}
+              {step === 1 ? 'Создать аккаунт' : step === 2 ? 'Твои интересы' : 'Подтвердите email'}
             </h1>
             <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
               {step === 1
                 ? 'Находи компанию для любых мероприятий'
-                : 'Выбери чтобы мы лучше подбирали события — или пропусти'}
+                : step === 2
+                ? 'Выбери чтобы мы лучше подбирали события — или пропусти'
+                : 'Почти готово!'}
             </p>
-            {/* Progress */}
-            <div className="flex justify-center gap-2 mt-4">
-              {[1, 2].map(s => (
-                <div key={s} className="h-1.5 w-12 rounded-full transition-all" style={{
-                  background: s <= step ? 'var(--primary)' : 'var(--divider)',
-                }} />
-              ))}
-            </div>
+            {/* Progress — только для шагов 1 и 2 */}
+            {step !== 3 && (
+              <div className="flex justify-center gap-2 mt-4">
+                {[1, 2].map(s => (
+                  <div key={s} className="h-1.5 w-12 rounded-full transition-all" style={{
+                    background: s <= step ? 'var(--primary)' : 'var(--divider)',
+                  }} />
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="rounded-3xl p-8" style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
@@ -96,7 +110,26 @@ export default function RegisterPage() {
               </div>
             )}
 
-            {step === 1 ? (
+            {step === 3 ? (
+              <div className="space-y-5 text-center">
+                <div className="text-5xl">✉️</div>
+                <p className="text-sm leading-relaxed" style={{ color: 'var(--text)' }}>
+                  Мы отправили письмо на{' '}
+                  <span className="font-semibold">{registeredEmail}</span>.
+                  <br />
+                  Перейдите по ссылке в письме, чтобы подтвердить аккаунт.
+                </p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Не нашли? Проверьте папку «Спам» или «Промоакции».
+                </p>
+                <button
+                  onClick={() => router.push('/login')}
+                  className="gv-btn-primary w-full"
+                >
+                  Перейти ко входу
+                </button>
+              </div>
+            ) : step === 1 ? (
               <form onSubmit={handleStep1} className="space-y-4">
                 <div>
                   <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Email *</label>
@@ -111,12 +144,16 @@ export default function RegisterPage() {
                 <div>
                   <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Пароль *</label>
                   <input type="password" name="password" value={form.password} onChange={handleChange}
-                    placeholder="Не менее 6 символов" required minLength={6} className="gv-input" />
+                    placeholder="Не менее 8 символов" required minLength={8} className="gv-input" />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Город</label>
-                  <input type="text" name="city" value={form.city} onChange={handleChange}
-                    placeholder="Казань" className="gv-input" />
+                  <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Город *</label>
+                  <select name="city" value={form.city} onChange={handleChange} required className="gv-input">
+                    <option value="" disabled>Выберите город</option>
+                    {KUDAGO_CITIES.map(city => (
+                      <option key={city.slug} value={city.name}>{city.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <button type="submit" className="gv-btn-primary w-full mt-2">
                   Далее →

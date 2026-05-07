@@ -2,8 +2,28 @@
 const nextConfig = {
   devIndicators: false,
   reactStrictMode: false,
-  typescript: {
-    ignoreBuildErrors: true,
+  images: {
+    unoptimized: true,
+    domains: ['media.kudago.com'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'media.kudago.com',
+        pathname: '/images/**',
+      },
+    ],
+  },
+  async rewrites() {
+    return [
+      {
+        source: '/socket.io/:path*',
+        destination: 'http://backend:8000/socket.io/:path*',
+      },
+      {
+        source: '/api/:path*',
+        destination: 'http://backend:8000/:path*',
+      },
+    ];
   },
 };
 

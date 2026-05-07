@@ -1,143 +1,307 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { io, Socket } from 'socket.io-client';
 import Navbar from '../components/Navbar';
+import PartyInvitesInbox from '../components/PartyInvitesInbox';
+import PushPermissionPrompt from '../components/PushPermissionPrompt';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationsContext';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 import { apiFetch } from '../lib/apiFetch';
 
-const API_BASE    = process.env.NEXT_PUBLIC_API_URL    || 'http://localhost:8000';
-const SOCKET_URL  = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:8000';
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
-interface PendingRequest {
-  id: number;
-  user_id: number;
-  username: string;
-  party_id: number;
-  event_title?: string;
-  created_at?: string;
-  isNew?: boolean;
-  /** user_id из Socket.IO payload — нужен для real-time карточек (id < 0) */
-  realUserId?: number;
+function typeIcon(type: string) {
+  switch (type) {
+    case 'request_status_changed': return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+        <polyline points="22 4 12 14.01 9 11.01"/>
+      </svg>
+    );
+    case 'kicked_from_party': return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="15" y1="9" x2="9" y2="15"/>
+        <line x1="9" y1="9" x2="15" y2="15"/>
+      </svg>
+    );
+    case 'new_party_request': return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+        <circle cx="9" cy="7" r="4"/>
+        <line x1="19" y1="8" x2="19" y2="14"/>
+        <line x1="22" y1="11" x2="16" y2="11"/>
+      </svg>
+    );
+    case 'party_invite_received': return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="20 12 20 22 4 22 4 12"/>
+        <rect x="2" y="7" width="20" height="5"/>
+        <line x1="12" y1="22" x2="12" y2="7"/>
+        <path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/>
+        <path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>
+      </svg>
+    );
+    case 'party_invite_response': return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="22 4 12 14.01 9 11.01"/>
+      </svg>
+    );
+    case 'party_closed': return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+      </svg>
+    );
+    default: return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+      </svg>
+    );
+  }
 }
 
-interface NewPartyRequestPayload {
-  party_id: number;
-  party_title: string;
-  user_id: number;
-  username: string;
+function typeAccentColor(type: string, isRead: boolean): { bg: string; color: string } {
+  if (isRead) return { bg: 'var(--surface-2)', color: 'var(--text-muted)' };
+  switch (type) {
+    case 'request_status_changed': return { bg: 'var(--success-hl)', color: 'var(--success)' };
+    case 'kicked_from_party':      return { bg: 'var(--error-hl)',   color: 'var(--error)' };
+    case 'new_party_request':      return { bg: 'var(--primary-hl)', color: 'var(--primary)' };
+    case 'party_invite_received':  return { bg: 'var(--primary-hl)', color: 'var(--primary)' };
+    case 'party_invite_response':  return { bg: 'var(--success-hl)', color: 'var(--success)' };
+    case 'party_closed':           return { bg: 'var(--surface-2)',  color: 'var(--text-muted)' };
+    default:                        return { bg: 'var(--primary-hl)', color: 'var(--primary)' };
+  }
 }
+
+function ArrowIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+      <path d="M5 12h14M12 5l7 7-7 7"/>
+    </svg>
+  );
+}
+
+// ─── Toggle row ─────────────────────────────────────────────────────────────
+
+interface ToggleRowProps {
+  title: string;
+  description: string;
+  enabled: boolean;
+  disabled?: boolean;
+  loading?: boolean;
+  onToggle: () => void;
+}
+
+function ToggleRow({ title, description, enabled, disabled = false, loading = false, onToggle }: ToggleRowProps) {
+  return (
+    <div
+      style={{
+        background: 'var(--surface)',
+        border: '1px solid var(--border)',
+        borderRadius: '16px',
+        padding: '16px 20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: '8px',
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <div>
+        <p style={{ color: 'var(--text)', fontWeight: 600, fontSize: '14px', margin: 0 }}>{title}</p>
+        <p style={{ color: 'var(--text-muted)', fontSize: '12px', margin: '2px 0 0' }}>{description}</p>
+      </div>
+      <button
+        onClick={disabled || loading ? undefined : onToggle}
+        aria-pressed={enabled}
+        aria-disabled={disabled || loading}
+        style={{
+          width: '44px',
+          height: '24px',
+          background: enabled ? 'var(--primary)' : 'var(--border)',
+          borderRadius: '12px',
+          border: 'none',
+          cursor: disabled || loading ? 'not-allowed' : 'pointer',
+          position: 'relative',
+          transition: 'background 0.2s',
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            position: 'absolute',
+            top: '2px',
+            left: enabled ? '22px' : '2px',
+            width: '20px',
+            height: '20px',
+            background: 'white',
+            borderRadius: '50%',
+            transition: 'left 0.2s',
+            display: 'block',
+          }}
+        />
+      </button>
+    </div>
+  );
+}
+
+// ─── Settings section ────────────────────────────────────────────────────────
+
+interface NotificationSettingsProps {
+  emailEnabled: boolean;
+  onEmailToggle: () => void;
+  emailLoading: boolean;
+}
+
+function NotificationSettings({ emailEnabled, onEmailToggle, emailLoading }: NotificationSettingsProps) {
+  const { isSupported, permission, isSubscribed, isLoading: pushLoading, subscribe, unsubscribe } = usePushNotifications();
+
+  function getPushDescription(): string {
+    if (!isSupported) return 'Браузер не поддерживает push';
+    if (permission === 'denied') return 'Уведомления заблокированы в браузере';
+    if (isSubscribed) return 'Мгновенные уведомления включены';
+    return 'Получайте уведомления, даже когда сайт закрыт';
+  }
+
+  function handlePushToggle() {
+    if (isSubscribed) {
+      unsubscribe();
+    } else {
+      subscribe();
+    }
+  }
+
+  return (
+    <div style={{ marginBottom: '32px' }}>
+      <p
+        style={{
+          color: 'var(--text-muted)',
+          fontSize: '11px',
+          fontWeight: 700,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
+          marginBottom: '12px',
+        }}
+      >
+        Настройки уведомлений
+      </p>
+
+      {/* Push toggle */}
+      {permission === 'denied' ? (
+        <div
+          style={{
+            background: 'var(--error-hl)',
+            border: '1px solid var(--error)',
+            borderRadius: '16px',
+            padding: '16px 20px',
+            marginBottom: '8px',
+          }}
+        >
+          <p style={{ color: 'var(--error)', fontWeight: 600, fontSize: '14px', margin: 0 }}>
+            Push-уведомления в браузере
+          </p>
+          <p style={{ color: 'var(--error)', fontSize: '12px', margin: '2px 0 0', opacity: 0.8 }}>
+            Уведомления заблокированы в браузере. Разрешите их в настройках браузера.
+          </p>
+        </div>
+      ) : (
+        <ToggleRow
+          title="Push-уведомления в браузере"
+          description={getPushDescription()}
+          enabled={isSubscribed}
+          disabled={!isSupported || pushLoading}
+          loading={pushLoading}
+          onToggle={handlePushToggle}
+        />
+      )}
+
+      {/* Email toggle */}
+      <ToggleRow
+        title="Email-напоминания о событиях"
+        description="Напоминания о предстоящих событиях на почту"
+        enabled={emailEnabled}
+        disabled={emailLoading}
+        loading={emailLoading}
+        onToggle={onEmailToggle}
+      />
+    </div>
+  );
+}
+
+// ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function NotificationsPage() {
-  const { token, user } = useAuth();
+  const { user } = useAuth();
+  const { notifications, unreadCount, markRead, markAllRead, isLoaded } = useNotifications();
   const router = useRouter();
-  const [requests, setRequests]     = useState<PendingRequest[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [acting, setActing]         = useState<string | null>(null);
-  const [liveCount, setLiveCount]   = useState(0);
-  const socketRef = useRef<Socket | null>(null);
+  const [markingAll, setMarkingAll] = useState(false);
 
-  // ── Initial HTTP load ──────────────────────────────────────────────────────
-  const load = useCallback(async () => {
-    if (!token) { router.push('/login'); return; }
-    setLoading(true);
-    try {
-      const res = await apiFetch(`${API_BASE}/parties/my-pending-requests`);
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setRequests(Array.isArray(data) ? data : []);
-    } catch {
-      setRequests([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [token, router]);
+  // Email notifications state. Сидим на `user` из AuthContext,
+  // но синкаем со свежим /users/me при mount — иначе старый localStorage
+  // может показывать неактуальное значение.
+  const [emailEnabled, setEmailEnabled] = useState<boolean>(
+    user?.email_notifications ?? true
+  );
+  const [emailLoading, setEmailLoading] = useState(false);
 
-  useEffect(() => { load(); }, [load]);
-
-  // ── Socket.IO ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!user?.id) return;
-
-    const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
-    socketRef.current = socket;
-
-    socket.on('connect', () => {
-      socket.emit('subscribe_notifications', { userId: user.id });
-    });
-
-    socket.on('new_party_request', (payload: NewPartyRequestPayload) => {
-      const newRequest: PendingRequest = {
-        id: -(Date.now()),
-        user_id: payload.user_id,
-        username: payload.username,
-        party_id: payload.party_id,
-        event_title: payload.party_title,
-        created_at: new Date().toISOString(),
-        isNew: true,
-        realUserId: payload.user_id,
-      };
-      setRequests(prev => [newRequest, ...prev]);
-      setLiveCount(c => c + 1);
-
-      setTimeout(() => {
-        setRequests(prev =>
-          prev.map(r => r.id === newRequest.id ? { ...r, isNew: false } : r)
-        );
-      }, 3000);
-    });
-
-    return () => {
-      socket.disconnect();
-      socketRef.current = null;
-    };
-  }, [user?.id]);
-
-  // ── Actions ────────────────────────────────────────────────────────────────
-  const respond = async (requestId: number, action: 'approve' | 'reject') => {
-    if (!token) return;
-
-    const actingKey = String(requestId);
-    setActing(actingKey);
-
-    try {
-      if (requestId < 0) {
-        // Real-time карточка: используем endpoint по party_id + user_id
-        const req = requests.find(r => r.id === requestId);
-        if (!req?.realUserId) {
-          // На крайний случай — убираем из UI, если данных нет
-          setRequests(prev => prev.filter(r => r.id !== requestId));
-          return;
+    let cancelled = false;
+    apiFetch('/users/me')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        if (typeof data.email_notifications === 'boolean') {
+          setEmailEnabled(data.email_notifications);
         }
-        // 'approve' → 'accept', 'reject' → 'reject'
-        const verb = action === 'approve' ? 'accept' : 'reject';
-        const res = await apiFetch(
-          `${API_BASE}/parties/${req.party_id}/members/${req.realUserId}/${verb}`,
-          { method: 'POST' }
-        );
-        if (!res.ok) throw new Error();
-      } else {
-        // Обычная карточка из HTTP-загрузки: используем request_id
-        const res = await apiFetch(
-          `${API_BASE}/parties/requests/${requestId}/${action}`,
-          { method: 'POST' }
-        );
-        if (!res.ok) throw new Error();
-      }
+      })
+      .catch(() => { /* ignore */ });
+    return () => { cancelled = true; };
+  }, []);
 
-      setRequests(prev => prev.filter(r => r.id !== requestId));
+  const handleEmailToggle = useCallback(async () => {
+    const next = !emailEnabled;
+    setEmailEnabled(next);
+    setEmailLoading(true);
+    try {
+      const res = await apiFetch('/notifications/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email_notifications: next }),
+      });
+      if (!res.ok) {
+        // Revert optimistic update on failure.
+        setEmailEnabled(!next);
+      }
     } catch {
-      // Оставляем карточку на месте при ошибке — пусть создатель повторит
+      setEmailEnabled(!next);
     } finally {
-      setActing(null);
+      setEmailLoading(false);
     }
-  };
+  }, [emailEnabled]);
+
+  const handleMarkRead = useCallback((id: number) => {
+    markRead(id);
+  }, [markRead]);
+
+  const handleMarkAllRead = useCallback(async () => {
+    setMarkingAll(true);
+    markAllRead();
+    setMarkingAll(false);
+  }, [markAllRead]);
+
+  const handleNotificationClick = useCallback((id: number, data: string | null) => {
+    handleMarkRead(id);
+    let parsed: Record<string, unknown> = {};
+    try { parsed = data ? JSON.parse(data) : {}; } catch { /* ignore parse errors */ }
+    const partyId = parsed.party_id as number | undefined;
+    if (partyId) router.push(`/parties/${partyId}`);
+  }, [handleMarkRead, router]);
 
   if (!user) return null;
-
-  const totalCount = requests.length;
-  const pluralLabel = totalCount === 1 ? 'заявка' : totalCount < 5 ? 'заявки' : 'заявок';
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
@@ -146,8 +310,8 @@ export default function NotificationsPage() {
       <main className="container mx-auto px-4 py-10 max-w-2xl">
 
         {/* ── Header ── */}
-        <div className="flex items-center gap-3 mb-8">
-          <div className="relative">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
             <div
               className="w-10 h-10 rounded-xl flex items-center justify-center"
               style={{ background: 'var(--primary-hl)' }}
@@ -158,54 +322,61 @@ export default function NotificationsPage() {
                 <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
               </svg>
             </div>
-            {liveCount > 0 && (
-              <span
-                className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] rounded-full
-                           flex items-center justify-center text-[10px] font-black text-white
-                           animate-bounce"
-                style={{ background: 'var(--error)' }}
-              >
-                {liveCount}
-              </span>
-            )}
+            <div>
+              <h1 className="text-xl font-black" style={{ color: 'var(--text)' }}>
+                Уведомления
+              </h1>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                {!isLoaded
+                  ? 'Загрузка...'
+                  : notifications.length === 0
+                    ? 'Уведомлений нет'
+                    : unreadCount > 0
+                      ? `${unreadCount} непрочитанных`
+                      : 'Всё прочитано'}
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-black" style={{ color: 'var(--text)' }}>Уведомления</h1>
-            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-              {loading
-                ? 'Загрузка...'
-                : totalCount === 0
-                  ? 'Новых заявок нет'
-                  : `${totalCount} ${pluralLabel} на вступление`}
-            </p>
-          </div>
+
+          {unreadCount > 0 && isLoaded && (
+            <button
+              onClick={handleMarkAllRead}
+              disabled={markingAll}
+              className="text-sm px-4 py-2 rounded-xl font-medium transition"
+              style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
+            >
+              {markingAll ? '...' : 'Прочитать все'}
+            </button>
+          )}
         </div>
 
-        {/* ── Live-connection indicator ── */}
-        <div className="flex items-center gap-1.5 mb-6">
-          <span
-            className="w-2 h-2 rounded-full"
-            style={{ background: socketRef.current?.connected ? 'var(--success)' : 'var(--text-faint)' }}
-          />
-          <span className="text-xs" style={{ color: 'var(--text-faint)' }}>
-            {socketRef.current?.connected ? 'Подключено — уведомления в реальном времени' : 'Подключение...'}
-          </span>
-        </div>
+        {/* ── Push permission prompt (only shows when default + not dismissed) ── */}
+        <PushPermissionPrompt />
+
+        {/* ── Party invites inbox ── */}
+        <PartyInvitesInbox />
+
+        {/* ── Notification settings ── */}
+        <NotificationSettings
+          emailEnabled={emailEnabled}
+          onEmailToggle={handleEmailToggle}
+          emailLoading={emailLoading}
+        />
 
         {/* ── Skeleton ── */}
-        {loading && (
+        {!isLoaded && (
           <div className="space-y-3">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="rounded-2xl p-5 animate-pulse"
-                style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-                <div className="flex justify-between items-center">
-                  <div className="space-y-2">
-                    <div className="h-4 w-32 rounded" style={{ background: 'var(--surface-2)' }} />
-                    <div className="h-3 w-48 rounded" style={{ background: 'var(--surface-2)' }} />
-                  </div>
-                  <div className="flex gap-2">
-                    <div className="h-9 w-20 rounded-xl" style={{ background: 'var(--surface-2)' }} />
-                    <div className="h-9 w-20 rounded-xl" style={{ background: 'var(--surface-2)' }} />
+            {[1, 2, 3, 4].map(i => (
+              <div
+                key={i}
+                className="rounded-2xl p-5 animate-pulse"
+                style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+              >
+                <div className="flex gap-3">
+                  <div className="w-9 h-9 rounded-xl shrink-0" style={{ background: 'var(--surface-2)' }} />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 w-40 rounded" style={{ background: 'var(--surface-2)' }} />
+                    <div className="h-3 w-60 rounded" style={{ background: 'var(--surface-2)' }} />
                   </div>
                 </div>
               </div>
@@ -213,88 +384,98 @@ export default function NotificationsPage() {
           </div>
         )}
 
-        {/* ── Empty state ── */}
-        {!loading && totalCount === 0 && (
+        {/* ── Empty ── */}
+        {isLoaded && notifications.length === 0 && (
           <div className="text-center py-24">
-            <div className="text-6xl mb-4">🔔</div>
-            <p className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Всё чисто!</p>
+            <div
+              className="w-16 h-16 rounded-2xl mx-auto mb-4 flex items-center justify-center"
+              style={{ background: 'var(--surface-2)' }}
+            >
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+                stroke="var(--text-faint)" strokeWidth="1.5">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+              </svg>
+            </div>
+            <p className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Тихо!</p>
             <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-              Новых заявок на вступление в компанию нет
+              Уведомлений пока нет
             </p>
           </div>
         )}
 
-        {/* ── Request list ── */}
-        {!loading && totalCount > 0 && (
-          <div className="space-y-3">
-            {requests.map(req => (
-              <div
-                key={req.id}
-                className="rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all"
-                style={{
-                  background: req.isNew ? 'var(--primary-hl)' : 'var(--surface)',
-                  border: req.isNew
-                    ? '1px solid var(--primary)'
-                    : '1px solid var(--border)',
-                  boxShadow: req.isNew ? '0 0 0 3px var(--primary-hl)' : 'var(--shadow-sm)',
-                  transition: 'background 0.6s ease, border-color 0.6s ease, box-shadow 0.6s ease',
-                }}
-              >
-                <div className="flex items-center gap-3">
+        {/* ── Notification list ── */}
+        {isLoaded && notifications.length > 0 && (
+          <div className="space-y-2">
+            {notifications.map(n => {
+              const { bg, color } = typeAccentColor(n.type, n.is_read);
+              let parsed: Record<string, unknown> = {};
+              try { parsed = n.data ? JSON.parse(n.data) : {}; } catch { /* ignore parse errors */ }
+              const partyId = parsed.party_id as number | undefined;
+              const isClickable = !!partyId;
+
+              return (
+                <div
+                  key={n.id}
+                  onClick={() => isClickable && handleNotificationClick(n.id, n.data)}
+                  className="rounded-2xl p-4 flex gap-3 transition-all"
+                  style={{
+                    background: 'var(--surface)',
+                    border: n.is_read
+                      ? '1px solid var(--border)'
+                      : '1px solid color-mix(in srgb, ' + color + ' 40%, transparent)',
+                    cursor: isClickable ? 'pointer' : 'default',
+                  }}
+                >
+                  {/* Icon */}
                   <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-black shrink-0"
-                    style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
+                    className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 mt-0.5"
+                    style={{ background: bg, color }}
                   >
-                    {req.username?.slice(0, 2).toUpperCase() || 'U'}
+                    {typeIcon(n.type)}
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-semibold text-sm" style={{ color: 'var(--text)' }}>
-                        {req.username}
+
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p
+                        className="text-sm font-semibold"
+                        style={{ color: n.is_read ? 'var(--text-muted)' : 'var(--text)' }}
+                      >
+                        {n.title}
                       </p>
-                      {req.isNew && (
+                      {!n.is_read && (
                         <span
-                          className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                          style={{ background: 'var(--primary)', color: 'var(--text-inverse)' }}
-                        >
-                          НОВАЯ
-                        </span>
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ background: color }}
+                        />
                       )}
                     </div>
-                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                      хочет вступить{req.event_title ? ` · ${req.event_title}` : ''}
-                    </p>
-                    {req.created_at && (
-                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-faint)' }}>
-                        {new Date(req.created_at).toLocaleDateString('ru-RU', {
-                          day: 'numeric', month: 'short',
-                          hour: '2-digit', minute: '2-digit',
-                        })}
+                    {n.body && (
+                      <p
+                        className="text-xs mt-0.5 leading-relaxed"
+                        style={{ color: 'var(--text-muted)' }}
+                      >
+                        {n.body}
                       </p>
                     )}
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>
+                      {new Date(n.created_at).toLocaleDateString('ru-RU', {
+                        day: 'numeric', month: 'short',
+                        hour: '2-digit', minute: '2-digit',
+                      })}
+                    </p>
                   </div>
-                </div>
 
-                <div className="flex gap-2 shrink-0">
-                  <button
-                    disabled={acting === String(req.id)}
-                    onClick={() => respond(req.id, 'approve')}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold transition"
-                    style={{ background: 'var(--success-hl)', color: 'var(--success)' }}
-                  >
-                    {acting === String(req.id) ? '...' : '✓ Принять'}
-                  </button>
-                  <button
-                    disabled={acting === String(req.id)}
-                    onClick={() => respond(req.id, 'reject')}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold transition"
-                    style={{ background: 'var(--error-hl)', color: 'var(--error)' }}
-                  >
-                    {acting === String(req.id) ? '...' : '✕ Отклонить'}
-                  </button>
+                  {/* Arrow if clickable */}
+                  {isClickable && (
+                    <div className="shrink-0 self-center" style={{ color: 'var(--text-faint)' }}>
+                      <ArrowIcon />
+                    </div>
+                  )}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>

@@ -1,96 +1,554 @@
 import asyncio
+import logging
 import socketio
-from fastapi import FastAPI, Depends, HTTPException, Query
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy.orm import Session
-from database import engine, SessionLocal
-from models.user import User
-from schemas import UserCreate, UserResponse, UserUpdate
-from schemas import UserLogin, Token
-from auth import hash_password
-from auth import authenticate_user, create_user_token
-import models.user
-import models.event
-import models.attendee
-import models.party
-from models.attendee import EventAttendee
-from models.party import EventParty, PartyMember
-from typing import Optional, List
 from datetime import datetime
-from models.event import Event
-from schemas import EventCreate, EventResponse
-import kudago_api
-from pydantic import BaseModel
-import time
 
-from sqlalchemy import Column, Integer, String, Text, DateTime
-from database import Base as _Base
+logger = logging.getLogger(__name__)
 
-class ChatMessage(_Base):
-    __tablename__ = "chat_messages"
-    id          = Column(Integer, primary_key=True, index=True)
-    room        = Column(String, nullable=False, index=True)   # e.g. "event_42" or "party_7"
-    user_id     = Column(String, nullable=False)
-    username    = Column(String, nullable=False)
-    message     = Column(Text, nullable=False)
-    timestamp   = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
-
-models.user.Base.metadata.create_all(bind=engine)
-models.event.Base.metadata.create_all(bind=engine)
-models.attendee.Base.metadata.create_all(bind=engine)
-models.party.Base.metadata.create_all(bind=engine)
-ChatMessage.__table__.create(bind=engine, checkfirst=True)
-
-
-app = FastAPI(title="GatherVibe API")
-
-# ===== SOCKET.IO =====
-sio = socketio.AsyncServer(
-    async_mode='asgi',
-    cors_allowed_origins=['http://localhost:3000', 'http://127.0.0.1:3000', '*']
+from services.db_schema import (
+    ensure_db_schema_compatibility,
+    get_current_schema_check_mode,
 )
+from deps import (
+    get_db,
+    get_current_user_from_token,
+    get_user_from_socket_token,
+    oauth2_scheme,
+    oauth2_scheme_optional,
+)
+
+from sio_instance import sio  # noqa: E402
+from database import SessionLocal  # noqa: E402
+from models.chat_message import ChatMessage  # noqa: E402
+from models.message_reaction import MessageReaction  # noqa: E402
+from models.user import User  # noqa: E402
+from models.party import EventParty, PartyMember  # noqa: E402
+from routers.parties import MemberStatus  # noqa: E402
+import chat_push  # noqa: E402
+
+import kudago_cache  # noqa: E402
+
+CACHE_SYNC_INTERVAL = 3600  # секунды между синками (1 час)
+REMINDER_LOOP_INTERVAL = 900  # 15 минут
+
+
+async def _cache_sync_loop():
+    """Фоновая задача: синхронизирует кэш событий каждый час."""
+    while True:
+        try:
+            loop = asyncio.get_event_loop()
+            stats = await loop.run_in_executor(None, kudago_cache.sync_all)
+            logger.info("KudaGo cache sync done: %s", stats)
+        except Exception as exc:
+            logger.error("KudaGo cache sync error: %s", exc)
+        await asyncio.sleep(CACHE_SYNC_INTERVAL)
+
+
+async def _reminder_loop():
+    """Фоновая задача: каждые 15 минут проверяет события и рассылает email-напоминания."""
+    import time
+    from email_helpers import send_event_reminder_email, _hours_label
+    from models.party import EventParty, PartyMember
+    from models.user import User
+    from notification_helpers import create_notification
+    from services.notification_dedup import has_party_notification
+
+    # Окно ±7 минут вокруг порогового момента (24 ч или 1 ч до события)
+    WINDOW = 420  # секунд
+
+    while True:
+        await asyncio.sleep(REMINDER_LOOP_INTERVAL)
+        try:
+            now_ts = int(time.time())
+            thresholds = [
+                (24 * 3600, "email_reminder_24h"),
+                (1 * 3600, "email_reminder_1h"),
+            ]
+            db = SessionLocal()
+            try:
+                for delta_secs, notif_type in thresholds:
+                    target_low = now_ts + delta_secs - WINDOW
+                    target_high = now_ts + delta_secs + WINDOW
+
+                    parties = (
+                    db.query(EventParty)
+                        .filter(
+                            EventParty.event_date_ts.isnot(None),
+                            EventParty.event_date_ts >= target_low,
+                            EventParty.event_date_ts <= target_high,
+                        )
+                        .all()
+                    )
+                    if not parties:
+                        continue
+
+                    party_ids = [p.id for p in parties]
+                    party_to_recipients: dict[int, set[int]] = {
+                        p.id: {p.creator_id} for p in parties
+                    }
+
+                    accepted_rows = (
+                        db.query(PartyMember.party_id, PartyMember.user_id)
+                        .filter(
+                            PartyMember.party_id.in_(party_ids),
+                            PartyMember.status == "accepted",
+                        )
+                        .all()
+                    )
+                    for party_id, user_id in accepted_rows:
+                        party_to_recipients.setdefault(party_id, set()).add(user_id)
+
+                    all_recipient_ids = {
+                        user_id
+                        for recipient_ids in party_to_recipients.values()
+                        for user_id in recipient_ids
+                    }
+                    user_by_id = {
+                        user.id: user
+                        for user in db.query(User).filter(User.id.in_(all_recipient_ids)).all()
+                    } if all_recipient_ids else {}
+
+                    email_jobs = []
+                    event_loop = asyncio.get_event_loop()
+
+                    for party in parties:
+                        recipient_ids = party_to_recipients.get(party.id, {party.creator_id})
+                        recipient_list = sorted(recipient_ids)
+                        member_usernames = [
+                            user_by_id[uid].username
+                            for uid in recipient_list
+                            if uid in user_by_id
+                        ]
+                        event_date = datetime.utcfromtimestamp(party.event_date_ts)
+                        hours_before = delta_secs // 3600
+
+                        for uid in recipient_ids:
+                            if has_party_notification(
+                                db,
+                                user_id=uid,
+                                notif_type=notif_type,
+                                party_id=party.id,
+                            ):
+                                continue
+                            user = user_by_id.get(uid)
+                            if not user:
+                                continue
+                            try:
+                                create_notification(
+                                    db,
+                                    uid,
+                                    notif_type,
+                                    f"Событие «{party.event_title or party.title}» через {_hours_label(hours_before)}",
+                                    f"Компания «{party.title}» встречается {event_date.strftime('%d.%m в %H:%M')}",
+                                    {"party_id": party.id},
+                                )
+                                db.commit()
+                            except Exception as exc:
+                                logger.error("Reminder loop create/commit error: %s", exc)
+                                db.rollback()
+                                continue
+
+                            if user.email_notifications:
+                                email_jobs.append(
+                                    event_loop.run_in_executor(
+                                        None,
+                                        lambda u=user, pt=party, ed=event_date, hb=hours_before: (
+                                            send_event_reminder_email(
+                                                to_email=u.email,
+                                                username=u.username,
+                                                event_title=pt.event_title or pt.title,
+                                                event_date=ed,
+                                                party_title=pt.title,
+                                                party_id=pt.id,
+                                                members=member_usernames,
+                                                hours_before=hb,
+                                            )
+                                        ),
+                                    )
+                                )
+
+                    if email_jobs:
+                        for send_result in await asyncio.gather(*email_jobs, return_exceptions=True):
+                            if isinstance(send_result, Exception):
+                                logger.warning("Failed to send reminder email: %s", send_result)
+            except Exception as exc:
+                logger.error("Reminder loop inner error: %s", exc)
+                db.rollback()
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.error("Reminder loop error: %s", exc)
+
+
+async def _post_event_loop():
+    """Background task: every 15 min dispatch +2h / +1d / +14d post-event reminders."""
+    import time
+    from post_event_jobs import run_post_event_jobs
+
+    while True:
+        await asyncio.sleep(REMINDER_LOOP_INTERVAL)
+        try:
+            db = SessionLocal()
+            try:
+                counts = await asyncio.get_event_loop().run_in_executor(
+                    None, run_post_event_jobs, db, int(time.time())
+                )
+                if any(counts.values()):
+                    logger.info("post_event_jobs sent: %s", counts)
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.error("Post-event loop error: %s", exc)
+
+
+async def _invite_expiry_loop():
+    """Фоновая задача: каждые 15 минут помечает приглашения declined за 24h до события."""
+    from routers.parties import expire_pending_invites
+
+    while True:
+        await asyncio.sleep(REMINDER_LOOP_INTERVAL)
+        try:
+            db = SessionLocal()
+            try:
+                expired_ids = expire_pending_invites(db)
+                if expired_ids:
+                    db.commit()
+                    logger.info("Expired %d party invites near event start", len(expired_ids))
+                    for mid in expired_ids:
+                        m = db.query(PartyMember).filter(PartyMember.id == mid).first()
+                        if not m or m.invited_by_user_id is None:
+                            continue
+                        try:
+                            await sio.emit(
+                                "party_invite_expired",
+                                {"invite_id": mid, "party_id": m.party_id},
+                                room=f"user_{m.invited_by_user_id}",
+                            )
+                        except Exception:
+                            pass
+            except Exception as exc:
+                logger.error("Invite expiry inner error: %s", exc)
+                db.rollback()
+            finally:
+                db.close()
+        except Exception as exc:
+            logger.error("Invite expiry loop error: %s", exc)
+
+
+async def _db_cleanup_loop():
+    """Периодически чистит таблицы, которые растут неограниченно.
+
+    - revoked_tokens: удаляем записи с exp < NOW() (JWT уже истёк — blacklist-check не нужен).
+
+    Интервал: раз в час. Пропуск одного запуска допустим.
+    """
+    import logging as _lg
+    logger = _lg.getLogger(__name__)
+    from models.token_revocation import RevokedToken
+    from datetime import datetime
+    from sqlalchemy import delete as sa_delete
+    while True:
+        try:
+            await asyncio.sleep(3600)
+            db = SessionLocal()
+            try:
+                now = datetime.utcnow()
+                try:
+                    r1 = db.execute(sa_delete(RevokedToken).where(RevokedToken.exp < now))
+                    db.commit()
+                    logger.info("db_cleanup: revoked=%s", r1.rowcount)
+                except Exception as exc:
+                    logger.warning("db_cleanup inner error: %s", exc)
+                    db.rollback()
+            finally:
+                db.close()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("db_cleanup loop error: %s", exc)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    import os as _os_lifespan
+
+    schema_check_mode = get_current_schema_check_mode()
+    logger.info("Schema check mode: %s", schema_check_mode)
+    ensure_db_schema_compatibility(mode=schema_check_mode)
+
+    if _os_lifespan.environ.get("SKIP_BACKGROUND_LOOPS") == "1":
+        yield
+        return
+    loop = asyncio.get_event_loop()
+    if not kudago_cache.location_has_cache_direct("kzn"):
+        logger.info("[KudaGo] Cache empty — syncing kzn on startup...")
+        try:
+            n = await loop.run_in_executor(None, lambda: kudago_cache.sync_location("kzn", pages=3))
+            logger.info(f"[KudaGo] kzn sync done: {n} events")
+        except Exception as exc:
+            logger.error(f"[KudaGo] kzn sync FAILED: {exc}")
+    else:
+        logger.info("[KudaGo] kzn cache already populated, skipping startup sync")
+    cache_task = asyncio.create_task(_cache_sync_loop())
+    reminder_task = asyncio.create_task(_reminder_loop())
+    invite_expiry_task = asyncio.create_task(_invite_expiry_loop())
+    post_event_task = asyncio.create_task(_post_event_loop())
+    db_cleanup_task = asyncio.create_task(_db_cleanup_loop())
+    yield
+    cache_task.cancel()
+    reminder_task.cancel()
+    invite_expiry_task.cancel()
+    post_event_task.cancel()
+    db_cleanup_task.cancel()
+
+
+app = FastAPI(title="GatherVibe API", lifespan=lifespan)
+
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+import os as _os  # noqa: E402
+_os.makedirs("uploads/chat", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+from routers import auth, users, events, parties, reviews, notifications, party_coordination  # noqa: E402
+from routers.party_plan import router as party_plan_router  # noqa: E402
+from routers.party_recap import router as party_recap_router  # noqa: E402
+from routers.admin import router as admin_router  # noqa: E402
+from routers.reports import router as reports_router  # noqa: E402
+from routers.appeals import router as appeals_router  # noqa: E402
+
+app.include_router(auth.router)
+app.include_router(admin_router)
+app.include_router(reports_router)
+app.include_router(appeals_router)
+app.include_router(parties.router)
+app.include_router(party_coordination.router)
+app.include_router(party_plan_router)
+app.include_router(party_recap_router)
+app.include_router(reviews.router)
+app.include_router(users.router)
+app.include_router(events.router)
+app.include_router(notifications.router)
+
+
+@app.get("/")
+def read_root():
+    return {"message": "GatherVibe API работает!"}
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "service": "gathervibe-backend"}
+
+
+
+def _extract_token_from_environ(environ: dict) -> str | None:
+    """Читаем JWT из cookie (HttpOnly или non-HttpOnly) в handshake headers.
+
+    Позволяет фронту не передавать токен в socket.emit явно — достаточно того,
+    что браузер сам отправил cookie при установке WS-соединения.
+    Делаем unquote: если кто-то percent-encodit токен (напр. `eyJ...%3D`),
+    без декодирования JWT потом не провалидируется.
+    """
+    from urllib.parse import unquote as _unquote
+    cookie_header = environ.get("HTTP_COOKIE", "") or ""
+    for chunk in cookie_header.split(";"):
+        chunk = chunk.strip()
+        if chunk.startswith("token="):
+            return _unquote(chunk[len("token="):])
+    return None
 
 
 @sio.event
 async def connect(sid, environ):
-    print(f"Client {sid} connected")
+    # Пытаемся аутентифицировать по cookie ещё на handshake и сохранить user_id
+    # в сессии sio. Если токена нет / невалиден — соединение остаётся анонимным
+    # (события типа join_event_chat потом отклонят такие sid).
+    token = _extract_token_from_environ(environ)
+    if token:
+        db = SessionLocal()
+        try:
+            user = get_user_from_socket_token(token, db)
+            await sio.save_session(sid, {"user_id": user.id, "username": user.username})
+        except Exception:
+            pass
+        finally:
+            db.close()
+    logger.info(f"Client {sid} connected")
+
+
+async def _get_session_user(sid, db):
+    """Возвращает User из sio-сессии (установленной в connect), либо None."""
+    try:
+        sess = await sio.get_session(sid)
+    except Exception:
+        return None
+    uid = (sess or {}).get("user_id")
+    if not uid:
+        return None
+    return db.query(User).filter(User.id == uid).first()
+
+
+async def _authenticate_sid(sid, data, db):
+    """Возвращает User для sid. Сначала пытается session (из cookie handshake),
+    затем падает на data.get('token') ради обратной совместимости с фронтом,
+    который ещё шлёт токен в emit. Raises ValueError если не удалось."""
+    user = await _get_session_user(sid, db)
+    if user is not None:
+        return user
+    token = (data or {}).get('token') if isinstance(data, dict) else None
+    if not token:
+        raise ValueError("Требуется авторизация")
+    return get_user_from_socket_token(token, db)
 
 
 @sio.event
 async def disconnect(sid):
-    print(f"Client {sid} disconnected")
+    logger.info(f"Client {sid} disconnected")
+    chat_push.mark_disconnect(sid)
 
 
-# -- Event chat --
 
 @sio.on('join_event_chat')
-async def join_event_chat(sid, event_id: str):
+async def join_event_chat(sid, data):
+    if data is not None and not isinstance(data, dict):
+        data = {}
+    db = SessionLocal()
+    try:
+        user = await _authenticate_sid(sid, data, db)
+    except (ValueError, Exception) as e:
+        logger.warning(f"join_event_chat: auth failed, sid={sid}, error={e}")
+        await sio.emit('error', {'message': 'Требуется авторизация'}, room=sid)
+        db.close()
+        return
+    event_id = (data or {}).get('eventId')
+    if not event_id:
+        db.close()
+        return
+    # event_attendees.event_id хранится как строка (поддержка и числовых local id,
+    # и KudaGo id). Если для этого event_id есть запись в нашей events-таблице —
+    # это локальное событие, требуем attendance. Иначе считаем KudaGo (публичный чат).
+    event_id_str = str(event_id)
+    from models.attendee import EventAttendee
+    from models.event import Event
+    is_local = False
+    try:
+        local_id = int(event_id_str)
+        is_local = db.query(Event).filter(Event.id == local_id).first() is not None
+    except (ValueError, TypeError):
+        pass
+    if is_local:
+        is_attendee = db.query(EventAttendee).filter(
+            EventAttendee.event_id == event_id_str,
+            EventAttendee.user_id == user.id,
+        ).first()
+        if not is_attendee:
+            logger.warning(f"join_event_chat: user {user.id} не подписан на event {event_id_str}, sid={sid}")
+            await sio.emit('error', {'message': 'Нужно быть участником события'}, room=sid)
+            db.close()
+            return
     await sio.enter_room(sid, f'event_{event_id}')
-    await sio.emit('user_joined', {'sid': sid}, room=f'event_{event_id}')
+    await sio.emit('user_joined', {'sid': sid, 'userId': user.id, 'username': user.username}, room=f'event_{event_id}')
+    db.close()
+
+
+def _socket_sanction_block(user) -> str | None:
+    """Возвращает сообщение об ошибке если user забанен/замьючен, иначе None."""
+    from deps import _is_user_banned
+    if _is_user_banned(user):
+        return "Вы заблокированы"
+    muted_until = getattr(user, "muted_until", None)
+    if muted_until is not None:
+        now = datetime.utcnow()
+        mu = muted_until.replace(tzinfo=None) if getattr(muted_until, "tzinfo", None) else muted_until
+        if mu > now:
+            return "Вы временно не можете отправлять сообщения"
+    return None
 
 
 @sio.on('send_message')
 async def send_message(sid, data: dict):
-    event_id = data['eventId']
+    if data is not None and not isinstance(data, dict):
+        data = {}
+    db = SessionLocal()
+    try:
+        user = await _authenticate_sid(sid, data or {}, db)
+    except (ValueError, Exception) as e:
+        await sio.emit('error', {'message': str(e)}, room=sid)
+        db.close()
+        return
+    block = _socket_sanction_block(user)
+    if block:
+        await sio.emit('error', {'message': block}, room=sid)
+        db.close()
+        return
+    event_id = data.get('eventId')
+    message_text = data.get('message', '').strip()
+    if not event_id or not message_text:
+        db.close()
+        await sio.emit('error', {'message': 'eventId и message обязательны'}, room=sid)
+        return
+    # Same attendance check as join_event_chat: нельзя писать в чат локальных
+    # событий, на которое ты не записан. Для KudaGo (отсутствует в events) — публично.
+    event_id_str = str(event_id)
+    from models.attendee import EventAttendee
+    from models.event import Event
+    is_local = False
+    try:
+        local_id = int(event_id_str)
+        is_local = db.query(Event).filter(Event.id == local_id).first() is not None
+    except (ValueError, TypeError):
+        pass
+    if is_local:
+        is_attendee = db.query(EventAttendee).filter(
+            EventAttendee.event_id == event_id_str,
+            EventAttendee.user_id == user.id,
+        ).first()
+        if not is_attendee:
+            db.close()
+            await sio.emit('error', {'message': 'Нужно быть участником события'}, room=sid)
+            return
+    if len(message_text) > 2000:
+        db.close()
+        await sio.emit('error', {'message': 'Сообщение слишком длинное (макс. 2000 символов)'}, room=sid)
+        return
+    try:
+        from services.moderation_filter import filter_text
+        message_text, _ = filter_text(db, message_text)
+    except Exception:
+        pass
     msg = {
-        'message':   data['message'],
-        'userId':    data.get('userId', sid),
-        'username':  data.get('username', 'Аноним'),
+        'message':   message_text,
+        'userId':    str(user.id),
+        'username':  user.username,
+        'avatarUrl': user.avatar_url,
         'timestamp': datetime.utcnow().isoformat()
     }
-    # Persist to DB
-    db = SessionLocal()
     try:
         db.add(ChatMessage(
             room=f'event_{event_id}',
-            user_id=str(msg['userId']),
-            username=msg['username'],
-            message=msg['message'],
+            user_id=str(user.id),
+            username=user.username,
+            message=message_text,
             timestamp=datetime.utcnow(),
         ))
         db.commit()
@@ -104,885 +562,293 @@ async def leave_event_chat(sid, event_id: str):
     await sio.leave_room(sid, f'event_{event_id}')
 
 
-# -- Party chat --
 
 @sio.on('join_party_chat')
 async def join_party_chat(sid, data: dict):
-    party_id = data['partyId']
-    user_id = data.get('userId')
+    if data is not None and not isinstance(data, dict):
+        data = {}
+    db = SessionLocal()
+    try:
+        user = await _authenticate_sid(sid, data or {}, db)
+    except (ValueError, Exception) as e:
+        await sio.emit('error', {'message': str(e)}, room=sid)
+        db.close()
+        return
+    party_id = (data or {}).get('partyId')
+    if not party_id:
+        await sio.emit('error', {'message': 'partyId отсутствует'}, room=sid)
+        db.close()
+        return
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if party is None:
+        await sio.emit('error', {'message': 'Пати не найдена'}, room=sid)
+        db.close()
+        return
+    is_creator = party.creator_id == user.id
+    is_member = db.query(PartyMember).filter(
+        PartyMember.party_id == party_id,
+        PartyMember.user_id == user.id,
+        PartyMember.status == MemberStatus.accepted,
+    ).first() is not None
+    if not (is_creator or is_member):
+        await sio.emit('error', {'message': 'Нет доступа к этому чату'}, room=sid)
+        db.close()
+        return
+    db.close()
     await sio.enter_room(sid, f'party_{party_id}')
+    chat_push.mark_join_party(sid, user.id, party_id)
     await sio.emit(
         'party_user_joined',
-        {'sid': sid, 'userId': user_id},
+        {'sid': sid, 'userId': user.id, 'username': user.username},
         room=f'party_{party_id}'
     )
 
 
+ALLOWED_PARTY_MESSAGE_FILE_TYPES = {
+    "image",
+    "pdf",
+    "file",
+    # Legacy/client-compatible values accepted by older socket payloads.
+    "document",
+    "video",
+    "audio",
+}
+
+
+def _is_allowed_party_file_type(file_type: str) -> bool:
+    return file_type in ALLOWED_PARTY_MESSAGE_FILE_TYPES
+
+
 @sio.on('send_party_message')
 async def send_party_message(sid, data: dict):
-    party_id = data['partyId']
-    msg = {
-        'message':   data['message'],
-        'userId':    data.get('userId', sid),
-        'username':  data.get('username', 'Аноним'),
-        'timestamp': datetime.utcnow().isoformat(),
-        'partyId':   party_id,
-    }
-    # Persist to DB
+    if data is not None and not isinstance(data, dict):
+        data = {}
     db = SessionLocal()
     try:
-        db.add(ChatMessage(
+        user = await _authenticate_sid(sid, data or {}, db)
+    except (ValueError, Exception) as e:
+        logger.warning("send_party_message: auth failed sid=%s err=%s", sid, e)
+        await sio.emit('error', {'message': str(e)}, room=sid)
+        db.close()
+        return
+    block = _socket_sanction_block(user)
+    if block:
+        await sio.emit('error', {'message': block}, room=sid)
+        db.close()
+        return
+    party_id = data.get('partyId')
+    message_text = data.get('message', '').strip()
+    file_url = data.get('file_url')
+    file_type = data.get('file_type')
+    file_name = data.get('file_name')
+    if not party_id or (not message_text and not file_url):
+        await sio.emit('error', {'message': 'partyId и message (или file_url) обязательны'}, room=sid)
+        db.close()
+        return
+    # Валидация file_url: принимаем только локальные /uploads/* и https URL
+    # (без javascript:, data:, file: — иначе stored XSS через href/src).
+    if file_url:
+        if not isinstance(file_url, str) or len(file_url) > 500:
+            await sio.emit('error', {'message': 'Некорректный file_url'}, room=sid)
+            db.close()
+            return
+        if not (file_url.startswith('/uploads/') or file_url.startswith('https://')):
+            await sio.emit('error', {'message': 'file_url должен быть /uploads/... или https://...'}, room=sid)
+            db.close()
+            return
+    if file_type and (not isinstance(file_type, str) or not _is_allowed_party_file_type(file_type)):
+        await sio.emit('error', {'message': 'Некорректный file_type'}, room=sid)
+        db.close()
+        return
+    if file_name and (not isinstance(file_name, str) or len(file_name) > 255):
+        await sio.emit('error', {'message': 'Некорректный file_name'}, room=sid)
+        db.close()
+        return
+    if message_text and len(message_text) > 2000:
+        await sio.emit('error', {'message': 'Сообщение слишком длинное (макс. 2000 символов)'}, room=sid)
+        db.close()
+        return
+    if message_text:
+        try:
+            from services.moderation_filter import filter_text
+            message_text, _ = filter_text(db, message_text)
+        except Exception:
+            pass
+
+    db2 = SessionLocal()
+    try:
+        party = db2.query(EventParty).filter(EventParty.id == party_id).first()
+        is_member = party and (
+            party.creator_id == user.id or
+            db2.query(PartyMember).filter(
+                PartyMember.party_id == party_id,
+                PartyMember.user_id == user.id,
+                PartyMember.status == MemberStatus.accepted,
+            ).first() is not None
+        )
+    finally:
+        db2.close()
+
+    if not is_member:
+        await sio.emit('error', {'message': 'Нет доступа к этому чату'}, room=sid)
+        db.close()
+        return
+
+    try:
+        chat_msg = ChatMessage(
             room=f'party_{party_id}',
-            user_id=str(msg['userId']),
-            username=msg['username'],
-            message=msg['message'],
+            user_id=str(user.id),
+            username=user.username,
+            message=message_text,
             timestamp=datetime.utcnow(),
-        ))
+            file_url=file_url,
+            file_type=file_type,
+            file_name=file_name,
+        )
+        db.add(chat_msg)
         db.commit()
+        db.refresh(chat_msg)
+        msg_id = chat_msg.id
+        user_id_str  = str(user.id)
+        user_username = user.username
+        user_avatar   = user.avatar_url
     finally:
         db.close()
+    msg = {
+        'messageId': msg_id,
+        'message':   message_text,
+        'userId':    user_id_str,
+        'username':  user_username,
+        'avatarUrl': user_avatar,
+        'timestamp': datetime.utcnow().isoformat(),
+        'partyId':   party_id,
+        'fileUrl':   file_url,
+        'fileType':  file_type,
+        'fileName':  file_name,
+        'reactions': {},
+    }
     await sio.emit('receive_party_message', msg, room=f'party_{party_id}')
+
+    try:
+        push_db = SessionLocal()
+        try:
+            party_for_push = push_db.query(EventParty).filter(
+                EventParty.id == party_id
+            ).first()
+            if party_for_push is not None:
+                await chat_push.notify_chat_message(
+                    push_db, party_for_push,
+                    sender_id=user.id,
+                    sender_username=user.username,
+                    message_text=message_text,
+                )
+        finally:
+            push_db.close()
+    except Exception as exc:
+        logger.warning("chat_push.notify_chat_message failed: %s", exc)
 
 
 @sio.on('leave_party_chat')
 async def leave_party_chat(sid, data: dict):
-    party_id = data['partyId']
+    party_id = (data or {}).get('partyId')
+    if not party_id:
+        return
     await sio.leave_room(sid, f'party_{party_id}')
+    chat_push.mark_leave_party(sid, party_id)
 
 
-# -- Notifications --
-
-@sio.on('subscribe_notifications')
-async def subscribe_notifications(sid, data: dict):
-    """Creator subscribes to their personal notification room."""
-    user_id = data.get('userId')
-    if user_id:
-        await sio.enter_room(sid, f'creator_{user_id}')
-        print(f"[notifications] {sid} subscribed to creator_{user_id}")
+ALLOWED_REACTION_EMOJIS = {'👍', '❤️', '😂'}
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000"
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@sio.on('add_party_reaction')
+async def add_party_reaction(sid, data: dict):
+    if data is not None and not isinstance(data, dict):
+        data = {}
+    party_id = (data or {}).get('party_id')
+    message_id = (data or {}).get('message_id')
+    emoji = (data or {}).get('emoji')
+    if not party_id or not message_id or not emoji:
+        await sio.emit('error', {'message': 'party_id, message_id и emoji обязательны'}, room=sid)
+        return
+    if emoji not in ALLOWED_REACTION_EMOJIS:
+        await sio.emit('error', {'message': f'Недопустимый эмодзи. Разрешены: {", ".join(ALLOWED_REACTION_EMOJIS)}'}, room=sid)
+        return
 
-
-def get_db():
     db = SessionLocal()
     try:
-        yield db
+        try:
+            user = await _authenticate_sid(sid, data or {}, db)
+        except (ValueError, Exception) as e:
+            await sio.emit('error', {'message': str(e)}, room=sid)
+            return
+
+        party = db.query(EventParty).filter(EventParty.id == party_id).first()
+        is_member = party and (
+            party.creator_id == user.id or
+            db.query(PartyMember).filter(
+                PartyMember.party_id == party_id,
+                PartyMember.user_id == user.id,
+                PartyMember.status == MemberStatus.accepted,
+            ).first() is not None
+        )
+        if not is_member:
+            await sio.emit('error', {'message': 'Нет доступа к этому чату'}, room=sid)
+            return
+
+        existing = db.query(MessageReaction).filter(
+            MessageReaction.message_id == message_id,
+            MessageReaction.user_id == str(user.id),
+            MessageReaction.emoji == emoji,
+        ).first()
+        if existing:
+            db.delete(existing)
+        else:
+            db.add(MessageReaction(
+                message_id=message_id,
+                room=f'party_{party_id}',
+                user_id=str(user.id),
+                emoji=emoji,
+            ))
+        db.commit()
+
+        reaction_rows = (
+            db.query(MessageReaction)
+            .filter(MessageReaction.message_id == message_id)
+            .all()
+        )
+        reactions: dict = {}
+        for rr in reaction_rows:
+            reactions.setdefault(rr.emoji, []).append(rr.user_id)
     finally:
         db.close()
 
-
-def get_current_user_from_token(token: str, db: Session) -> User:
-    from jwt_handler import verify_token
-    payload = verify_token(token)
-    if payload is None:
-        raise HTTPException(status_code=401, detail="Неверный токен")
-    email = payload.get("sub")
-    if not email:
-        raise HTTPException(status_code=401, detail="Неверный токен")
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-    return user
-
-
-# socket_app — главное ASGI-приложение для uvicorn
-socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
-
-
-@app.post("/login", response_model=Token)
-def login(user_credentials: UserLogin, db: Session = Depends(get_db)):
-    user = authenticate_user(user_credentials.email, user_credentials.password, db)
-    if not user:
-        raise HTTPException(status_code=401, detail="Неверный email или пароль",
-                            headers={"WWW-Authenticate": "Bearer"})
-    if not user.is_active:
-        raise HTTPException(status_code=400, detail="Пользователь заблокирован")
-    return create_user_token(user)
-
-
-@app.get("/users/me", response_model=UserResponse)
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    return get_current_user_from_token(token, db)
-
-
-@app.patch("/users/me", response_model=UserResponse)
-def update_profile(
-    data: UserUpdate,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user_from_token(token, db)
-    if data.username is not None:
-        data.username = data.username.strip()
-        if not data.username:
-            raise HTTPException(status_code=400, detail="Username не может быть пустым")
-        user.username = data.username
-    if data.city is not None:
-        user.city = data.city.strip() or None
-    if data.bio is not None:
-        user.bio = data.bio.strip()[:200] or None
-    if data.interests is not None:
-        user.interests = data.interests.strip() or None
-    db.commit()
-    db.refresh(user)
-    return user
-
-
-# ===== MESSAGES (chat history) =====
-
-@app.get("/messages/{room}")
-def get_messages(room: str, limit: int = Query(default=50, le=200), db: Session = Depends(get_db)):
-    rows = (
-        db.query(ChatMessage)
-        .filter(ChatMessage.room == room)
-        .order_by(ChatMessage.timestamp.asc())
-        .limit(limit)
-        .all()
-    )
-    return [
-        {
-            "message":   r.message,
-            "userId":    r.user_id,
-            "username":  r.username,
-            "timestamp": r.timestamp.isoformat(),
-        }
-        for r in rows
-    ]
-
-
-# ===== EVENTS =====
-
-@app.get("/events", response_model=List[EventResponse])
-def get_events(
-    skip: int = 0, limit: int = 20,
-    city: Optional[str] = None, category: Optional[str] = None,
-    search: Optional[str] = None, db: Session = Depends(get_db)
-):
-    now = datetime.utcnow()
-    query = db.query(Event).filter(Event.is_active == True, Event.date_time >= now)
-    if city:
-        query = query.filter(Event.city.ilike(f"%{city}%"))
-    if category:
-        query = query.filter(Event.category == category)
-    if search:
-        query = query.filter(
-            (Event.title.ilike(f"%{search}%")) |
-            (Event.description.ilike(f"%{search}%")) |
-            (Event.location.ilike(f"%{search}%"))
-        )
-    return query.order_by(Event.date_time).offset(skip).limit(limit).all()
-
-
-@app.get("/events/categories")
-def get_categories(db: Session = Depends(get_db)):
-    categories = db.query(Event.category).distinct().all()
-    return {"categories": [cat[0] for cat in categories if cat[0]]}
-
-
-@app.get("/events/cities")
-def get_cities(db: Session = Depends(get_db)):
-    cities = db.query(Event.city).distinct().all()
-    return {"cities": [city[0] for city in cities if city[0]]}
-
-
-@app.get("/events/{event_id}", response_model=EventResponse)
-def get_event(event_id: int, db: Session = Depends(get_db)):
-    event = db.query(Event).filter(Event.id == event_id, Event.is_active == True).first()
-    if event is None:
-        raise HTTPException(status_code=404, detail="Событие не найдено")
-    return event
-
-
-@app.post("/events", response_model=EventResponse)
-def create_event(
-    event: EventCreate,
-    db: Session = Depends(get_db),
-    token: str = Depends(oauth2_scheme),
-):
-    user = get_current_user_from_token(token, db)
-    db_event = Event(**event.dict(), created_by=user.id, current_participants=0)
-    db.add(db_event)
-    db.commit()
-    db.refresh(db_event)
-    return db_event
-
-
-# ===== KUDAGO =====
-
-@app.get("/kudago/events")
-def kudago_get_events(
-    location: str = Query(default="kzn"),
-    categories: Optional[str] = Query(default=None),
-    is_free: Optional[bool] = Query(default=None),
-    search: Optional[str] = Query(default=None),
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
-    actual_since: Optional[int] = Query(default=None),
-    actual_until: Optional[int] = Query(default=None),
-):
-    try:
-        now_ts = int(time.time())
-        effective_since = max(actual_since, now_ts) if actual_since else now_ts
-        effective_until = actual_until
-
-        if search:
-            raw = kudago_api.search(
-                query=search, ctype="event", location=location,
-                is_free=is_free, page=page, page_size=page_size,
-                actual_since=effective_since, actual_until=effective_until,
-            )
-        else:
-            raw = kudago_api.get_events(
-                location=location, categories=categories, is_free=is_free,
-                page=page, page_size=page_size,
-                actual_since=effective_since, actual_until=effective_until,
-            )
-        events = kudago_api.parse_events(raw)
-        return {
-            "count": raw.get("count", len(events)),
-            "next": raw.get("next"),
-            "previous": raw.get("previous"),
-            "page": page,
-            "page_size": page_size,
-            "results": events,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
-
-
-@app.get("/kudago/events/{event_id}")
-def kudago_get_event_detail(event_id: int):
-    try:
-        return kudago_api.parse_event_detail(kudago_api.get_event_by_id(event_id))
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
-
-
-@app.get("/kudago/today")
-def kudago_events_today(location: str = Query(default="kzn")):
-    try:
-        return kudago_api.get_events_today(location=location)
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
-
-
-@app.get("/kudago/categories")
-def kudago_categories():
-    try:
-        return kudago_api.get_event_categories()
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
-
-
-@app.get("/kudago/locations")
-def kudago_locations():
-    try:
-        return kudago_api.get_locations()
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
-
-
-# ===== MATCHING / ATTENDEES =====
-
-class AttendeeCreateBody(BaseModel):
-    comment: Optional[str] = None
-    is_looking: bool = True
-
-
-class AttendeeOut(BaseModel):
-    id: int
-    user_id: int
-    username: str
-    city: Optional[str]
-    interests: Optional[str]
-    comment: Optional[str]
-    is_looking: bool
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-class AttendeeMatchOut(AttendeeOut):
-    common_count: int = 0
-
-
-@app.post("/attendees/{event_id}", response_model=AttendeeOut)
-def join_event(
-    event_id: str,
-    body: AttendeeCreateBody,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user_from_token(token, db)
-    existing = db.query(EventAttendee).filter(
-        EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
-    ).first()
-    if existing:
-        existing.comment = body.comment
-        existing.is_looking = body.is_looking
-        db.commit()
-        db.refresh(existing)
-        row = existing
-    else:
-        row = EventAttendee(
-            event_id=event_id,
-            user_id=user.id,
-            comment=body.comment,
-            is_looking=body.is_looking,
-        )
-        db.add(row)
-        db.commit()
-        db.refresh(row)
-
-    # Гарантируем, что created_at никогда не будет None
-    # (server_default возвращается после refresh, но добавляем fallback на всякий случай)
-    created_at = row.created_at or datetime.utcnow()
-
-    return AttendeeOut(
-        id=row.id,
-        user_id=user.id,
-        username=user.username,
-        city=user.city,
-        interests=user.interests,
-        comment=row.comment,
-        is_looking=row.is_looking,
-        created_at=created_at,
-    )
-
-
-@app.delete("/attendees/{event_id}", status_code=204)
-def leave_event(
-    event_id: str,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user_from_token(token, db)
-    db.query(EventAttendee).filter(
-        EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
-    ).delete()
-    db.commit()
-
-
-@app.get("/attendees/{event_id}/matches", response_model=List[AttendeeMatchOut])
-def get_matches(
-    event_id: str,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    """Returns attendees sorted by number of common interests with the current user."""
-    user = get_current_user_from_token(token, db)
-    my_interests: set = set(
-        i.strip() for i in (user.interests or "").split(",") if i.strip()
-    )
-
-    rows = (
-        db.query(EventAttendee, User)
-        .join(User, EventAttendee.user_id == User.id)
-        .filter(EventAttendee.event_id == event_id, EventAttendee.user_id != user.id)
-        .all()
-    )
-
-    result = []
-    for a, u in rows:
-        their = set(i.strip() for i in (u.interests or "").split(",") if i.strip())
-        common = len(my_interests & their)
-        result.append(AttendeeMatchOut(
-            id=a.id, user_id=u.id, username=u.username, city=u.city,
-            interests=u.interests, comment=a.comment,
-            is_looking=a.is_looking,
-            created_at=a.created_at or datetime.utcnow(),
-            common_count=common,
-        ))
-
-    result.sort(key=lambda x: x.common_count, reverse=True)
-    return result
-
-
-@app.get("/attendees/{event_id}/me")
-def get_my_attendance(
-    event_id: str,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user_from_token(token, db)
-    row = db.query(EventAttendee).filter(
-        EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
-    ).first()
-    if not row:
-        return {"attending": False}
-    return {"attending": True, "is_looking": row.is_looking, "comment": row.comment}
-
-
-@app.get("/attendees/{event_id}", response_model=List[AttendeeOut])
-def get_attendees(
-    event_id: str,
-    only_looking: bool = Query(default=False),
-    db: Session = Depends(get_db),
-):
-    query = db.query(EventAttendee, User).join(User, EventAttendee.user_id == User.id).filter(
-        EventAttendee.event_id == event_id
-    )
-    if only_looking:
-        query = query.filter(EventAttendee.is_looking == True)
-    rows = query.order_by(EventAttendee.created_at.desc()).all()
-    return [
-        AttendeeOut(
-            id=a.id, user_id=u.id, username=u.username, city=u.city,
-            interests=u.interests, comment=a.comment,
-            is_looking=a.is_looking,
-            created_at=a.created_at or datetime.utcnow(),
-        )
-        for a, u in rows
-    ]
-
-
-# ===== PARTIES (COMPANY ROOMS) =====
-
-class PartyCreateBody(BaseModel):
-    title: str
-    description: Optional[str] = None
-    max_members: int = 4
-
-
-class PartyUpdateBody(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    max_members: Optional[int] = None
-
-
-class PartyKickBody(BaseModel):
-    reason: Optional[str] = None
-
-
-class PartyMemberOut(BaseModel):
-    user_id: int
-    username: str
-    city: Optional[str]
-    interests: Optional[str]
-    status: str
-    joined_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-class PartyOut(BaseModel):
-    id: int
-    event_id: str
-    title: str
-    description: Optional[str]
-    max_members: int
-    creator_id: int
-    creator_username: str
-    is_open: bool
-    members: List[PartyMemberOut]
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-def _build_party_out(party: EventParty, db: Session) -> PartyOut:
-    creator = db.query(User).filter(User.id == party.creator_id).first()
-    members_rows = db.query(PartyMember, User).join(User, PartyMember.user_id == User.id).filter(
-        PartyMember.party_id == party.id,
-        PartyMember.user_id != party.creator_id
-    ).all()
-    members = [
-        PartyMemberOut(user_id=u.id, username=u.username, city=u.city,
-                       interests=u.interests, status=m.status, joined_at=m.joined_at)
-        for m, u in members_rows
-    ]
-    return PartyOut(
-        id=party.id, event_id=party.event_id, title=party.title,
-        description=party.description, max_members=party.max_members,
-        creator_id=party.creator_id,
-        creator_username=creator.username if creator else "?",
-        is_open=party.is_open, members=members, created_at=party.created_at,
-    )
-
-
-@app.get("/parties/{event_id}", response_model=List[PartyOut])
-def get_parties(event_id: str, db: Session = Depends(get_db)):
-    parties = db.query(EventParty).filter(EventParty.event_id == event_id).order_by(
-        EventParty.created_at.desc()
-    ).all()
-    return [_build_party_out(p, db) for p in parties]
-
-
-@app.get("/parties/detail/{party_id}", response_model=PartyOut)
-def get_party_detail(party_id: int, db: Session = Depends(get_db)):
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    return _build_party_out(party, db)
-
-
-# ===== NOTIFICATIONS — pending requests for party creators =====
-
-class PendingRequestOut(BaseModel):
-    id: int
-    user_id: int
-    username: str
-    party_id: int
-    event_title: Optional[str] = None
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-@app.get("/parties/my-pending-requests", response_model=List[PendingRequestOut])
-def get_my_pending_requests(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    """Return all pending join requests for parties created by the current user."""
-    current_user = get_current_user_from_token(token, db)
-    rows = (
-        db.query(PartyMember, User, EventParty)
-        .join(User, PartyMember.user_id == User.id)
-        .join(EventParty, PartyMember.party_id == EventParty.id)
-        .filter(
-            EventParty.creator_id == current_user.id,
-            PartyMember.status == "pending",
-            PartyMember.user_id != current_user.id,
-        )
-        .order_by(PartyMember.joined_at.desc())
-        .all()
-    )
-    result = []
-    for member, user, party in rows:
-        result.append(PendingRequestOut(
-            id=member.id,
-            user_id=user.id,
-            username=user.username,
-            party_id=party.id,
-            event_title=party.title,
-            created_at=member.joined_at,
-        ))
-    return result
-
-
-@app.post("/parties/requests/{request_id}/approve", response_model=PartyOut)
-def approve_request(
-    request_id: int,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    """Approve a pending join request by PartyMember.id."""
-    current_user = get_current_user_from_token(token, db)
-    member = db.query(PartyMember).filter(PartyMember.id == request_id).first()
-    if not member:
-        raise HTTPException(status_code=404, detail="Заявка не найдена")
-    party = db.query(EventParty).filter(EventParty.id == member.party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может принимать участников")
-    accepted_count = db.query(PartyMember).filter(
-        PartyMember.party_id == party.id, PartyMember.status == "accepted"
-    ).count()
-    if accepted_count + 1 >= party.max_members:
-        raise HTTPException(status_code=400, detail="Компания уже заполнена")
-    member.status = "accepted"
-    new_total = accepted_count + 2
-    if new_total >= party.max_members:
-        party.is_open = False
-    db.commit()
-    return _build_party_out(party, db)
-
-
-@app.post("/parties/requests/{request_id}/reject", response_model=PartyOut)
-def reject_request(
-    request_id: int,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    """Reject (delete) a pending join request by PartyMember.id."""
-    current_user = get_current_user_from_token(token, db)
-    member = db.query(PartyMember).filter(PartyMember.id == request_id).first()
-    if not member:
-        raise HTTPException(status_code=404, detail="Заявка не найдена")
-    party = db.query(EventParty).filter(EventParty.id == member.party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может отклонять заявки")
-    db.delete(member)
-    db.commit()
-    return _build_party_out(party, db)
-
-
-@app.post("/parties/{event_id}", response_model=PartyOut)
-def create_party(
-    event_id: str,
-    body: PartyCreateBody,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user_from_token(token, db)
-    if body.max_members < 2 or body.max_members > 20:
-        raise HTTPException(status_code=400, detail="max_members must be between 2 and 20")
-    party = EventParty(
-        event_id=event_id,
-        title=body.title.strip(),
-        description=body.description,
-        max_members=body.max_members,
-        creator_id=user.id,
-        is_open=True,
-    )
-    db.add(party)
-    db.commit()
-    db.refresh(party)
-    return _build_party_out(party, db)
-
-
-@app.patch("/parties/{party_id}", response_model=PartyOut)
-def update_party(
-    party_id: int,
-    body: PartyUpdateBody,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может редактировать компанию")
-    if body.title is not None:
-        if not body.title.strip():
-            raise HTTPException(status_code=400, detail="Название не может быть пустым")
-        party.title = body.title.strip()
-    if body.description is not None:
-        party.description = body.description.strip() or None
-    if body.max_members is not None:
-        if body.max_members < 2 or body.max_members > 20:
-            raise HTTPException(status_code=400, detail="max_members должно быть от 2 до 20")
-        accepted_count = db.query(PartyMember).filter(
-            PartyMember.party_id == party_id, PartyMember.status == "accepted",
-            PartyMember.user_id != party.creator_id
-        ).count()
-        if body.max_members < accepted_count + 1:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Нельзя уменьшить: уже принято {accepted_count} участников"
-            )
-        party.max_members = body.max_members
-    db.commit()
-    return _build_party_out(party, db)
-
-
-@app.delete("/parties/{party_id}", status_code=200)
-def delete_party(
-    party_id: int,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может удалить компанию")
-    db.query(PartyMember).filter(PartyMember.party_id == party_id).delete()
-    db.delete(party)
-    db.commit()
-    return {"ok": True}
-
-
-@app.post("/parties/{party_id}/join", response_model=PartyOut)
-async def join_party(
-    party_id: int,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if not party.is_open:
-        raise HTTPException(status_code=400, detail="Набор закрыт")
-    accepted_count = db.query(PartyMember).filter(
-        PartyMember.party_id == party_id, PartyMember.status == "accepted"
-    ).count()
-    if accepted_count + 1 >= party.max_members:
-        raise HTTPException(status_code=400, detail="Компания заполнена")
-    existing = db.query(PartyMember).filter(
-        PartyMember.party_id == party_id, PartyMember.user_id == user.id
-    ).first()
-    if existing:
-        if existing.status == 'rejected':
-            db.delete(existing)
-            db.commit()
-        else:
-            raise HTTPException(status_code=400, detail="Вы уже в этой компании или подали заявку")
-    m = PartyMember(party_id=party_id, user_id=user.id, status="pending")
-    db.add(m)
-    db.commit()
-
     await sio.emit(
-        "new_party_request",
+        'party_reaction_updated',
         {
-            "party_id": party.id,
-            "party_title": party.title,
-            "user_id": user.id,
-            "username": user.username,
+            'messageId': message_id,
+            'partyId':   party_id,
+            'reactions': reactions,
         },
-        room=f"creator_{party.creator_id}",
+        room=f'party_{party_id}',
     )
 
-    return _build_party_out(party, db)
 
 
-@app.delete("/parties/{party_id}/leave", status_code=200)
-def leave_party(
-    party_id: int,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id == user.id:
-        raise HTTPException(status_code=400, detail="Создатель не может покинуть компанию. Закройте её.")
-    member = db.query(PartyMember).filter(
-        PartyMember.party_id == party_id, PartyMember.user_id == user.id
-    ).first()
-    if not member:
-        raise HTTPException(status_code=404, detail="Вы не состоите в этой компании")
-    if member.status == 'rejected':
-        raise HTTPException(status_code=400, detail="Вы не являетесь участником компании")
-    db.delete(member)
-    db.commit()
-    return {"ok": True}
+@sio.on('subscribe_notifications')
+async def subscribe_notifications(sid, data: dict):
+    if data is not None and not isinstance(data, dict):
+        data = {}
+    db = SessionLocal()
+    try:
+        try:
+            user = await _authenticate_sid(sid, data or {}, db)
+        except (ValueError, Exception) as e:
+            await sio.emit('error', {'message': str(e)}, room=sid)
+            return
+    finally:
+        db.close()
+    await sio.enter_room(sid, f'user_{user.id}')
+    logger.info(f"[notifications] {sid} subscribed to user_{user.id}")
 
 
-@app.post("/parties/{party_id}/members/{user_id}/accept", response_model=PartyOut)
-def accept_member(
-    party_id: int,
-    user_id: int,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может принимать участников")
-    accepted_count = db.query(PartyMember).filter(
-        PartyMember.party_id == party_id, PartyMember.status == "accepted"
-    ).count()
-    if accepted_count + 1 >= party.max_members:
-        raise HTTPException(status_code=400, detail="Компания уже заполнена")
-    m = db.query(PartyMember).filter(
-        PartyMember.party_id == party_id, PartyMember.user_id == user_id
-    ).first()
-    if not m:
-        raise HTTPException(status_code=404, detail="Заявка не найдена")
-    m.status = "accepted"
-    new_total = accepted_count + 2
-    if new_total >= party.max_members:
-        party.is_open = False
-    db.commit()
-    return _build_party_out(party, db)
-
-
-@app.post("/parties/{party_id}/members/{user_id}/reject", response_model=PartyOut)
-def reject_member(
-    party_id: int,
-    user_id: int,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может отклонять заявки")
-    m = db.query(PartyMember).filter(
-        PartyMember.party_id == party_id, PartyMember.user_id == user_id
-    ).first()
-    if not m:
-        raise HTTPException(status_code=404, detail="Заявка не найдена")
-    db.delete(m)
-    db.commit()
-    return _build_party_out(party, db)
-
-
-@app.post("/parties/{party_id}/close", response_model=PartyOut)
-def close_party(
-    party_id: int,
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    current_user = get_current_user_from_token(token, db)
-    party = db.query(EventParty).filter(EventParty.id == party_id).first()
-    if not party:
-        raise HTTPException(status_code=404, detail="Компания не найдена")
-    if party.creator_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Только создатель может закрыть компанию")
-    party.is_open = False
-    db.commit()
-    return _build_party_out(party, db)
-
-
-# ===== SYSTEM =====
-
-@app.get("/")
-def read_root():
-    return {"message": "GatherVibe API работает!"}
-
-
-@app.get("/health")
-def health_check():
-    return {"status": "ok", "service": "gathervibe-backend"}
-
-
-@app.get("/users", response_model=List[UserResponse])
-def get_users(
-    token: str = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-):
-    get_current_user_from_token(token, db)   # auth check only
-    return db.query(User).all()
-
-
-@app.post("/register", response_model=UserResponse)
-def register_user(user: UserCreate, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.email == user.email).first():
-        raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
-    new_user = User(
-        email=user.email, username=user.username,
-        hashed_password=hash_password(user.password),
-        city=user.city, interests=user.interests,
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return new_user
-
-
-@app.get("/users/{user_id}", response_model=UserResponse)
-def get_user(user_id: int, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-    return user
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app)

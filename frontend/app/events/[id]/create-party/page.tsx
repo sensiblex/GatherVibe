@@ -5,33 +5,53 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '../../../components/Navbar';
 import { useAuth } from '../../../context/AuthContext';
+import { apiFetch } from '../../../lib/apiFetch';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+function parseErrorDetail(detail: unknown): string {
+  if (!detail) return 'Ошибка создания';
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((e) => {
+        if (typeof e === 'object' && e !== null) {
+          const loc = (e as Record<string, unknown>).loc;
+          const msg = (e as Record<string, unknown>).msg;
+          const locStr = Array.isArray(loc) ? loc.join(' → ') : '';
+          return locStr ? `${locStr}: ${msg}` : String(msg ?? JSON.stringify(e));
+        }
+        return String(e);
+      })
+      .join('; ');
+  }
+  return JSON.stringify(detail);
+}
 
 export default function CreatePartyPage() {
   const params  = useParams();
   const router  = useRouter();
   const eventId = params?.id as string;
-  const { token } = useAuth();
+  const { token, isLoading } = useAuth();
 
   const [form, setForm]         = useState({ title: '', description: '', max_members: 4 });
   const [creating, setCreating] = useState(false);
   const [error, setError]       = useState<string | null>(null);
 
   useEffect(() => {
-    if (token === null) {
+    if (!isLoading && token === null) {
       router.replace('/login');
     }
-  }, [token, router]);
+  }, [isLoading, token, router]);
 
   const handleCreate = async () => {
     if (!token) return;
     if (!form.title.trim()) { setError('Название обязательно'); return; }
     setCreating(true); setError(null);
     try {
-      const res = await fetch(`${API_BASE}/parties/${eventId}`, {
+      const res = await apiFetch(`/parties/event/${eventId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           title: form.title.trim(),
           description: form.description.trim() || null,
@@ -40,7 +60,7 @@ export default function CreatePartyPage() {
       });
       if (!res.ok) {
         const data = await res.json();
-        setError(data.detail ?? 'Ошибка создания');
+        setError(parseErrorDetail(data.detail));
         setCreating(false);
         return;
       }
@@ -75,7 +95,6 @@ export default function CreatePartyPage() {
             boxShadow: 'var(--shadow-sm)',
           }}
         >
-          {/* Header */}
           <div className="px-8 py-6 bg-gradient-to-r from-purple-600 to-pink-600">
             <div className="flex items-center gap-3">
               <span className="text-4xl">🎉</span>
@@ -86,7 +105,6 @@ export default function CreatePartyPage() {
             </div>
           </div>
 
-          {/* Form */}
           <div className="px-8 py-6 flex flex-col gap-5">
             {error && (
               <div
@@ -101,12 +119,8 @@ export default function CreatePartyPage() {
               </div>
             )}
 
-            {/* Title */}
             <div className="flex flex-col gap-1.5">
-              <label
-                className="text-xs font-bold uppercase tracking-wide"
-                style={{ color: 'var(--text-muted)' }}
-              >
+              <label className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                 Название компании *
               </label>
               <input
@@ -121,12 +135,8 @@ export default function CreatePartyPage() {
               </span>
             </div>
 
-            {/* Description */}
             <div className="flex flex-col gap-1.5">
-              <label
-                className="text-xs font-bold uppercase tracking-wide"
-                style={{ color: 'var(--text-muted)' }}
-              >
+              <label className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                 Описание
               </label>
               <textarea
@@ -141,12 +151,8 @@ export default function CreatePartyPage() {
               </span>
             </div>
 
-            {/* Max members */}
             <div className="flex flex-col gap-1.5">
-              <label
-                className="text-xs font-bold uppercase tracking-wide"
-                style={{ color: 'var(--text-muted)' }}
-              >
+              <label className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                 Макс. количество участников
               </label>
               <div className="flex items-center gap-4">
@@ -154,40 +160,26 @@ export default function CreatePartyPage() {
                   type="button"
                   onClick={() => setForm(f => ({ ...f, max_members: Math.max(2, f.max_members - 1) }))}
                   className="w-10 h-10 rounded-full font-bold text-lg transition hover:opacity-80"
-                  style={{
-                    border: '1px solid var(--border)',
-                    color: 'var(--text-muted)',
-                    background: 'var(--surface-2)',
-                  }}
+                  style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}
                 >
                   −
                 </button>
-                <span
-                  className="text-2xl font-black w-8 text-center"
-                  style={{ color: 'var(--text)' }}
-                >
+                <span className="text-2xl font-black w-8 text-center" style={{ color: 'var(--text)' }}>
                   {form.max_members}
                 </span>
                 <button
                   type="button"
                   onClick={() => setForm(f => ({ ...f, max_members: Math.min(20, f.max_members + 1) }))}
                   className="w-10 h-10 rounded-full font-bold text-lg transition hover:opacity-80"
-                  style={{
-                    border: '1px solid var(--border)',
-                    color: 'var(--text-muted)',
-                    background: 'var(--surface-2)',
-                  }}
+                  style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}
                 >
                   +
                 </button>
-                <span className="text-sm" style={{ color: 'var(--text-faint)' }}>
-                  человек (включая вас)
-                </span>
+                <span className="text-sm" style={{ color: 'var(--text-faint)' }}>человек (включая вас)</span>
               </div>
             </div>
           </div>
 
-          {/* Actions */}
           <div className="px-8 pb-8 flex gap-3">
             <button
               onClick={handleCreate}
@@ -200,11 +192,7 @@ export default function CreatePartyPage() {
             <Link
               href={`/events/${eventId}`}
               className="px-5 py-3 rounded-xl text-sm font-medium transition hover:opacity-80"
-              style={{
-                border: '1px solid var(--border)',
-                color: 'var(--text-muted)',
-                background: 'var(--surface-2)',
-              }}
+              style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}
             >
               Отмена
             </Link>

@@ -1,17 +1,20 @@
-'use client';
+﻿'use client';
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { io, Socket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
+import { useAuth } from '../context/AuthContext';
+import { getSocket } from '../lib/socket';
+import { apiFetch } from '../lib/apiFetch';
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:8000';
-const API_BASE   = process.env.NEXT_PUBLIC_API_URL    || 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 interface Message {
   message: string;
   userId: string;
   username: string;
   timestamp: string;
+  avatarUrl?: string | null;
 }
 
 export default function EventChat({
@@ -23,6 +26,7 @@ export default function EventChat({
   currentUserId: string;
   currentUsername: string;
 }) {
+  const { token } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [connected, setConnected] = useState(false);
@@ -30,44 +34,61 @@ export default function EventChat({
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // 2. Socket connection
   useEffect(() => {
-    // Load history
-    fetch(`${SOCKET_URL}/messages/event_${eventId}?limit=50`)
-      .then(r => r.ok ? r.json() : [])
-      .then((history: Message[]) => {
+    // Load history — через apiFetch (cookie auth). AbortController чтобы
+    // не писать stale state при быстрой навигации между событиями.
+    const controller = new AbortController();
+    apiFetch(`${API_BASE}/messages/event_${eventId}?limit=50`, { signal: controller.signal })
+      .then(r => r.ok ? r.json() : { messages: [] })
+      .then((data: { messages: Message[] } | Message[]) => {
+        if (controller.signal.aborted) return;
+        const history = Array.isArray(data) ? data : data.messages ?? [];
         setMessages(history);
         setHistoryLoaded(true);
       })
-      .catch(() => setHistoryLoaded(true));
+      .catch(() => { if (!controller.signal.aborted) setHistoryLoaded(true); });
 
-    const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'] });
+    const socket = getSocket();
     socketRef.current = socket;
 
     const join = () => {
       setConnected(true);
-      socket.emit('join_event_chat', eventId);
+      // Auth — через cookie в WS-handshake.
+      socket.emit('join_event_chat', { eventId });
     };
 
-    socket.on('connect', join);
-    if (socket.connected) join();
+    if (socket.connected) {
+      join();
+    } else {
+      socket.once('connect', join);
+    }
 
-    socket.on('disconnect', () => setConnected(false));
+    const onDisconnect = () => setConnected(false);
+    const onConnect = () => setConnected(true);
+    socket.on('disconnect', onDisconnect);
+    socket.on('connect', onConnect);
 
     const handleMessage = (data: Message) => {
       setMessages(prev => [...prev, data].slice(-200));
     };
     socket.on('receive_message', handleMessage);
 
+    const onServerError = (payload: { message?: string }) => {
+      console.error('[EventChat] server error:', payload?.message || payload);
+    };
+    socket.on('error', onServerError);
+
     return () => {
+      controller.abort();
       socket.emit('leave_event_chat', eventId);
       socket.off('connect', join);
-      socket.off('disconnect');
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
       socket.off('receive_message', handleMessage);
-      socket.disconnect();
+      socket.off('error', onServerError);
       socketRef.current = null;
     };
-  }, [eventId]);
+  }, [eventId, token]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -75,12 +96,11 @@ export default function EventChat({
 
   const sendMessage = () => {
     const text = input.trim();
-    if (!socketRef.current || !text) return;
+    if (!socketRef.current || !text || !token) return;
+    // Auth — через cookie в WS-handshake.
     socketRef.current.emit('send_message', {
       eventId,
       message: text,
-      userId: currentUserId,
-      username: currentUsername,
     });
     setInput('');
   };
@@ -101,7 +121,7 @@ export default function EventChat({
     <div className="rounded-2xl shadow-sm overflow-hidden" style={cardStyle}>
       {/* Header */}
       <div
-        className="px-6 py-4 flex items-center justify-between"
+        className="px-6 py-4"
         style={{ borderBottom: '1px solid var(--border)' }}
       >
         <div>
@@ -111,16 +131,6 @@ export default function EventChat({
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
             Общайся с другими участниками
           </p>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span
-            className={`w-2 h-2 rounded-full ${
-              connected ? 'bg-emerald-500 animate-pulse' : 'bg-gray-400'
-            }`}
-          />
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            {connected ? 'Подключено' : 'Подключение...'}
-          </span>
         </div>
       </div>
 
@@ -142,9 +152,12 @@ export default function EventChat({
         ) : (
           messages.map((m, i) => {
             const isMe = String(m.userId) === String(currentUserId);
+            // Stable key: id от истории или (userId,timestamp) для realtime.
+            // Индекс массива даёт full re-render при каждом новом сообщении.
+            const stableKey = (m as { id?: number | string }).id ?? `${m.userId}-${m.timestamp}-${i}`;
             return (
               <div
-                key={i}
+                key={stableKey}
                 className={`flex gap-2 ${
                   isMe ? 'flex-row-reverse' : 'flex-row'
                 }`}
@@ -152,15 +165,16 @@ export default function EventChat({
                 {!isMe && (
                   <Link
                     href={`/users/${m.userId}`}
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0 self-end transition hover:opacity-75 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-                    style={{
-                      background:
-                        'linear-gradient(135deg,var(--accent,#4f46e5),#9333ea)',
-                    }}
+                    className="w-8 h-8 rounded-full shrink-0 self-end overflow-hidden flex items-center justify-center text-white text-xs font-bold transition hover:opacity-75 hover:scale-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                    style={m.avatarUrl ? undefined : { background: 'linear-gradient(135deg,var(--accent,#4f46e5),#9333ea)' }}
                     title={m.username}
                     aria-label={`Профиль ${m.username}`}
                   >
-                    {(m.username || m.userId).slice(0, 1).toUpperCase()}
+                    {m.avatarUrl ? (
+                      <img src={m.avatarUrl} alt={m.username} className="w-full h-full object-cover" />
+                    ) : (
+                      (m.username || m.userId).slice(0, 1).toUpperCase()
+                    )}
                   </Link>
                 )}
 
@@ -193,10 +207,12 @@ export default function EventChat({
                     }`}
                     style={isMe ? {} : { color: 'var(--text-muted)' }}
                   >
-                    {new Date(m.timestamp).toLocaleTimeString('ru-RU', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
+                    {m.timestamp
+                      ? new Date(m.timestamp).toLocaleTimeString('ru-RU', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })
+                      : ''}
                   </p>
                 </div>
               </div>
@@ -227,7 +243,7 @@ export default function EventChat({
         />
         <button
           onClick={sendMessage}
-          disabled={!input.trim() || !connected}
+          disabled={!input.trim() || !connected || !token}
           className="px-4 py-2 rounded-xl font-bold text-sm text-white hover:opacity-90 transition disabled:opacity-40"
           style={{
             background:
@@ -240,3 +256,7 @@ export default function EventChat({
     </div>
   );
 }
+
+
+
+

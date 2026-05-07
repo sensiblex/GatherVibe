@@ -3,17 +3,34 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import Navbar from '../../../app/components/Navbar';
-import EventAttendees from '../../../app/components/EventAttendees';
-import EventChat from '../../../app/components/EventChat';
-import EventParty from '../../../app/components/EventParty';
+import Navbar from '../../components/Navbar';
+import EventAttendees from '../../components/EventAttendees';
+import EventChat from '../../components/EventChat';
+import EventParty from '../../components/EventParty';
+import type { CreatorPartyContext } from '../../components/EventParty';
 import { apiFetch } from '../../lib/apiFetch';
 import { useAuth } from '../../context/AuthContext';
+import dynamic from 'next/dynamic';
+import {
+  type ScheduleEntry,
+  type UnifiedEvent,
+  stripHtml,
+  formatKudagoDate,
+  normaliseKudago,
+  getFilteredDates,
+  formatShortDate,
+  formatAge,
+  safeEventTimestamp,
+} from './event-utils';
+import { groupPermanentScheduleRows, translateCategory } from '../utils';
+import { capitalizeFirstDisplayChar } from '../../lib/text';
+import { proxiedImageUrl } from '../../lib/imageProxy';
+import { markEventViewed } from '../viewed-events';
+
+const EventMap = dynamic(() => import('../../components/EventMap'), { ssr: false });
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-// KudaGo IDs are large numbers (100000+). Local DB IDs are small (< 10000).
-// We detect source by trying local first, then kudago on 404.
 const CATEGORY_LABELS: Record<string, string> = {
   concert: '🎵 Концерт',
   theater: '🎭 Театр',
@@ -28,41 +45,11 @@ const CATEGORY_LABELS: Record<string, string> = {
   master_class: '🎓 Мастер-класс',
 };
 
-// ── Unified event shape for the view layer ────────────────────────────────────
-interface UnifiedEvent {
-  id: string;           // always a string for eventId usage
-  source: 'local' | 'kudago';
-  title: string;
-  description: string | null;
-  body_text?: string | null;
-  location: string | null;
-  city: string | null;
-  date_time: string | null;   // ISO for local, null for kudago (uses start_date/time)
-  start_date?: string | null; // kudago
-  start_time?: string | null; // kudago
-  all_dates?: Array<{
-    start: string | null;
-    end: string | null;
-    start_time: string | null;
-    end_time: string | null;
-    is_continuous: boolean;
-    is_endless: boolean;
-  }>;
-  category: string | null;
-  categories?: string[];
-  image_url: string | null;
-  is_free?: boolean;
-  price?: string;
-  age_restriction?: string | null;
-  place_title?: string;
-  place_address?: string;
-  place_phone?: string;
-  place_subway?: string;
-  site_url?: string;
-  participants?: Array<{ role: string; name: string; image_url: string | null }>;
-}
+const WEEKDAY_SHORT: Record<number, string> = {
+  1: 'Пн', 2: 'Вт', 3: 'Ср', 4: 'Чт', 5: 'Пт', 6: 'Сб', 0: 'Вс',
+};
 
-// ── Date formatting ───────────────────────────────────────────────────────────
+
 function formatIsoDate(iso: string): string {
   return new Date(iso).toLocaleString('ru-RU', {
     day: 'numeric', month: 'long', year: 'numeric',
@@ -70,24 +57,12 @@ function formatIsoDate(iso: string): string {
   });
 }
 
-function formatKudagoDate(event: UnifiedEvent): string {
-  if (event.start_date) {
-    const d = event.start_date;
-    const t = event.start_time ? ` в ${event.start_time}` : '';
-    const [y, m, day] = d.split('-').map(Number);
-    const months = ['', 'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
-    return `${day} ${months[m] ?? ''} ${y}${t}`;
-  }
-  return 'Дата уточняется';
-}
 
 function getDisplayDate(event: UnifiedEvent): string {
   if (event.source === 'local' && event.date_time) return formatIsoDate(event.date_time);
   return formatKudagoDate(event);
 }
 
-// ── Normalise API responses into UnifiedEvent ─────────────────────────────────
 function normaliseLocal(data: Record<string, unknown>): UnifiedEvent {
   return {
     id: String(data.id),
@@ -102,42 +77,93 @@ function normaliseLocal(data: Record<string, unknown>): UnifiedEvent {
   };
 }
 
-function normaliseKudago(data: Record<string, unknown>): UnifiedEvent {
-  const imgs = (data.images as Array<{ url: string }>) ?? [];
-  const cats = (data.categories as string[]) ?? [];
-  return {
-    id: String(data.kudago_id ?? data.id ?? ''),
-    source: 'kudago',
-    title: String(data.title ?? ''),
-    description: (data.description as string) || null,
-    body_text: (data.body_text as string) || null,
-    location: (data.place_address as string) || null,
-    city: null,
-    date_time: null,
-    start_date: (data.start_date as string) ?? null,
-    start_time: (data.start_time as string) ?? null,
-    all_dates: (data.all_dates as UnifiedEvent['all_dates']) ?? [],
-    category: cats[0] ?? null,
-    categories: cats,
-    image_url: imgs[0]?.url ?? (data.cover_url as string) ?? null,
-    is_free: Boolean(data.is_free),
-    price: (data.price as string) || '',
-    age_restriction: (data.age_restriction as string) ?? null,
-    place_title: (data.place_title as string) || '',
-    place_address: (data.place_address as string) || '',
-    place_phone: (data.place_phone as string) || '',
-    place_subway: (data.place_subway as string) || '',
-    site_url: (data.site_url as string) || '',
-    participants: (data.participants as UnifiedEvent['participants']) ?? [],
-  };
+
+function isVirtualAddress(addr: string): boolean {
+  const keywords = ['онлайн', 'online', 'tbd', 'уточняется', 'zoom', 'discord'];
+  return keywords.some(k => addr.toLowerCase().includes(k));
 }
 
-// ── Strip HTML tags from KudaGo description ───────────────────────────────────
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+function PermanentSchedule({ schedules, usePlaceSchedule = false }: { schedules?: ScheduleEntry[]; usePlaceSchedule?: boolean }) {
+  const hasSchedule = schedules && schedules.length > 0;
+  const scheduleRows = hasSchedule ? groupPermanentScheduleRows(schedules!) : [];
+
+  function groupSchedule(entries: ScheduleEntry[]): { label: string; time: string }[] {
+    const sorted = [...entries].sort((a, b) => a.weekday - b.weekday);
+    const groups: { days: number[]; from: string; to: string }[] = [];
+    for (const e of sorted) {
+      const last = groups[groups.length - 1];
+      if (last && last.from === e.from && last.to === e.to) {
+        last.days.push(e.weekday);
+      } else {
+        groups.push({ days: [e.weekday], from: e.from, to: e.to });
+      }
+    }
+    return groups.map(g => ({
+      label: g.days.map(d => WEEKDAY_SHORT[d]).join(', '),
+      time: `${g.from}–${g.to}`,
+    }));
+  }
+
+  return (
+    <div
+      className="mt-6 rounded-2xl p-5"
+      style={{
+        background: 'linear-gradient(135deg, color-mix(in oklch, var(--primary) 8%, var(--surface)), var(--surface))',
+        border: '1px solid color-mix(in oklch, var(--primary) 20%, var(--border))',
+      }}
+    >
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-lg">🔁</span>
+        <div>
+          <p className="font-bold text-sm" style={{ color: 'var(--text)' }}>Постоянное событие</p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Работает круглый год по расписанию</p>
+        </div>
+      </div>
+
+      {hasSchedule ? (
+        <div className="space-y-2">
+          {scheduleRows.map((row, i) => (
+            <div key={`${row.label}-${row.time}-${i}`} className="grid items-center gap-3" style={{ gridTemplateColumns: 'minmax(0, 1fr) auto' }}>
+              <span className="text-sm font-medium" style={{ color: 'var(--text)', minWidth: 0 }}>{row.label}</span>
+              <span
+                className="text-sm font-semibold px-3 py-0.5 rounded-full whitespace-nowrap"
+                style={{ background: 'var(--primary-hl)', color: 'var(--primary)', justifySelf: 'end' }}
+              >
+                {row.time}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {usePlaceSchedule && (
+            <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
+              По расписанию места
+            </p>
+          )}
+          <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+            Точное расписание уточняйте на сайте места проведения.
+          </p>
+          <div className="flex flex-wrap gap-2 mt-2">
+            <span
+              className="text-xs px-3 py-1 rounded-full font-semibold"
+              style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
+            >
+              📅 Круглый год
+            </span>
+            <span
+              className="text-xs px-3 py-1 rounded-full font-semibold"
+              style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+            >
+              🔁 Повторяется регулярно
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
-// ── Skeleton ──────────────────────────────────────────────────────────────────
 function EventSkeleton() {
   return (
     <div className="animate-pulse space-y-6">
@@ -152,7 +178,6 @@ function EventSkeleton() {
   );
 }
 
-// ── Not found ─────────────────────────────────────────────────────────────────
 function NotFound() {
   return (
     <div className="text-center py-24 px-4">
@@ -170,7 +195,6 @@ function NotFound() {
   );
 }
 
-// ── UnauthBanner ──────────────────────────────────────────────────────────────
 function UnauthBanner() {
   return (
     <div
@@ -201,7 +225,6 @@ function UnauthBanner() {
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
 export default function EventDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -211,42 +234,66 @@ export default function EventDetailPage() {
 
   const [event, setEvent] = useState<UnifiedEvent | null>(null);
   const [status, setStatus] = useState<'loading' | 'ok' | 'notfound' | 'error'>('loading');
+  const [creatorPartyContext, setCreatorPartyContext] = useState<CreatorPartyContext | null>(null);
+
+  useEffect(() => {
+    if (eventId) markEventViewed(eventId);
+  }, [eventId]);
 
   useEffect(() => {
     if (!eventId) return;
     setStatus('loading');
 
-    // Step 1: try local DB
-    apiFetch(`${API_BASE}/events/${eventId}`)
+    const controller = new AbortController();
+    const { signal } = controller;
+    const isNumericId = /^\d+$/.test(eventId);
+
+    const fetchKudago = async () => {
+      const kg = await apiFetch(`${API_BASE}/kudago/events/${eventId}`, { signal });
+      if (signal.aborted) return;
+      if (kg.ok) {
+        const data = await kg.json();
+        setEvent(normaliseKudago(data));
+        setStatus('ok');
+      } else if (kg.status === 404) {
+        setStatus('notfound');
+      } else {
+        setStatus('error');
+      }
+    };
+
+    if (!isNumericId) {
+      fetchKudago().catch((e) => { if (!signal.aborted) setStatus('error'); void e; });
+      return () => controller.abort();
+    }
+
+    apiFetch(`${API_BASE}/events/${eventId}`, { signal })
       .then(async (res) => {
+        if (signal.aborted) return;
         if (res.ok) {
           const data = await res.json();
-          setEvent(normaliseLocal(data));
+          setEvent(data?.kudago_id ? normaliseKudago(data) : normaliseLocal(data));
           setStatus('ok');
           return;
         }
-
         if (res.status !== 404) {
           setStatus('error');
           return;
         }
-
-        // Step 2: local returned 404 → try KudaGo
-        const kg = await apiFetch(`${API_BASE}/kudago/events/${eventId}`);
-        if (kg.ok) {
-          const data = await kg.json();
-          setEvent(normaliseKudago(data));
-          setStatus('ok');
-        } else if (kg.status === 404) {
-          setStatus('notfound');
-        } else {
-          setStatus('error');
-        }
+        await fetchKudago();
       })
-      .catch(() => setStatus('error'));
+      .catch((e) => { if (!signal.aborted) setStatus('error'); void e; });
+
+    return () => controller.abort();
   }, [eventId]);
 
-  // Category label: for kudago events we may get an array of slugs
+  const mapAddress = event ? (event.place_address || event.location || null) : null;
+  const mapQuery = mapAddress
+    ? (event?.city ? `${event.city}, ${mapAddress}` : mapAddress)
+    : null;
+  const mapLat = event?.lat ?? null;
+  const mapLon = event?.lon ?? null;
+
   const categoryLabel = (() => {
     if (!event) return null;
     const first = event.category;
@@ -255,9 +302,22 @@ export default function EventDetailPage() {
   })();
 
   const displayDate = event ? getDisplayDate(event) : '';
-
-  // KudaGo events: use kudago_id as eventId for attendees/chat/party
+  const displayTitle = event ? capitalizeFirstDisplayChar(event.title) : '';
+  const eventImageUrl = event ? proxiedImageUrl(event.image_url) : null;
   const chatEventId = event?.id ?? eventId;
+
+  const eventMeta = event ? {
+    title:     displayTitle,
+    date_ts:   event.date_time
+      ? Math.floor(new Date(event.date_time).getTime() / 1000)
+      : event.start_date
+        ? safeEventTimestamp(event.start_date, event.start_time)
+        : null,
+    city:      event.city,
+    image_url: event.image_url,
+    category:  event.category,
+    location:  event.location,
+  } : undefined;
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
@@ -265,7 +325,6 @@ export default function EventDetailPage() {
 
       <main className="container mx-auto px-4 py-8 max-w-4xl">
 
-        {/* ── Back navigation ── */}
         <button
           onClick={() => router.back()}
           className="flex items-center gap-2 text-sm font-semibold mb-6 transition hover:opacity-70"
@@ -278,7 +337,6 @@ export default function EventDetailPage() {
           Назад
         </button>
 
-        {/* ── States ── */}
         {status === 'loading' && <EventSkeleton />}
         {status === 'notfound' && <NotFound />}
         {status === 'error' && (
@@ -295,15 +353,13 @@ export default function EventDetailPage() {
         {status === 'ok' && event && (
           <div className="space-y-8">
 
-            {/* ── Event header card ── */}
             <div className="gv-card overflow-hidden" style={{ padding: 0 }}>
 
-              {/* Cover image */}
-              {event.image_url && (
+              {eventImageUrl && (
                 <div className="w-full h-56 sm:h-72 overflow-hidden">
                   <img
-                    src={event.image_url}
-                    alt={event.title}
+                    src={eventImageUrl}
+                    alt={displayTitle}
                     className="w-full h-full object-cover"
                     loading="lazy"
                   />
@@ -312,7 +368,7 @@ export default function EventDetailPage() {
 
               <div className="p-6 sm:p-8">
 
-                {/* Category + city + free badges */}
+                {/* Badges */}
                 <div className="flex flex-wrap gap-2 mb-4">
                   {categoryLabel && (
                     <span
@@ -322,16 +378,20 @@ export default function EventDetailPage() {
                       {categoryLabel}
                     </span>
                   )}
-                  {/* Multiple KudaGo categories */}
                   {event.source === 'kudago' && event.categories && event.categories.slice(1, 4).map(c => (
                     <span
                       key={c}
                       className="text-xs px-3 py-1 rounded-full font-semibold"
                       style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
                     >
-                      {CATEGORY_LABELS[c] ?? c}
+                      {CATEGORY_LABELS[c] ?? translateCategory(c)}
                     </span>
                   ))}
+                  {event.is_permanent && (
+                    <span className="text-xs px-3 py-1 rounded-full font-semibold bg-violet-100 text-violet-700">
+                      🔁 Круглый год
+                    </span>
+                  )}
                   {event.city && (
                     <span
                       className="text-xs px-3 py-1 rounded-full font-semibold flex items-center gap-1"
@@ -358,17 +418,17 @@ export default function EventDetailPage() {
                       className="text-xs px-3 py-1 rounded-full font-semibold"
                       style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
                     >
-                      {event.age_restriction}+
+                      {formatAge(event.age_restriction)}
                     </span>
                   )}
                 </div>
 
                 {/* Title */}
                 <h1 className="text-2xl sm:text-3xl font-black mb-4 leading-tight" style={{ color: 'var(--text)' }}>
-                  {event.title}
+                  {displayTitle}
                 </h1>
 
-                {/* Meta info row */}
+                {/* Meta row */}
                 <div className="flex flex-wrap gap-4 mb-6">
                   <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--text-muted)' }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -418,7 +478,18 @@ export default function EventDetailPage() {
                   )}
                 </div>
 
-                {/* Description */}
+                {mapQuery && !isVirtualAddress(mapQuery) && (
+                  <EventMap
+                    address={mapQuery}
+                    title={event.place_title || displayTitle}
+                    height="220px"
+                    className="rounded-2xl overflow-hidden mt-4 mb-2"
+                    lat={mapLat}
+                    lon={mapLon}
+                  />
+                )}
+
+                {/* Descriptions */}
                 {event.description && (
                   <div
                     className="text-sm leading-relaxed whitespace-pre-line mb-4"
@@ -427,8 +498,6 @@ export default function EventDetailPage() {
                     {stripHtml(event.description)}
                   </div>
                 )}
-
-                {/* KudaGo body_text (longer description) */}
                 {event.source === 'kudago' && event.body_text && event.body_text !== event.description && (
                   <div
                     className="text-sm leading-relaxed mt-2"
@@ -438,38 +507,49 @@ export default function EventDetailPage() {
                   </div>
                 )}
 
-                {/* Multiple dates for KudaGo */}
-                {event.source === 'kudago' && event.all_dates && event.all_dates.length > 1 && (
-                  <div className="mt-6">
-                    <p className="text-xs font-semibold uppercase tracking-wide mb-2"
-                      style={{ color: 'var(--text-faint)' }}
-                    >
-                      Все даты
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      {event.all_dates.slice(0, 8).map((d, i) => (
-                        d.start && (
-                          <span
-                            key={i}
-                            className="text-xs px-3 py-1 rounded-full"
-                            style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
-                          >
-                            {d.start} {d.start_time ? `в ${d.start_time}` : ''}
-                          </span>
-                        )
-                      ))}
-                      {event.all_dates.length > 8 && (
-                        <span className="text-xs px-3 py-1 rounded-full"
-                          style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
-                        >
-                          +{event.all_dates.length - 8} ещё
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                {/* Блок расписания для постоянных событий */}
+                {event.source === 'kudago' && event.is_permanent && (
+                  <PermanentSchedule
+                    schedules={event.place_schedules}
+                    usePlaceSchedule={event.all_dates?.some(d => d.use_place_schedule)}
+                  />
                 )}
 
-                {/* Participants (KudaGo) */}
+                {/* Разовые даты (только если НЕ постоянное событие) */}
+                {event.source === 'kudago' && !event.is_permanent && event.all_dates && (() => {
+                  const filteredDates = getFilteredDates(event.all_dates);
+                  return filteredDates.length > 1 ? (
+                    <div className="mt-6">
+                      <p className="text-xs font-semibold uppercase tracking-wide mb-2"
+                        style={{ color: 'var(--text-faint)' }}
+                      >
+                        Все даты
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {filteredDates.slice(0, 8).map((d, i) => (
+                          d.start && (
+                            <span
+                              key={`${d.start}-${d.start_time}-${i}`}
+                              className="text-xs px-3 py-1 rounded-full"
+                              style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
+                            >
+                              {formatShortDate(d.start, d.start_time)}
+                            </span>
+                          )
+                        ))}
+                        {filteredDates.length > 8 && (
+                          <span className="text-xs px-3 py-1 rounded-full"
+                            style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
+                          >
+                            +{filteredDates.length - 8} ещё
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
+
+                {/* Participants */}
                 {event.source === 'kudago' && event.participants && event.participants.length > 0 && (
                   <div className="mt-6">
                     <p className="text-xs font-semibold uppercase tracking-wide mb-3"
@@ -478,11 +558,13 @@ export default function EventDetailPage() {
                       Участники
                     </p>
                     <div className="flex flex-wrap gap-3">
-                      {event.participants.map((p, i) => (
+                      {event.participants.map((p, i) => {
+                        const participantImageUrl = proxiedImageUrl(p.image_url);
+                        return (
                         <div key={i} className="flex items-center gap-2">
-                          {p.image_url && (
+                          {participantImageUrl && (
                             <img
-                              src={p.image_url}
+                              src={participantImageUrl}
                               alt={p.name}
                               width={32}
                               height={32}
@@ -497,7 +579,8 @@ export default function EventDetailPage() {
                             )}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -505,25 +588,16 @@ export default function EventDetailPage() {
               </div>
             </div>
 
-            {/* ── KudaGo source badge ── */}
-            {event.source === 'kudago' && (
-              <p className="text-xs text-center" style={{ color: 'var(--text-faint)' }}>
-                Данные предоставлены{' '}
-                <a href="https://kudago.com" target="_blank" rel="noopener noreferrer"
-                  className="underline hover:opacity-70 transition"
-                  style={{ color: 'var(--text-muted)' }}
-                >
-                  KudaGo
-                </a>
-              </p>
-            )}
-
-            {/* ── Unauth CTA ── */}
             {!user && <UnauthBanner />}
 
-            {/* ── Interactive blocks (attendees, party, chat) ── */}
-            <EventAttendees eventId={chatEventId} />
-            <EventParty eventId={chatEventId} />
+            <EventAttendees
+              eventId={chatEventId}
+              eventMeta={eventMeta}
+              partyId={creatorPartyContext?.partyId ?? null}
+              partyCreatorId={creatorPartyContext?.creatorId ?? null}
+              partyMembers={creatorPartyContext?.members ?? []}
+            />
+            <EventParty eventId={chatEventId} onCreatorPartyChange={setCreatorPartyContext} />
             <EventChat
               eventId={chatEventId}
               currentUserId={user ? String(user.id) : ''}
