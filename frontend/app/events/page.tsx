@@ -40,6 +40,7 @@ import {
   type QuickDate,
 } from './event-filters';
 import { apiFetch } from '../lib/apiFetch';
+import { hasMoreEvents, mergeEventPages } from './events-pagination';
 import {
   displayDate,
   getEventCategoryBadges,
@@ -146,6 +147,9 @@ export default function EventsPage() {
   const [selectedEvent, setSelectedEvent] = useState<KudaGoEvent | null>(null);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [attendeeCounts, setAttendeeCounts] = useState<Record<string, number>>({});
+  const [page, setPage] = useState(1);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [mapEvents, setMapEvents] = useState<KudaGoEvent[]>([]);
 
   const [todayStr, setTodayStr] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -286,11 +290,14 @@ export default function EventsPage() {
     swh: number | null, dm: 'short' | 'long' | null, hs: boolean, ovp: boolean,
     fh: number | null, th: number | null,
     wds: number[], hst: boolean,
+    pageNum: number,
+    append: boolean,
   ) => {
     const reqSeq = ++requestSeqRef.current;
     loadingRef.current = true;
-    const showInitialLoader = !hasLoadedOnceRef.current;
-    if (showInitialLoader) setLoading(true);
+    const showInitialLoader = !hasLoadedOnceRef.current && !append;
+    if (append) setIsLoadingMore(true);
+    else if (showInitialLoader) setLoading(true);
     else setIsRefreshing(true);
     setError(null);
     try {
@@ -303,7 +310,7 @@ export default function EventsPage() {
         untilTs = r.until;
       }
 
-      const qs = buildKudaGoQuery({
+      const buildQuery = (queryPage: number, queryPageSize: number) => buildKudaGoQuery({
         location: loc,
         search: s,
         categories: cats,
@@ -331,9 +338,10 @@ export default function EventsPage() {
         toHour: th,
         weekdays: wds,
         hideStarted: hst,
-        page: 1,
-        pageSize: PAGE_SIZE,
+        page: queryPage,
+        pageSize: queryPageSize,
       });
+      const qs = buildQuery(pageNum, PAGE_SIZE);
 
       // Important: go directly to backend for event feed.
       // Next.js rewrite proxy (/api -> backend) can intermittently reset long msk responses (ECONNRESET),
@@ -344,15 +352,52 @@ export default function EventsPage() {
       if (reqSeq !== requestSeqRef.current) return;
       const incoming: KudaGoEvent[] = data.results || [];
       setTotal(data.count ?? null);
-      setEvents(incoming);
+      setEvents((prev) => append ? mergeEventPages(prev, incoming) : incoming);
+      setMapEvents((prev) => append ? mergeEventPages(prev, incoming) : incoming);
+      setPage(pageNum);
       hasLoadedOnceRef.current = true;
+
+      if (!append) {
+        const totalCount = typeof data.count === 'number' ? data.count : null;
+        if (totalCount !== null && totalCount > incoming.length) {
+          const mapPageSize = 100;
+          const totalPages = Math.ceil(totalCount / mapPageSize);
+          let allMapEvents = incoming;
+          for (let p = 1; p <= totalPages; p += 1) {
+            if (p === 1) {
+              if (incoming.length !== mapPageSize) {
+                const resPage1 = await apiFetch(`${DIRECT_BACKEND_BASE}/kudago/events?${buildQuery(1, mapPageSize)}`);
+                if (reqSeq !== requestSeqRef.current) return;
+                if (!resPage1.ok) break;
+                const page1Data = await resPage1.json();
+                if (reqSeq !== requestSeqRef.current) return;
+                const page1Events: KudaGoEvent[] = page1Data.results || [];
+                allMapEvents = mergeEventPages([], page1Events);
+                setMapEvents(allMapEvents);
+              }
+              continue;
+            }
+            const resNext = await apiFetch(`${DIRECT_BACKEND_BASE}/kudago/events?${buildQuery(p, mapPageSize)}`);
+            if (reqSeq !== requestSeqRef.current) return;
+            if (!resNext.ok) break;
+            const nextData = await resNext.json();
+            if (reqSeq !== requestSeqRef.current) return;
+            const nextEvents: KudaGoEvent[] = nextData.results || [];
+            allMapEvents = mergeEventPages(allMapEvents, nextEvents);
+            setMapEvents(allMapEvents);
+            if (nextEvents.length === 0) break;
+          }
+        }
+      }
 
       // Fetch attendee counts in background
       if (incoming.length > 0) {
         const ids = incoming.map(e => String(e.kudago_id)).join(',');
         apiFetch(`${DIRECT_BACKEND_BASE}/attendees/batch-counts?ids=${ids}`)
           .then(r => r.ok ? r.json() : {})
-          .then((counts: Record<string, number>) => setAttendeeCounts(counts))
+          .then((counts: Record<string, number>) => {
+            setAttendeeCounts((prev) => append ? { ...prev, ...counts } : counts);
+          })
           .catch(() => {});
       }
     } catch (e: unknown) {
@@ -362,6 +407,7 @@ export default function EventsPage() {
       if (reqSeq !== requestSeqRef.current) return;
       setLoading(false);
       setIsRefreshing(false);
+      setIsLoadingMore(false);
       loadingRef.current = false;
     }
   }, []);
@@ -374,6 +420,7 @@ export default function EventsPage() {
       startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace,
       fromHour, toHour,
       weekdays, hideStarted,
+      1, false,
     );
   }, [
     city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
@@ -382,6 +429,25 @@ export default function EventsPage() {
     startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace,
     fromHour, toHour, weekdays, hideStarted,
     load,
+  ]);
+
+  const canLoadMore = hasMoreEvents(events.length, total);
+  const handleLoadMore = useCallback(() => {
+    if (isLoadingMore || !canLoadMore) return;
+    load(
+      city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
+      maxAge, tags, placeSearch, geo, sortBy,
+      quickDate, timeOfDay, permanence, hasCover, hasParty, hasFreeSpots, minAttendees,
+      startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace,
+      fromHour, toHour,
+      weekdays, hideStarted,
+      page + 1, true,
+    );
+  }, [
+    isLoadingMore, canLoadMore, load, city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
+    maxAge, tags, placeSearch, geo, sortBy, quickDate, timeOfDay, permanence, hasCover, hasParty, hasFreeSpots,
+    minAttendees, startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace, fromHour, toHour, weekdays,
+    hideStarted, page,
   ]);
 
   // Debounced place search
@@ -476,6 +542,10 @@ export default function EventsPage() {
     if (!hideViewed) return sortedEvents;
     return sortedEvents.filter(event => !viewedEventIds.has(String(event.kudago_id)));
   }, [hideViewed, sortedEvents, viewedEventIds]);
+  const visibleMapEvents = useMemo(() => {
+    if (!hideViewed) return mapEvents;
+    return mapEvents.filter(event => !viewedEventIds.has(String(event.kudago_id)));
+  }, [hideViewed, mapEvents, viewedEventIds]);
 
   const categoryFilterOptions = useMemo(() => {
     const bySlug = new Map<string, Category>();
@@ -543,6 +613,9 @@ export default function EventsPage() {
             {total !== null && !showInitialLoading && (
               <p className="t-sm" style={{ marginTop: 8 }}>
                 {total.toLocaleString('ru-RU')} мероприятий
+                <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>
+                  Показано: {events.length.toLocaleString('ru-RU')}
+                </span>
               </p>
             )}
           </div>
@@ -942,7 +1015,7 @@ export default function EventsPage() {
       {/* ── Events map: synced 1:1 with the filtered list below ── */}
       {!error && (
         <EventsMap
-          events={visibleEvents}
+          events={visibleMapEvents}
           city={city}
           onEventClick={setSelectedEvent}
         />
@@ -965,6 +1038,7 @@ export default function EventsPage() {
                 startingWithinHours, durationMode, hasSchedules, onlyVerifiedPlace,
                 fromHour, toHour,
                 weekdays, hideStarted,
+                1, false,
               )}
               className="gv-btn-primary"
             >
@@ -1105,6 +1179,20 @@ export default function EventsPage() {
                     Сбросить фильтры
                   </button>
                 )}
+              </div>
+            )}
+
+            {!showInitialLoading && !error && canLoadMore && (
+              <div className="flex justify-center mt-8">
+                <button
+                  type="button"
+                  onClick={handleLoadMore}
+                  disabled={isLoadingMore}
+                  className="gv-btn-primary"
+                  style={{ minWidth: 220, opacity: isLoadingMore ? 0.75 : 1 }}
+                >
+                  {isLoadingMore ? 'Загружаем...' : `Загрузить еще (${Math.max((total ?? 0) - events.length, 0)})`}
+                </button>
               </div>
             )}
           </section>

@@ -1167,15 +1167,15 @@ footer.gv-footer { border-top: 1px solid var(--rule); padding: 40px 0; }
 
 /* ── Masonry grid ── */
 .gv-masonry {
-  columns: 3;
-  column-gap: 1rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
 }
-@media (max-width: 1024px) { .gv-masonry { columns: 2; } }
-@media (max-width: 640px)  { .gv-masonry { columns: 1; } }
+@media (max-width: 1024px) { .gv-masonry { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px)  { .gv-masonry { grid-template-columns: 1fr; } }
 .gv-masonry-card {
-  break-inside: avoid;
-  margin-bottom: 1rem;
   display: block;
+  height: 100%;
 }
 
 /* Hide scrollbar for category pills */
