@@ -1,5 +1,9 @@
 'use client';
 
+import 'leaflet/dist/leaflet.css';
+import 'react-leaflet-cluster/dist/assets/MarkerCluster.css';
+import 'react-leaflet-cluster/dist/assets/MarkerCluster.Default.css';
+
 import { useMemo, useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
@@ -43,7 +47,12 @@ interface MapInnerProps {
 function MapInnerComponent({ events, center, bounds, onEventClick }: MapInnerProps) {
   /* eslint-disable @typescript-eslint/no-require-imports */
   const { MapContainer, TileLayer, Marker, Popup, useMap } = require('react-leaflet');
-  const MarkerClusterGroup = require('react-leaflet-cluster').default;
+  let MarkerClusterGroup: any = null;
+  try {
+    MarkerClusterGroup = require('react-leaflet-cluster').default;
+  } catch {
+    MarkerClusterGroup = null;
+  }
   const L = require('leaflet');
   /* eslint-enable @typescript-eslint/no-require-imports */
 
@@ -82,66 +91,129 @@ function MapInnerComponent({ events, center, bounds, onEventClick }: MapInnerPro
         subdomains={MAP_TILE_SUBDOMAINS}
       />
       <FitBounds bounds={bounds} />
-      <MarkerClusterGroup chunkedLoading maxClusterRadius={60}>
-        {events.map((ev) => {
-          const displayTitle = capitalizeFirstDisplayChar(ev.title);
-          const coverUrl = proxiedImageUrl(ev.cover_url);
-          return (
-            <Marker
-              key={ev.kudago_id}
-              position={[ev.lat as number, ev.lon as number]}
-              icon={pinIcon}
-            >
-              <Popup maxWidth={280} className="gv-map-popup">
-              <div className="gv-map-event-popup">
-                {coverUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={coverUrl}
-                    alt=""
-                  />
-                )}
-                <strong>
-                  {displayTitle}
-                </strong>
-                {ev.place_title && (
+      {MarkerClusterGroup ? (
+        <MarkerClusterGroup chunkedLoading maxClusterRadius={60}>
+          {events.map((ev) => {
+            const displayTitle = capitalizeFirstDisplayChar(ev.title);
+            const coverUrl = proxiedImageUrl(ev.cover_url);
+            return (
+              <Marker
+                key={ev.kudago_id}
+                position={[ev.lat as number, ev.lon as number]}
+                icon={pinIcon}
+              >
+                <Popup maxWidth={280} className="gv-map-popup">
+                <div className="gv-map-event-popup">
+                  {coverUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={coverUrl}
+                      alt=""
+                    />
+                  )}
+                  <strong>
+                    {displayTitle}
+                  </strong>
+                  {ev.place_title && (
+                    <div>
+                      <span className="gv-map-popup-label">Место</span>
+                      {ev.place_title}
+                    </div>
+                  )}
+                  {ev.start_date && (
+                    <div>
+                      <span className="gv-map-popup-label">Когда</span>
+                      {ev.start_date}
+                      {ev.start_time ? `, ${ev.start_time}` : ''}
+                    </div>
+                  )}
                   <div>
-                    <span className="gv-map-popup-label">Место</span>
-                    {ev.place_title}
+                    <span className="gv-map-popup-label">Цена</span>
+                    {ev.is_free ? 'Бесплатно' : (ev.price || 'Платно')}
                   </div>
-                )}
-                {ev.start_date && (
-                  <div>
-                    <span className="gv-map-popup-label">Когда</span>
-                    {ev.start_date}
-                    {ev.start_time ? `, ${ev.start_time}` : ''}
-                  </div>
-                )}
-                <div>
-                  <span className="gv-map-popup-label">Цена</span>
-                  {ev.is_free ? 'Бесплатно' : (ev.price || 'Платно')}
+                  {onEventClick ? (
+                    <button
+                      onClick={() => onEventClick(ev)}
+                      className="gv-map-popup-action"
+                    >
+                      Подробнее
+                    </button>
+                  ) : (
+                    <Link
+                      href={`/events/${ev.kudago_id}`}
+                      className="gv-map-popup-action"
+                    >
+                      Подробнее
+                    </Link>
+                  )}
                 </div>
-                {onEventClick ? (
-                  <button
-                    onClick={() => onEventClick(ev)}
-                    className="gv-map-popup-action"
-                  >
-                    Подробнее
-                  </button>
-                ) : (
-                  <Link
-                    href={`/events/${ev.kudago_id}`}
-                    className="gv-map-popup-action"
-                  >
-                    Подробнее
-                  </Link>
-                )}
-              </div>
-              </Popup>
-            </Marker>
-          );
-        })}
-      </MarkerClusterGroup>
+                </Popup>
+              </Marker>
+            );
+          })}
+        </MarkerClusterGroup>
+      ) : (
+        <>
+          {events.map((ev) => {
+            const displayTitle = capitalizeFirstDisplayChar(ev.title);
+            const coverUrl = proxiedImageUrl(ev.cover_url);
+            return (
+              <Marker
+                key={ev.kudago_id}
+                position={[ev.lat as number, ev.lon as number]}
+                icon={pinIcon}
+              >
+                <Popup maxWidth={280} className="gv-map-popup">
+                <div className="gv-map-event-popup">
+                  {coverUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={coverUrl}
+                      alt=""
+                    />
+                  )}
+                  <strong>
+                    {displayTitle}
+                  </strong>
+                  {ev.place_title && (
+                    <div>
+                      <span className="gv-map-popup-label">Место</span>
+                      {ev.place_title}
+                    </div>
+                  )}
+                  {ev.start_date && (
+                    <div>
+                      <span className="gv-map-popup-label">Когда</span>
+                      {ev.start_date}
+                      {ev.start_time ? `, ${ev.start_time}` : ''}
+                    </div>
+                  )}
+                  <div>
+                    <span className="gv-map-popup-label">Цена</span>
+                    {ev.is_free ? 'Бесплатно' : (ev.price || 'Платно')}
+                  </div>
+                  {onEventClick ? (
+                    <button
+                      onClick={() => onEventClick(ev)}
+                      className="gv-map-popup-action"
+                    >
+                      Подробнее
+                    </button>
+                  ) : (
+                    <Link
+                      href={`/events/${ev.kudago_id}`}
+                      className="gv-map-popup-action"
+                    >
+                      Подробнее
+                    </Link>
+                  )}
+                </div>
+                </Popup>
+              </Marker>
+            );
+          })}
+        </>
+      )}
     </MapContainer>
   );
 }
