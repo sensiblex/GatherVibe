@@ -3,6 +3,7 @@ from collections import Counter
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, case
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime, timezone
@@ -94,25 +95,40 @@ async def create_review(
     if not (1 <= payload.rating <= 5):
         raise HTTPException(status_code=400, detail="Рейтинг должен быть от 1 до 5")
 
-    existing = db.query(PartyReview).filter(
+    existing_any = db.query(PartyReview).filter(
         PartyReview.reviewer_id == current_user.id,
         PartyReview.reviewed_id == payload.reviewed_id,
         PartyReview.party_id == payload.party_id,
-        PartyReview.is_deleted == False,  # noqa: E712
     ).first()
-    if existing:
+    if existing_any and not getattr(existing_any, "is_deleted", False):
         raise HTTPException(status_code=409, detail="Вы уже оценили этого участника")
 
-    review = PartyReview(
-        reviewer_id=current_user.id,
-        reviewed_id=payload.reviewed_id,
-        party_id=payload.party_id,
-        rating=payload.rating,
-        text=payload.text,
-        tags=tags or None,
-    )
-    db.add(review)
-    db.commit()
+    if existing_any and getattr(existing_any, "is_deleted", False):
+        review = existing_any
+        review.is_deleted = False
+        review.is_hidden = False
+        review.report_count = 0
+        review.rating = payload.rating
+        review.text = payload.text
+        review.tags = tags or None
+        review.updated_at = datetime.utcnow()
+    else:
+        review = PartyReview(
+            reviewer_id=current_user.id,
+            reviewed_id=payload.reviewed_id,
+            party_id=payload.party_id,
+            rating=payload.rating,
+            text=payload.text,
+            tags=tags or None,
+        )
+        db.add(review)
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Вы уже оценили этого участника")
+
     db.refresh(review)
     _recalc_trust_score(payload.reviewed_id, db)
 
