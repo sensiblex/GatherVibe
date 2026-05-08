@@ -26,6 +26,8 @@ def _san(cls, v):
 
 
 router = APIRouter(tags=["parties"])
+MAX_EVENT_DATE_FUTURE_DAYS = 180
+PAST_EVENT_DATE_GRACE_SECONDS = 5 * 60
 
 
 def _require_creator(party: EventParty, current_user: User, action: str) -> None:
@@ -57,6 +59,7 @@ class PartyCreateBody(BaseModel):
     title: str = Field(..., min_length=1, max_length=60)
     description: Optional[str] = Field(None, max_length=500)
     max_members: int = Field(4, ge=2, le=50)
+    event_date_ts: Optional[int] = None
 
     _san = field_validator("title", "description", mode="before")(_san)
 
@@ -802,6 +805,18 @@ async def create_party(
         except (asyncio.TimeoutError, Exception):
             pass
 
+    resolved_event_date_ts = body.event_date_ts if body.event_date_ts is not None else event_date_ts
+    if resolved_event_date_ts is not None:
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        if resolved_event_date_ts < (now_ts - PAST_EVENT_DATE_GRACE_SECONDS):
+            raise HTTPException(status_code=400, detail="Нельзя создать пати на прошедшую дату")
+        max_allowed_ts = now_ts + MAX_EVENT_DATE_FUTURE_DAYS * 24 * 3600
+        if resolved_event_date_ts > max_allowed_ts:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Нельзя создать пати слишком далеко в будущем (более {MAX_EVENT_DATE_FUTURE_DAYS} дней)",
+            )
+
     party = EventParty(
         event_id=event_id,
         title=body.title.strip(),
@@ -810,7 +825,7 @@ async def create_party(
         creator_id=user.id,
         is_open=True,
         event_title=event_title,
-        event_date_ts=event_date_ts,
+        event_date_ts=resolved_event_date_ts,
         event_image_url=event_image_url,
         invite_token=uuid.uuid4().hex,
     )

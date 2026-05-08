@@ -218,37 +218,55 @@ async def get_my_events(
         )
     )
     party_event_ids = (member_event_ids | creator_event_ids) - seen_event_ids
+    parties_by_event_id = {
+        row.event_id: row
+        for row in db.query(EventParty)
+        .filter(EventParty.event_id.in_(list(party_event_ids)))
+        .all()
+    }
 
     for event_id in party_event_ids:
         try:
-            raw = await asyncio.wait_for(
-                kudago_api_async.get_event_by_id(int(event_id)), timeout=3.0
-            )
-            dates = raw.get("dates") or []
             date_ts: Optional[int] = None
-            future = sorted(
-                [d for d in dates if d.get("start") and int(d["start"]) >= now_ts],
-                key=lambda d: int(d["start"]),
-            )
-            if future:
-                date_ts = int(future[0]["start"])
+            title: Optional[str] = None
+            image_url: Optional[str] = None
+            category: Optional[str] = None
+            location: Optional[str] = None
+            party = parties_by_event_id.get(event_id)
+
+            if party and party.event_date_ts:
+                date_ts = int(party.event_date_ts)
+                title = party.event_title
+                image_url = party.event_image_url
             else:
-                past_sorted = sorted(
-                    [d for d in dates if d.get("start")],
-                    key=lambda d: int(d["start"]),
-                    reverse=True,
+                raw = await asyncio.wait_for(
+                    kudago_api_async.get_event_by_id(int(event_id)), timeout=3.0
                 )
-                if past_sorted:
-                    date_ts = int(past_sorted[0]["start"])
-            images = raw.get("images") or []
-            image_url = images[0].get("image") if images else None
-            cats = raw.get("categories") or []
-            category = cats[0] if cats else None
-            place = raw.get("place") or {}
-            location = place.get("address") or place.get("title") or None
+                dates = raw.get("dates") or []
+                future = sorted(
+                    [d for d in dates if d.get("start") and int(d["start"]) >= now_ts],
+                    key=lambda d: int(d["start"]),
+                )
+                if future:
+                    date_ts = int(future[0]["start"])
+                else:
+                    past_sorted = sorted(
+                        [d for d in dates if d.get("start")],
+                        key=lambda d: int(d["start"]),
+                        reverse=True,
+                    )
+                    if past_sorted:
+                        date_ts = int(past_sorted[0]["start"])
+                images = raw.get("images") or []
+                image_url = images[0].get("image") if images else None
+                cats = raw.get("categories") or []
+                category = cats[0] if cats else None
+                place = raw.get("place") or {}
+                location = place.get("address") or place.get("title") or None
+                title = raw.get("title")
             items[event_id] = {
                 "event_id":   event_id,
-                "title":      raw.get("title") or f"Событие #{event_id}",
+                "title":      title or f"Событие #{event_id}",
                 "date_ts":    date_ts,
                 "city":       None,
                 "category":   category,
