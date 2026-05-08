@@ -10,10 +10,17 @@ import { toast } from './Toast';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+function toMediaUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  return `${API_BASE}${path}`;
+}
+
 interface Attendee {
   id: number;
   user_id: number;
   username: string;
+  avatar_url?: string | null;
   city: string | null;
   interests: string | null;
   comment: string | null;
@@ -165,7 +172,7 @@ function AttendeeCard({
       <div className="flex items-center gap-3">
         <Link
           href={`/users/${attendee.user_id}`}
-          className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 transition hover:opacity-80"
+          className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0 transition hover:opacity-80 overflow-hidden"
           style={{
             background:
               isTopMatch || commonInterests.length >= 2
@@ -174,7 +181,15 @@ function AttendeeCard({
           }}
           aria-label={`Профиль ${attendee.username}`}
         >
-          {initials}
+          {attendee.avatar_url ? (
+            <img
+              src={toMediaUrl(attendee.avatar_url) || undefined}
+              alt={attendee.username}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            initials
+          )}
         </Link>
         <div className="min-w-0">
           <Link

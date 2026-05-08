@@ -23,6 +23,12 @@ import { buildEventIdentityMeta } from '../../lib/event-identity';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 const POLL_INTERVAL = 5000;
 
+function toMediaUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  return `${API_BASE}${path}`;
+}
+
 interface PartyDeletedPayload {
   party_id: number;
   party_title: string;
@@ -34,6 +40,7 @@ interface PartyMember {
   id: number;
   user_id: number;
   username: string;
+  avatar_url?: string | null;
   city: string | null;
   interests: string | null;
   status: MemberStatus;
@@ -51,6 +58,7 @@ interface Party {
   max_members: number;
   creator_id: number;
   creator_username: string;
+  creator_avatar_url?: string | null;
   is_open: boolean;
   members: PartyMember[];
   event_title?: string | null;
@@ -759,9 +767,17 @@ export default function PartyDetailPage() {
                 {/* Creator row */}
                 <div className="flex items-center gap-3 p-3 rounded-xl"
                   style={isCreator ? myRowStyle : normalRowStyle}>
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
-                    {party.creator_username.slice(0, 2).toUpperCase()}
-                  </div>
+                  {party.creator_avatar_url ? (
+                    <img
+                      src={toMediaUrl(party.creator_avatar_url) || undefined}
+                      alt={party.creator_username}
+                      className="w-9 h-9 rounded-full object-cover shrink-0"
+                    />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                      {party.creator_username.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
                       {party.creator_username}
@@ -781,9 +797,17 @@ export default function PartyDetailPage() {
                   <div key={member.id ?? member.user_id} className="flex flex-col gap-2 p-3 rounded-xl"
                     style={member.user_id === myId ? myRowStyle : normalRowStyle}>
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
-                        {member.username.slice(0, 2).toUpperCase()}
-                      </div>
+                      {member.avatar_url ? (
+                        <img
+                          src={toMediaUrl(member.avatar_url) || undefined}
+                          alt={member.username}
+                          className="w-9 h-9 rounded-full object-cover shrink-0"
+                        />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                          {member.username.slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
                           {member.username}

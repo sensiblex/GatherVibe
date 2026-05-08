@@ -100,7 +100,7 @@ def get_messages(
     users_map = {}
     if user_ids:
         users_map = {
-            str(u.id): u.avatar_url
+            u.id: u.avatar_url
             for u in db.query(User).filter(User.id.in_(user_ids)).all()
         }
     message_ids = [r.id for r in rows]

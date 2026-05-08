@@ -124,6 +124,7 @@ class PartyMemberOut(BaseModel):
     username: str
     city: Optional[str]
     interests: Optional[str]
+    avatar_url: Optional[str] = None
     status: MemberStatus
     joined_at: datetime
     message: Optional[str] = None
@@ -142,6 +143,7 @@ class PartyOut(BaseModel):
     max_members: int
     creator_id: int
     creator_username: str
+    creator_avatar_url: Optional[str] = None
     is_open: bool
     members: List[PartyMemberOut]
     event_title: Optional[str] = None
@@ -227,7 +229,7 @@ def _build_parties_out_bulk(
         members = [
             PartyMemberOut(
                 id=m.id, user_id=u.id, username=u.username, city=u.city,
-                interests=u.interests, status=m.status, joined_at=m.joined_at,
+                interests=u.interests, avatar_url=u.avatar_url, status=m.status, joined_at=m.joined_at,
                 message=m.message, invited_by_user_id=m.invited_by_user_id,
                 invite_message=m.invite_message,
             )
@@ -240,6 +242,7 @@ def _build_parties_out_bulk(
             description=party.description, max_members=party.max_members,
             creator_id=party.creator_id,
             creator_username=creator.username if creator else "?",
+            creator_avatar_url=creator.avatar_url if creator else None,
             is_open=party.is_open, members=members,
             event_title=party.event_title, event_date_ts=party.event_date_ts,
             event_image_url=party.event_image_url,

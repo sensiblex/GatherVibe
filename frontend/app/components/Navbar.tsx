@@ -10,6 +10,12 @@ import NavbarInvitesDropdown from './NavbarInvitesDropdown';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+function toMediaUrl(path: string | null): string | null {
+  if (!path) return null;
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  return `${API_BASE}${path}`;
+}
+
 function ThemeToggle() {
   const [dark, setDark] = useState(true);
 
@@ -144,7 +150,7 @@ export default function Navbar() {
                 <Link href="/profile" aria-label={user.username} style={{ display: 'inline-flex' }}>
                   {avatarUrl ? (
                     <img
-                      src={avatarUrl}
+                      src={toMediaUrl(avatarUrl) || undefined}
                       alt={user.username}
                       style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }}
                     />

@@ -9,6 +9,12 @@ import ReportButton from './ReportButton';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+function toMediaUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  return `${API_BASE}${path}`;
+}
+
 interface Message {
   messageId?: number;
   message: string;
@@ -246,7 +252,7 @@ export default function PartyChat({
                     aria-label={`Профиль ${msg.username}`}
                   >
                     {msg.avatarUrl ? (
-                      <img src={msg.avatarUrl} alt={msg.username} className="w-full h-full object-cover" />
+                      <img src={toMediaUrl(msg.avatarUrl) || undefined} alt={msg.username} className="w-full h-full object-cover" />
                     ) : (
                       (msg.username || String(msg.userId)).slice(0, 1).toUpperCase()
                     )}

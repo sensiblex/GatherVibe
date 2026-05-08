@@ -312,6 +312,7 @@ app = FastAPI(title="GatherVibe API", lifespan=lifespan)
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 import os as _os  # noqa: E402
 _os.makedirs("uploads/chat", exist_ok=True)
+_os.makedirs("uploads/avatars", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.add_middleware(
@@ -329,7 +330,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from routers import auth, users, events, parties, reviews, notifications, party_coordination  # noqa: E402
+from routers import auth, users, events, parties, reviews, notifications, party_coordination, avatars  # noqa: E402
 from routers.party_plan import router as party_plan_router  # noqa: E402
 from routers.party_recap import router as party_recap_router  # noqa: E402
 from routers.admin import router as admin_router  # noqa: E402
@@ -346,6 +347,7 @@ app.include_router(party_plan_router)
 app.include_router(party_recap_router)
 app.include_router(reviews.router)
 app.include_router(users.router)
+app.include_router(avatars.router)
 app.include_router(events.router)
 app.include_router(notifications.router)
 

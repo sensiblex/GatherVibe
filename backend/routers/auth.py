@@ -221,8 +221,6 @@ def update_profile(
         user.interests = data.interests.strip() or None
 
     if data.avatar_url is not None:
-        if data.avatar_url and not data.avatar_url.startswith("https://"):
-            raise HTTPException(status_code=400, detail="avatar_url должен начинаться с https://")
         user.avatar_url = data.avatar_url or None
 
     db.commit()

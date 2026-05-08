@@ -12,7 +12,12 @@ import { translateCategory } from '../events/utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const IMGBB_KEY = process.env.NEXT_PUBLIC_IMGBB_KEY || '';
+
+function toMediaUrl(path?: string | null): string | null {
+  if (!path) return null;
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  return `${API_BASE}${path}`;
+}
 
 interface User {
   id: number;
@@ -355,17 +360,6 @@ function PrivacyModal({ onClose }: { onClose: () => void }) {
 }
 
 // ──────────────────────────────────────────────────────────────────
-async function uploadToImgbb(file: File): Promise<string> {
-  if (!IMGBB_KEY) throw new Error('NEXT_PUBLIC_IMGBB_KEY не задан в .env.local');
-  const form = new FormData();
-  form.append('image', file);
-  const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`, { method: 'POST', body: form });
-  const data = await res.json() as { success: boolean; data: { url: string }; error?: { message: string } };
-  if (!data.success) throw new Error(data.error?.message || 'Ошибка загрузки изображения');
-  return data.data.url;
-}
-
-// ──────────────────────────────────────────────────────────────────
 type MemberStatus = 'pending' | 'accepted' | 'rejected' | 'left';
 
 interface PartyMemberOut {
@@ -634,16 +628,18 @@ export default function ProfilePage() {
     if (file.size > 5 * 1024 * 1024) { setAvatarError('Файл слишком большой (макс. 5 МБ)'); return; }
     setAvatarLoading(true); setAvatarError('');
     try {
-      const url = await uploadToImgbb(file);
-      const res = await apiFetch(`${API_BASE}/users/me`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ avatar_url: url }),
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await apiFetch(`${API_BASE}/users/me/avatar`, {
+        method: 'POST',
+        body: formData,
       });
       if (!res.ok) throw new Error('Не удалось обновить аватар');
-      setUser(await res.json() as User);
-      localStorage.setItem('avatar_url', url);
+      const data = await res.json() as { avatar_url: string };
+      setUser(prev => prev ? { ...prev, avatar_url: data.avatar_url } : prev);
+      localStorage.setItem('avatar_url', data.avatar_url);
       window.dispatchEvent(new Event('avatar:updated'));
+      router.refresh();
     } catch (err: unknown) {
       setAvatarError(err instanceof Error ? err.message : 'Не удалось загрузить фото');
     }
@@ -710,7 +706,7 @@ export default function ProfilePage() {
         <div className="profile-head">
           <div style={{ position: 'relative' }}>
             {user?.avatar_url ? (
-              <img src={user.avatar_url} alt={user.username}
+              <img src={toMediaUrl(user.avatar_url) || undefined} alt={user.username}
                 style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover' }} />
             ) : (
               <div className="av av-xl">{initials}</div>

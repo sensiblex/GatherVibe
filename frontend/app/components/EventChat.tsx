@@ -9,6 +9,12 @@ import { apiFetch } from '../lib/apiFetch';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
+function toMediaUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  return `${API_BASE}${path}`;
+}
+
 interface Message {
   message: string;
   userId: string;
@@ -171,7 +177,7 @@ export default function EventChat({
                     aria-label={`Профиль ${m.username}`}
                   >
                     {m.avatarUrl ? (
-                      <img src={m.avatarUrl} alt={m.username} className="w-full h-full object-cover" />
+                      <img src={toMediaUrl(m.avatarUrl) || undefined} alt={m.username} className="w-full h-full object-cover" />
                     ) : (
                       (m.username || m.userId).slice(0, 1).toUpperCase()
                     )}
