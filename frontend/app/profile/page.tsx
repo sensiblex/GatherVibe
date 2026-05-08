@@ -592,7 +592,7 @@ export default function ProfilePage() {
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
   const [avatarError, setAvatarError] = useState('');
-  const [activeTab, setActiveTab]     = useState<'info' | 'parties' | 'events'>('info');
+  const [activeTab, setActiveTab]     = useState<'parties' | 'events'>('parties');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -751,13 +751,22 @@ export default function ProfilePage() {
                 ))}
               </div>
             )}
+
+            <div className="profile-about-inline">
+              <div className="profile-about-title">О себе</div>
+              <p className="t-sm" style={{ lineHeight: 1.62, margin: 0 }}>
+                {user?.bio || 'Пока не рассказал о себе. Нажмите «Редактировать», чтобы добавить описание.'}
+              </p>
+            </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
-            <button onClick={() => setEditOpen(true)} className="btn btn-ink btn-sm">Редактировать</button>
+          <div className="profile-actions">
+            <button onClick={() => setEditOpen(true)} className="btn btn-ink btn-sm profile-action-btn">Редактировать</button>
+            <button onClick={() => setPassOpen(true)} className="btn btn-ghost btn-sm profile-action-btn">Сменить пароль</button>
+            <button onClick={() => setPrivacyOpen(true)} className="btn btn-ghost btn-sm profile-action-btn">Приватность</button>
             <button
               type="button"
-              className="btn btn-ghost btn-sm"
+              className="btn btn-ghost btn-sm profile-action-btn"
               data-testid="export-data"
               onClick={async () => {
                 const r = await apiFetch('/users/me/export');
@@ -774,7 +783,7 @@ export default function ProfilePage() {
             >
               Экспорт данных
             </button>
-            <button onClick={handleLogout} className="btn btn-ghost btn-sm" style={{ color: 'var(--match)' }}>Выйти</button>
+            <button onClick={handleLogout} className="btn btn-ghost btn-sm profile-action-btn profile-action-danger">Выйти</button>
           </div>
         </div>
 
@@ -796,37 +805,18 @@ export default function ProfilePage() {
 
         {/* ── Tabs ── */}
         <div className="tab-row" role="tablist">
-          {(['info', 'parties', 'events'] as const).map(tab => (
+          {(['parties', 'events'] as const).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)}
               className={`tab${activeTab === tab ? ' active' : ''}`} role="tab"
               aria-selected={activeTab === tab}>
-              {tab === 'info' ? 'Профиль' : tab === 'parties' ? 'Мои компании' : 'Мои события'}
+              {tab === 'parties' ? 'Мои компании' : 'Мои события'}
             </button>
           ))}
         </div>
 
-        {activeTab !== 'info' && (
-          <div className="p-card">
-            {activeTab === 'parties' && user && <MyPartiesTab userId={user.id} />}
-            {activeTab === 'events' && <MyEventsTab />}
-          </div>
-        )}
-
-        {activeTab === 'info' && (
-          <p className="t-sm" style={{ textAlign: 'center', marginTop: 32 }}>
-            Хочешь посмотреть события?{' '}
-            <Link href="/events" style={{ color: 'var(--ink)', fontWeight: 600 }}>Перейти →</Link>
-          </p>
-        )}
-      </main>
-
-      {/* ── Sidebar ── */}
-      <aside>
         <div className="p-card">
-          <div className="p-card-title">О себе</div>
-          <p className="t-sm" style={{ lineHeight: 1.62 }}>
-            {user?.bio || 'Пока не рассказал о себе. Нажмите «Редактировать», чтобы добавить описание.'}
-          </p>
+          {activeTab === 'parties' && user && <MyPartiesTab userId={user.id} />}
+          {activeTab === 'events' && <MyEventsTab />}
         </div>
 
         {user && (
@@ -835,16 +825,7 @@ export default function ProfilePage() {
             <UserReviewsBlock userId={user.id} viewerUserId={user.id} maxReviews={3} />
           </div>
         )}
-
-        <div className="p-card">
-          <div className="p-card-title">Настройки</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <button onClick={() => setEditOpen(true)} className="btn btn-ink btn-sm">Редактировать профиль</button>
-            <button onClick={() => setPassOpen(true)} className="btn btn-ghost btn-sm">Сменить пароль</button>
-            <button onClick={() => setPrivacyOpen(true)} className="btn btn-ghost btn-sm">Приватность</button>
-          </div>
-        </div>
-      </aside>
+      </main>
       </div>
       </section>
     </div>

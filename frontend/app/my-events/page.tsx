@@ -68,22 +68,13 @@ export default function MyEventsPage() {
     }).catch(() => setData({ upcoming: [], past: [] })).finally(() => setLoading(false));
   }, [router]);
 
-  // All reviewable users (flat), used to associate with past event cards.
-  // Since ReviewableUser has party_id but we display per event card,
-  // we show the button on any past card if there are unreviewed users at all.
-  function refreshReviewable() {
-    apiFetch(`${API_BASE}/users/me/reviewable`)
-      .then(r => r.json())
-      .then((reviewable: ReviewableUser[]) => {
-        const grouped: Record<string, ReviewableUser[]> = {};
-        for (const u of reviewable) {
-          const key = u.event_id;
-          if (!grouped[key]) grouped[key] = [];
-          grouped[key].push(u);
-        }
-        setReviewableByEvent(grouped);
-      })
-      .catch(() => {});
+  function clearReviewableForEvent(eventId: string) {
+    setReviewableByEvent(prev => {
+      if (!prev[eventId]) return prev;
+      const next = { ...prev };
+      delete next[eventId];
+      return next;
+    });
   }
 
   const list = activeTab === 'upcoming' ? (data?.upcoming ?? []) : (data?.past ?? []);
@@ -243,8 +234,9 @@ export default function MyEventsPage() {
           users={getReviewableForEvent(reviewingEventId)}
           onClose={() => setReviewingEventId(null)}
           onAllReviewed={() => {
+            const completedEventId = reviewingEventId;
             setReviewingEventId(null);
-            refreshReviewable();
+            if (completedEventId) clearReviewableForEvent(completedEventId);
           }}
         />
       )}

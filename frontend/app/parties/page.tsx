@@ -357,7 +357,18 @@ export default function PartiesSearchPage() {
 
       setTotal(data.total);
       setTotalPages(data.pages);
-      setParties(prev => append ? [...prev, ...items] : items);
+      setParties(prev => {
+        if (!append) return items;
+        const merged = [...prev];
+        const seen = new Set(prev.map(p => p.id));
+        for (const item of items) {
+          if (!seen.has(item.id)) {
+            merged.push(item);
+            seen.add(item.id);
+          }
+        }
+        return merged;
+      });
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Не удалось загрузить компании');
     } finally {
@@ -739,6 +750,35 @@ export default function PartiesSearchPage() {
             {/* Infinite scroll sentinel */}
             {page < totalPages && (
               <div ref={sentinelRef} className="mt-10 flex flex-col items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (loadingRef.current || page >= totalPages) return;
+                    const next = page + 1;
+                    setPage(next);
+                    load(
+                      next,
+                      search,
+                      city,
+                      dateFrom,
+                      dateTo,
+                      minMembers,
+                      maxMembers,
+                      sortBy,
+                      true,
+                    );
+                  }}
+                  disabled={loadingMore}
+                  className="px-4 py-2 rounded-xl text-sm font-semibold transition"
+                  style={{
+                    background: 'var(--surface-2)',
+                    color: 'var(--text)',
+                    border: '1px solid var(--border)',
+                    opacity: loadingMore ? 0.7 : 1,
+                  }}
+                >
+                  {loadingMore ? 'Загружаем...' : 'Загрузить ещё компании'}
+                </button>
                 {loadingMore && (
                   <div className="flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
                     <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
@@ -753,13 +793,6 @@ export default function PartiesSearchPage() {
               </div>
             )}
 
-            {/* End of results */}
-            {parties.length > 0 && page >= totalPages && totalPages > 1 && (
-              <div className="mt-10 flex flex-col items-center gap-2" style={{ color: 'var(--text-faint)' }}>
-                <div className="w-12 h-px" style={{ background: 'var(--divider)' }} />
-                <p className="text-xs">Все компании загружены · {total?.toLocaleString('ru-RU')} всего</p>
-              </div>
-            )}
           </>
         )}
       </main>

@@ -12,6 +12,7 @@ import ActivePoll from '../../components/PartyCoordination/ActivePoll';
 import PartyMeetingPlan from '../../components/PartyMeetingPlan';
 import PartyRecapTab from '../../components/PartyRecapTab';
 import PushPermissionPrompt from '../../components/PushPermissionPrompt';
+import ReviewModal, { ReviewableUser } from '../../components/ReviewModal';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from '../../components/Toast';
 import { apiFetch } from '../../lib/apiFetch';
@@ -340,6 +341,10 @@ export default function PartyDetailPage() {
   const socketRef = useRef<Socket | null>(null);
   const selfLeftRef = useRef(false);
 
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [reviewableUsers, setReviewableUsers] = useState<ReviewableUser[]>([]);
+  const [reviewableLoading, setReviewableLoading] = useState(false);
+
   const fetchParty = useCallback(async () => {
     try {
       const res = await apiFetch(`${API_BASE}/parties/detail/${partyId}`);
@@ -379,6 +384,24 @@ export default function PartyDetailPage() {
     const id = setInterval(fetchParty, POLL_INTERVAL);
     return () => clearInterval(id);
   }, [fetchParty]);
+
+  const loadReviewableForParty = useCallback(async (pid: number) => {
+    if (!token) return;
+    setReviewableLoading(true);
+    try {
+      const res = await apiFetch(`${API_BASE}/users/me/reviewable`);
+      if (!res.ok) {
+        setReviewableUsers([]);
+        return;
+      }
+      const all = await res.json() as ReviewableUser[];
+      setReviewableUsers(all.filter(u => u.party_id === pid));
+    } catch {
+      setReviewableUsers([]);
+    } finally {
+      setReviewableLoading(false);
+    }
+  }, [token]);
 
   // Инициализируем socketRef для компонентов координации
   useEffect(() => {
@@ -458,6 +481,38 @@ export default function PartyDetailPage() {
     setActionLoading(false);
   };
 
+  // Derived state must be declared before any early returns,
+  // otherwise React will see different Hook order between renders.
+  const isCreator = !!party && myId !== null && party.creator_id === myId;
+  const myMembership = party?.members.find(m => m.user_id === myId);
+  const isAcceptedMember = isCreator || myMembership?.status === 'accepted';
+  const acceptedCount = party ? party.members.filter(m => m.status === 'accepted').length : 0;
+  const pendingCount = party ? party.members.filter(m => m.status === 'pending').length : 0;
+  const invitedCount = party ? party.members.filter(m => m.status === 'invited').length : 0;
+  const isFull = party ? (acceptedCount + 1 >= party.max_members) : false;
+  // Event ended: 2h after start. After that point, coordination tools are hidden,
+  // and the party becomes a "memories mode" — only chat and recap remain.
+  const ACTIVE_GRACE_SECONDS = 2 * 3600;
+  const eventEnded = !!party?.event_date_ts
+    && (Date.now() / 1000) > (party.event_date_ts + ACTIVE_GRACE_SECONDS);
+  const canJoin = !!party && !!token && !isCreator && !myMembership && party.is_open && !isFull && !eventEnded;
+  const canLeave = !!party && !!token && !isCreator && myMembership?.status === 'accepted' && !eventEnded;
+
+  useEffect(() => {
+    if (!token) return;
+    if (!partyId) return;
+    if (!eventEnded) return;
+    if (!isAcceptedMember) return;
+    loadReviewableForParty(partyId);
+  }, [partyId, token, eventEnded, isAcceptedMember, loadReviewableForParty]);
+
+  const handleCloseReviewModal = useCallback(() => {
+    setReviewModalOpen(false);
+    if (token && eventEnded && isAcceptedMember) {
+      loadReviewableForParty(partyId);
+    }
+  }, [token, eventEnded, isAcceptedMember, loadReviewableForParty, partyId]);
+
   // ── Loading skeleton ──
   if (loading) return (
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
@@ -493,20 +548,6 @@ export default function PartyDetailPage() {
     </div>
   );
 
-  const isCreator = myId !== null && party.creator_id === myId;
-  const myMembership = party.members.find(m => m.user_id === myId);
-  const isAcceptedMember = isCreator || myMembership?.status === 'accepted';
-  const acceptedCount = party.members.filter(m => m.status === 'accepted').length;
-  const pendingCount = party.members.filter(m => m.status === 'pending').length;
-  const invitedCount = party.members.filter(m => m.status === 'invited').length;
-  const isFull = acceptedCount + 1 >= party.max_members;
-  // Event ended: 2h after start. After that point, coordination tools are hidden,
-  // and the party becomes a "memories mode" — only chat and recap remain.
-  const ACTIVE_GRACE_SECONDS = 2 * 3600;
-  const eventEnded = party.event_date_ts !== null && party.event_date_ts !== undefined
-    && (Date.now() / 1000) > (party.event_date_ts + ACTIVE_GRACE_SECONDS);
-  const canJoin = !!token && !isCreator && !myMembership && party.is_open && !isFull && !eventEnded;
-  const canLeave = !!token && !isCreator && myMembership?.status === 'accepted' && !eventEnded;
   const partyStatus = eventEnded
     ? 'finished'
     : !party.is_open
@@ -678,22 +719,41 @@ export default function PartyDetailPage() {
             <div className="rounded-2xl p-6" style={cardStyle}>
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-bold" style={{ color: 'var(--text)' }}>Участники</h2>
-                {isCreator && !eventEnded && (
-                  <div className="flex gap-2">
-                    {pendingCount > 0 && (
-                      <span className="text-xs px-2 py-1 rounded-full font-semibold"
-                        style={{ background: 'var(--warning-hl)', color: 'var(--warning)', border: '1px solid color-mix(in oklch, var(--warning) 30%, transparent)' }}>
-                        ⏳ {pendingCount} ожидают
-                      </span>
-                    )}
-                    {invitedCount > 0 && (
-                      <span className="text-xs px-2 py-1 rounded-full font-semibold"
-                        style={{ background: 'var(--primary-hl)', color: 'var(--primary)', border: '1px solid color-mix(in oklch, var(--primary) 30%, transparent)' }}>
-                        📬 {invitedCount} приглашено
-                      </span>
-                    )}
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  {eventEnded && isAcceptedMember && reviewableUsers.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setReviewModalOpen(true)}
+                      disabled={reviewableLoading}
+                      className="text-sm px-3 py-1.5 rounded-xl transition hover:opacity-80"
+                      style={{
+                        border: '1px solid var(--primary)',
+                        color: 'var(--primary)',
+                        background: 'var(--primary-hl)',
+                        opacity: reviewableLoading ? 0.6 : 1,
+                      }}
+                    >
+                      ⭐ Оценить участников
+                    </button>
+                  )}
+
+                  {isCreator && !eventEnded && (
+                    <div className="flex gap-2">
+                      {pendingCount > 0 && (
+                        <span className="text-xs px-2 py-1 rounded-full font-semibold"
+                          style={{ background: 'var(--warning-hl)', color: 'var(--warning)', border: '1px solid color-mix(in oklch, var(--warning) 30%, transparent)' }}>
+                          ⏳ {pendingCount} ожидают
+                        </span>
+                      )}
+                      {invitedCount > 0 && (
+                        <span className="text-xs px-2 py-1 rounded-full font-semibold"
+                          style={{ background: 'var(--primary-hl)', color: 'var(--primary)', border: '1px solid color-mix(in oklch, var(--primary) 30%, transparent)' }}>
+                          📬 {invitedCount} приглашено
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="space-y-3">
                 {/* Creator row */}
@@ -961,6 +1021,16 @@ export default function PartyDetailPage() {
         </div>
       </main>
 
+      {reviewModalOpen && (
+        <ReviewModal
+          users={reviewableUsers}
+          onClose={handleCloseReviewModal}
+          onAllReviewed={() => {
+            setReviewableUsers([]);
+            setReviewModalOpen(false);
+          }}
+        />
+      )}
       {showJoinModal && party && (
         <JoinModal
           partyId={partyId}
