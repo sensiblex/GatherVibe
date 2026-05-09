@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '../components/Navbar';
 import { INTERESTS_LIST } from '../lib/interests';
-import { KUDAGO_CITIES } from '../events/event-filters';
+import { CityAutocomplete } from '../components/CityAutocomplete';
 import { validateRegisterStep1 } from './register-city';
 import { resolveApiBase } from '../lib/apiBase';
 
@@ -16,12 +16,18 @@ export default function RegisterPage() {
   const [step, setStep]           = useState<1 | 2 | 3>(1);
   const [registeredEmail, setRegisteredEmail] = useState('');
   const [form, setForm]           = useState({ email: '', username: '', password: '', city: '' });
+  const [cityValid, setCityValid] = useState(false);
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [loading, setLoading]     = useState(false);
   const [error, setError]         = useState<string | null>(null);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+
+  const handleCityChange = (city: string, isValid: boolean) => {
+    setForm(prev => ({ ...prev, city }));
+    setCityValid(isValid);
+  };
 
   const toggleInterest = (id: string) =>
     setSelected(prev => {
@@ -32,6 +38,10 @@ export default function RegisterPage() {
 
   const handleStep1 = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!cityValid) {
+      setError('Выберите город из списка');
+      return;
+    }
     const validationError = validateRegisterStep1(form);
     if (validationError) {
       setError(validationError);
@@ -148,13 +158,14 @@ export default function RegisterPage() {
                     placeholder="Не менее 8 символов" required minLength={8} className="gv-input" />
                 </div>
                 <div>
-                  <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Город *</label>
-                  <select name="city" value={form.city} onChange={handleChange} required className="gv-input">
-                    <option value="" disabled>Выберите город</option>
-                    {KUDAGO_CITIES.map(city => (
-                      <option key={city.slug} value={city.name}>{city.name}</option>
-                    ))}
-                  </select>
+                  <CityAutocomplete
+                    value={form.city}
+                    onChange={handleCityChange}
+                    label="Город"
+                    required
+                    placeholder="Начните вводить город..."
+                    error={error && !cityValid ? 'Выберите город из списка' : undefined}
+                  />
                 </div>
                 <button type="submit" className="gv-btn-primary w-full mt-2">
                   Далее →

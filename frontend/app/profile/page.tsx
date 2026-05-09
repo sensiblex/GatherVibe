@@ -7,6 +7,7 @@ import { apiFetch } from '../lib/apiFetch';
 import { useAuth } from '../context/AuthContext';
 import Navbar from '../components/Navbar';
 import UserReviewsBlock from '../components/UserReviewsBlock';
+import { CityAutocomplete } from '../components/CityAutocomplete';
 import { INTERESTS_LIST, getInterestLabel } from '../lib/interests';
 import { translateCategory } from '../events/utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
@@ -55,6 +56,7 @@ function EditProfileModal({
 }) {
   const [username, setUsername] = useState(user.username);
   const [city, setCity] = useState(user.city || '');
+  const [cityValid, setCityValid] = useState(!!user.city);
   const [bio, setBio] = useState(user.bio || '');
   const [selectedInterests, setSelectedInterests] = useState<string[]>(
     user.interests ? user.interests.split(',').map(s => s.trim()).filter(Boolean) : []
@@ -68,8 +70,14 @@ function EditProfileModal({
     );
   };
 
+  const handleCityChange = (newCity: string, isValid: boolean) => {
+    setCity(newCity);
+    setCityValid(isValid);
+  };
+
   const handleSave = async () => {
     if (!username.trim()) { setError('Username не может быть пустым'); return; }
+    if (city && !cityValid) { setError('Выберите город из списка'); return; }
     setLoading(true);
     setError('');
     try {
@@ -120,10 +128,13 @@ function EditProfileModal({
               style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
           </div>
           <div>
-            <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Город</label>
-            <input value={city} onChange={e => setCity(e.target.value)} placeholder="Казань"
-              className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+            <CityAutocomplete
+              value={city}
+              onChange={handleCityChange}
+              label="Город"
+              placeholder="Начните вводить город..."
+              error={error && !cityValid && city ? 'Выберите город из списка' : undefined}
+            />
           </div>
           <div>
             <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>О себе</label>
