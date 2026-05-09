@@ -36,7 +36,7 @@ def create_user_token(user):
             "username": user.username,
             "role": getattr(user, "role", "user"),
         },
-        expires_delta=timedelta(minutes=60 * 24 * 7),  # 7 дней
+        expires_delta=timedelta(hours=2),
     )
     return {
         "access_token": token,

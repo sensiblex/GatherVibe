@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev:backend": "uvicorn --app-dir backend main:app --reload --host 127.0.0.1 --port 8000 --env-file backend/.env"
+  },
   "devDependencies": {
     "playwright": "^1.59.1"
   }

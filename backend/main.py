@@ -311,9 +311,32 @@ app = FastAPI(title="GatherVibe API", lifespan=lifespan)
 
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 import os as _os  # noqa: E402
+from urllib.parse import urlparse as _urlparse  # noqa: E402
 _os.makedirs("uploads/chat", exist_ok=True)
 _os.makedirs("uploads/avatars", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+
+DEFAULT_MAX_REQUEST_SIZE_BYTES = 10 * 1024 * 1024
+app.state.max_request_size_bytes = int(
+    _os.environ.get("MAX_REQUEST_SIZE_BYTES", DEFAULT_MAX_REQUEST_SIZE_BYTES)
+)
+
+
+@app.middleware("http")
+async def request_size_limit_middleware(request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > app.state.max_request_size_bytes:
+                from fastapi.responses import JSONResponse
+
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": "Размер запроса превышает допустимый лимит"},
+                )
+        except ValueError:
+            pass
+    return await call_next(request)
 
 app.add_middleware(
     CORSMiddleware,
@@ -364,6 +387,25 @@ def read_root():
 def health_check():
     return {"status": "ok", "service": "gathervibe-backend"}
 
+
+PARTY_MESSAGE_ALLOWED_HTTPS_HOSTS = {
+    host.strip().lower()
+    for host in _os.environ.get(
+        "PARTY_MESSAGE_ALLOWED_HTTPS_HOSTS",
+        "localhost,127.0.0.1",
+    ).split(",")
+    if host.strip()
+}
+
+
+def is_allowed_party_file_url(file_url: str) -> bool:
+    if file_url.startswith("/uploads/"):
+        return True
+    parsed = _urlparse(file_url)
+    if parsed.scheme != "https":
+        return False
+    host = (parsed.hostname or "").lower()
+    return host in PARTY_MESSAGE_ALLOWED_HTTPS_HOSTS and parsed.path.startswith("/uploads/")
 
 
 def _extract_token_from_environ(environ: dict) -> str | None:
@@ -430,7 +472,6 @@ async def _authenticate_sid(sid, data, db):
 async def disconnect(sid):
     logger.info(f"Client {sid} disconnected")
     chat_push.mark_disconnect(sid)
-
 
 
 @sio.on('join_event_chat')
@@ -567,7 +608,6 @@ async def leave_event_chat(sid, event_id: str):
     await sio.leave_room(sid, f'event_{event_id}')
 
 
-
 @sio.on('join_party_chat')
 async def join_party_chat(sid, data: dict):
     if data is not None and not isinstance(data, dict):
@@ -650,15 +690,14 @@ async def send_party_message(sid, data: dict):
         await sio.emit('error', {'message': 'partyId и message (или file_url) обязательны'}, room=sid)
         db.close()
         return
-    # Валидация file_url: принимаем только локальные /uploads/* и https URL
-    # (без javascript:, data:, file: — иначе stored XSS через href/src).
+    # Валидация file_url: принимаем только локальные /uploads/* и https://<allowed-host>/uploads/*.
     if file_url:
         if not isinstance(file_url, str) or len(file_url) > 500:
             await sio.emit('error', {'message': 'Некорректный file_url'}, room=sid)
             db.close()
             return
-        if not (file_url.startswith('/uploads/') or file_url.startswith('https://')):
-            await sio.emit('error', {'message': 'file_url должен быть /uploads/... или https://...'}, room=sid)
+        if not is_allowed_party_file_url(file_url):
+            await sio.emit('error', {'message': 'file_url должен быть /uploads/... или https://<allowed-host>/uploads/...'}, room=sid)
             db.close()
             return
     if file_type and (not isinstance(file_type, str) or not _is_allowed_party_file_type(file_type)):
