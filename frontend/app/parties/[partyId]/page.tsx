@@ -697,28 +697,6 @@ export default function PartyDetailPage() {
                 </div>
                 {isCreator && !eventEnded && (
                   <div className="shrink-0 flex flex-col gap-2">
-                    <button onClick={() => setShowEdit(true)}
-                      className="text-sm px-3 py-1.5 rounded-xl transition hover:opacity-80"
-                      style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
-                      ✏️ Редактировать
-                    </button>
-                    {party.invite_token && (
-                      <button
-                        onClick={async () => {
-                          const link = `${window.location.origin}/invite/${party.invite_token}`;
-                          try {
-                            await navigator.clipboard.writeText(link);
-                            toast('Ссылка скопирована — отправь её в любой мессенджер', 'success');
-                          } catch {
-                            window.prompt('Скопируйте ссылку вручную:', link);
-                          }
-                        }}
-                        className="text-sm px-3 py-1.5 rounded-xl transition hover:opacity-80"
-                        style={{ border: '1px solid var(--primary)', color: 'var(--primary)', background: 'var(--primary-hl)' }}
-                      >
-                        🔗 Скопировать ссылку
-                      </button>
-                    )}
                   </div>
                 )}
               </div>
@@ -942,7 +920,7 @@ export default function PartyDetailPage() {
 
           {/* RIGHT */}
           <div className="space-y-5">
-            {/* Summary */}
+            {/* Summary & Info */}
             <div
               className="rounded-2xl p-6 space-y-3"
               style={{
@@ -961,7 +939,13 @@ export default function PartyDetailPage() {
                 <span style={{ color: 'var(--text-muted)' }}>Участников</span>
                 <span className="font-semibold" style={{ color: 'var(--text)' }}>{acceptedCount + 1} / {party.max_members}</span>
               </div>
-              <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              {!eventEnded && (
+                <div className="flex items-center justify-between text-sm" style={{ borderTop: '1px solid var(--divider)', paddingTop: '0.75rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Заявок</span>
+                  <span className="font-semibold" style={{ color: 'var(--warning)' }}>{pendingCount}</span>
+                </div>
+              )}
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>
                 {nextStepHint}
               </p>
             </div>
@@ -989,6 +973,30 @@ export default function PartyDetailPage() {
                   🔒 Закрыть набор
                 </button>
               )}
+              {isCreator && !eventEnded && (
+                <button onClick={() => setShowEdit(true)}
+                  className="w-full text-sm py-2.5 rounded-xl transition hover:opacity-80"
+                  style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
+                  ✏️ Редактировать
+                </button>
+              )}
+              {isCreator && party.invite_token && !eventEnded && (
+                <button
+                  onClick={async () => {
+                    const link = `${window.location.origin}/invite/${party.invite_token}`;
+                    try {
+                      await navigator.clipboard.writeText(link);
+                      toast('Ссылка скопирована — отправь её в любой мессенджер', 'success');
+                    } catch {
+                      window.prompt('Скопируйте ссылку вручную:', link);
+                    }
+                  }}
+                  className="w-full text-sm py-2.5 rounded-xl transition hover:opacity-80"
+                  style={{ border: '1px solid var(--primary)', color: 'var(--primary)', background: 'var(--primary-hl)' }}
+                >
+                  🔗 Скопировать ссылку
+                </button>
+              )}
               {myMembership?.status === 'pending' && !eventEnded && (
                 <p className="text-xs text-center" style={{ color: 'var(--warning)' }}>⏳ Ваша заявка рассматривается</p>
               )}
@@ -1006,34 +1014,6 @@ export default function PartyDetailPage() {
               )}
             </div>
 
-            {/* Info */}
-            <div className="rounded-2xl p-6 space-y-3" style={cardStyle}>
-              <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Информация</h3>
-              {!eventEnded && (
-                <div className="flex items-center justify-between text-sm">
-                  <span style={{ color: 'var(--text-muted)' }}>Статус набора</span>
-                  <span className="font-semibold" style={{ color: party.is_open ? 'var(--success)' : 'var(--text-faint)' }}>
-                    {party.is_open ? '🟢 Открыт' : '🔒 Закрыт'}
-                  </span>
-                </div>
-              )}
-              {eventEnded && (
-                <div className="flex items-center justify-between text-sm">
-                  <span style={{ color: 'var(--text-muted)' }}>Статус</span>
-                  <span className="font-semibold" style={{ color: 'var(--primary)' }}>🎬 Завершено</span>
-                </div>
-              )}
-              <div className="flex items-center justify-between text-sm" style={{ borderTop: '1px solid var(--divider)', paddingTop: '0.75rem' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Участников</span>
-                <span className="font-semibold" style={{ color: 'var(--text)' }}>{acceptedCount + 1} / {party.max_members}</span>
-              </div>
-              {!eventEnded && (
-                <div className="flex items-center justify-between text-sm" style={{ borderTop: '1px solid var(--divider)', paddingTop: '0.75rem' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Заявок</span>
-                  <span className="font-semibold" style={{ color: 'var(--warning)' }}>{pendingCount}</span>
-                </div>
-              )}
-            </div>
 
             {/* Back to event */}
             <Link

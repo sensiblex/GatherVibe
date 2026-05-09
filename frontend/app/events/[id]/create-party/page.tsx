@@ -7,6 +7,7 @@ import Navbar from '../../../components/Navbar';
 import { useAuth } from '../../../context/AuthContext';
 import { apiFetch } from '../../../lib/apiFetch';
 import { buildPermanentDateOptions, type ScheduleEntry } from './date-options';
+import { extractSchedulesFromAllDates } from '../../utils';
 
 const MAX_EVENT_DATE_FUTURE_DAYS = 180;
 
@@ -70,13 +71,7 @@ export default function CreatePartyPage() {
         const isPermanent = Boolean(data?.is_permanent);
         setIsPermanentEvent(isPermanent);
         if (!isPermanent) return;
-        const schedules: ScheduleEntry[] = (Array.isArray(data?.place_schedules) ? data.place_schedules : [])
-          .filter((item: unknown): item is ScheduleEntry =>
-            typeof item === 'object'
-            && item !== null
-            && Number.isInteger((item as ScheduleEntry).weekday)
-            && typeof (item as ScheduleEntry).from === 'string'
-            && typeof (item as ScheduleEntry).to === 'string');
+        const schedules: ScheduleEntry[] = extractSchedulesFromAllDates(data?.all_dates ?? []);
         const options = buildPermanentDateOptions(schedules);
         setDateOptions(options);
         setSelectedEventDateTs(options[0]?.value ?? null);

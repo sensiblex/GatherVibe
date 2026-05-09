@@ -6,6 +6,8 @@ services:
       POSTGRES_USER: gathervibe_user
       POSTGRES_PASSWORD: gathervibe_pass
       POSTGRES_DB: gathervibe_db
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -58,6 +60,7 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=/api
       - NEXT_PUBLIC_SOCKET_URL=/api
+      - NEXT_REWRITE_TARGET=http://backend:8000
     depends_on:
       backend:
         condition: service_healthy

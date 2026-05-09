@@ -562,9 +562,6 @@ export default function EventsPage() {
             {total !== null && !showInitialLoading && (
               <p className="t-sm" style={{ marginTop: 8 }}>
                 {total.toLocaleString('ru-RU')} мероприятий
-                <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>
-                  Показано: {events.length.toLocaleString('ru-RU')}
-                </span>
               </p>
             )}
           </div>

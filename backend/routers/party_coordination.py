@@ -38,16 +38,8 @@ from sio_instance import sio
 
 router = APIRouter(tags=["party_coordination"])
 
-# Ограничиваем размер и TTL, чтобы не утекала память на долгоживущих воркерах.
-try:
-    from cachetools import TTLCache
-    _attendance_msg_cache = TTLCache(maxsize=10_000, ttl=600)
-except ImportError:  # pragma: no cover — cachetools в requirements_docker.txt
-    _attendance_msg_cache: dict[tuple, datetime] = {}
-ATTENDANCE_RATE_LIMIT_SECONDS = 300
-
-
-
+ATTENDANCE_RATE_LIMIT_SECONDS = 60
+_attendance_action_cache: dict[tuple[int, int], datetime] = {}
 
 def _check_party_access(
     party_id: int,
@@ -447,6 +439,20 @@ async def set_attendance(
     user = get_current_user_from_token(token, db)
     _check_party_access(party_id, user.id, db)
 
+    cache_key = (party_id, user.id)
+    now = datetime.utcnow()
+    last_action_at = _attendance_action_cache.get(cache_key)
+    if last_action_at is not None:
+        elapsed = (now - last_action_at).total_seconds()
+        if elapsed < ATTENDANCE_RATE_LIMIT_SECONDS:
+            wait_seconds = int(ATTENDANCE_RATE_LIMIT_SECONDS - elapsed)
+            if wait_seconds <= 0:
+                wait_seconds = 1
+            raise HTTPException(
+                status_code=429,
+                detail=f"Слишком часто. Подождите {wait_seconds} сек.",
+            )
+
     valid_statuses = {"going", "late", "cant"}
     if body.status is not None and body.status not in valid_statuses:
         raise HTTPException(status_code=400, detail=f"Статус должен быть одним из: {', '.join(valid_statuses)}")
@@ -461,6 +467,7 @@ async def set_attendance(
         if attendance:
             db.delete(attendance)
         db.commit()
+        _attendance_action_cache[cache_key] = now
         return {"ok": True}
 
     if attendance:
@@ -486,18 +493,14 @@ async def set_attendance(
         room=f"party_{party_id}",
     )
 
-    cache_key = (party_id, user.id)
-    now = datetime.utcnow()
-    last_msg = _attendance_msg_cache.get(cache_key)
-    if last_msg is None or (now - last_msg).total_seconds() >= ATTENDANCE_RATE_LIMIT_SECONDS:
-        _attendance_msg_cache[cache_key] = now
-        status_labels = {"going": "идёт", "late": "опоздает", "cant": "не придёт"}
-        await _send_system_message(
-            db, party_id, "attendance_changed",
-            f"👤 {user.username} — {status_labels[body.status]}",
-        )
+    status_labels = {"going": "идёт", "late": "опоздает", "cant": "не придёт"}
+    await _send_system_message(
+        db, party_id, "attendance_changed",
+        f"👤 {user.username} — {status_labels[body.status]}",
+    )
 
     db.commit()
+    _attendance_action_cache[cache_key] = now
     return {"ok": True}
 
 
