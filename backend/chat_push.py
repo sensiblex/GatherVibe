@@ -95,51 +95,70 @@ def _ensure_cross_worker_throttle(db: Session, user_id: int, party_id: int, now:
     now_dt = datetime.fromtimestamp(now, tz=timezone.utc)
 
     # Serialize per-(user,party) checks in Postgres so multiple workers do not duplicate pushes.
+    lock_file = None
     try:
         if db.bind is not None and db.bind.dialect.name == "postgresql":
             lock_key = (user_id << 32) + party_id
             db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
+        elif db.bind is not None and db.bind.dialect.name == "sqlite":
+            # Fallback to file-based lock for SQLite (multi-process support)
+            import tempfile
+            import os
+            lock_dir = tempfile.gettempdir()
+            lock_path = os.path.join(lock_dir, f"chat_push_throttle_{user_id}_{party_id}.lock")
+            lock_file = open(lock_path, "w")
+            # Cross-platform file lock
+            if os.name == "nt":  # Windows
+                import msvcrt
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            else:  # Unix
+                import fcntl
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
     except Exception:
         # Fall back to best-effort behavior if advisory lock is unavailable.
         pass
 
-    marker = (
-        db.query(Notification)
-        .filter(
-            Notification.user_id == user_id,
-            Notification.type == _THROTTLE_NOTIF_TYPE,
-            Notification.title == marker_key,
-        )
-        .order_by(Notification.id.desc())
-        .first()
-    )
-    if marker and marker.created_at:
-        created = marker.created_at
-        if created.tzinfo is None:
-            created = created.replace(tzinfo=timezone.utc)
-        last_ts = int(created.timestamp())
-        if now - last_ts < CHAT_PUSH_THROTTLE_SECONDS:
-            return False
-
-    payload = json.dumps({"party_id": party_id, "ts": now}, ensure_ascii=False)
-    if marker:
-        marker.created_at = now_dt
-        marker.data = payload
-        marker.is_read = True
-    else:
-        db.add(
-            Notification(
-                user_id=user_id,
-                type=_THROTTLE_NOTIF_TYPE,
-                title=marker_key,
-                body=None,
-                data=payload,
-                is_read=True,
-                created_at=now_dt,
+    try:
+        marker = (
+            db.query(Notification)
+            .filter(
+                Notification.user_id == user_id,
+                Notification.type == _THROTTLE_NOTIF_TYPE,
+                Notification.title == marker_key,
             )
+            .order_by(Notification.id.desc())
+            .first()
         )
-    db.flush()
-    return True
+        if marker and marker.created_at:
+            created = marker.created_at
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            last_ts = int(created.timestamp())
+            if now - last_ts < CHAT_PUSH_THROTTLE_SECONDS:
+                return False
+
+        payload = json.dumps({"party_id": party_id, "ts": now}, ensure_ascii=False)
+        if marker:
+            marker.created_at = now_dt
+            marker.data = payload
+            marker.is_read = True
+        else:
+            db.add(
+                Notification(
+                    user_id=user_id,
+                    type=_THROTTLE_NOTIF_TYPE,
+                    title=marker_key,
+                    body=None,
+                    data=payload,
+                    is_read=True,
+                    created_at=now_dt,
+                )
+            )
+        db.flush()
+        return True
+    finally:
+        if lock_file:
+            lock_file.close()
 
 
 async def notify_chat_message(

@@ -12,6 +12,7 @@ from auth import hash_password, verify_password, authenticate_user, create_user_
 from models.user import User
 from models.token_revocation import RevokedToken
 from services.email import send_verification_email
+from utils.sanitize import sanitize_input
 
 router = APIRouter(tags=["auth"])
 
@@ -69,10 +70,13 @@ def register_user(
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
     token = str(uuid.uuid4())
+    sanitized_username = sanitize_input(user.username)
+    sanitized_city = sanitize_input(user.city)
+    sanitized_interests = sanitize_input(user.interests)
     new_user = User(
-        email=user.email, username=user.username,
+        email=user.email, username=sanitized_username or user.username,
         hashed_password=hash_password(user.password),
-        city=user.city, interests=user.interests,
+        city=sanitized_city, interests=sanitized_interests,
         is_verified=False,
         verification_token=token,
     )
@@ -211,16 +215,16 @@ def update_profile(
         user.hashed_password = hash_password(data.new_password)
 
     if data.username is not None:
-        data.username = data.username.strip()
+        data.username = (sanitize_input(data.username) or "").strip()
         if not data.username:
             raise HTTPException(status_code=400, detail="Username не может быть пустым")
         user.username = data.username
     if data.city is not None:
-        user.city = data.city.strip() or None
+        user.city = (sanitize_input(data.city) or "").strip() or None
     if data.bio is not None:
-        user.bio = data.bio.strip()[:200] or None
+        user.bio = (sanitize_input(data.bio) or "").strip()[:200] or None
     if data.interests is not None:
-        user.interests = data.interests.strip() or None
+        user.interests = (sanitize_input(data.interests) or "").strip() or None
 
     if data.avatar_url is not None:
         user.avatar_url = data.avatar_url or None

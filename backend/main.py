@@ -338,6 +338,24 @@ async def request_size_limit_middleware(request, call_next):
             pass
     return await call_next(request)
 
+
+_CSP_HEADER_VALUE = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: https:; "
+    "font-src 'self'; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none';"
+)
+
+
+@app.middleware("http")
+async def csp_middleware(request, call_next):
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = _CSP_HEADER_VALUE
+    return response
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

@@ -2,20 +2,52 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Dict, List, Literal, Optional
 from datetime import datetime
 import math
+import re
 
-from utils.sanitize import sanitize_text
+from utils.sanitize import sanitize_input
+
+_SQL_META_RE = re.compile(r"(?:'|\"|;|--|/\*|\*/)")
+_SQL_KEYWORD_RE = re.compile(
+    r"\b(?:union|select|drop|insert|update|delete|exec|execute)\b",
+    flags=re.IGNORECASE,
+)
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+_CITY_RE = re.compile(r"^[a-zA-Zа-яА-ЯёЁ\s-]+$")
+
+
+def _reject_sql_tokens(value: str) -> None:
+    if _SQL_META_RE.search(value) or _SQL_KEYWORD_RE.search(value):
+        raise ValueError("Input contains forbidden SQL tokens")
 
 
 def _sanitize_optional(cls, v):
     """Санитизация опциональных полей"""
-    return sanitize_text(v)
+    if v is None:
+        return None
+    return sanitize_input(str(v))
+
+
+def _sanitize_optional_strict(cls, v):
+    """Строгая санитизация + SQL-токены запрещены для auth-полей."""
+    if v is None:
+        return None
+    raw = str(v)
+    _reject_sql_tokens(raw)
+    return sanitize_input(raw)
 
 
 def _sanitize_list(cls, v):
     """Санитизация списка"""
     if v is None:
         return None
-    return [sanitize_text(x) for x in v if x is not None]
+    sanitized: List[str] = []
+    for x in v:
+        if x is None:
+            continue
+        cleaned = sanitize_input(str(x))
+        if cleaned is not None:
+            sanitized.append(cleaned)
+    return sanitized
 
 
 class UserCreate(BaseModel):
@@ -26,7 +58,23 @@ class UserCreate(BaseModel):
     city: Optional[str] = Field(default=None, max_length=100)
     interests: Optional[str] = Field(default=None, max_length=500)
 
-    _sanitize = field_validator("username", "city", "interests", mode="before")(_sanitize_optional)
+    _sanitize = field_validator("username", "city", "interests", mode="before")(_sanitize_optional_strict)
+
+    @field_validator("username")
+    @classmethod
+    def _validate_username(cls, v: str) -> str:
+        if not _USERNAME_RE.fullmatch(v):
+            raise ValueError("Username can only contain letters, numbers, hyphens, and underscores")
+        return v
+
+    @field_validator("city")
+    @classmethod
+    def _validate_city(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        if not _CITY_RE.fullmatch(v):
+            raise ValueError("City can only contain letters, spaces, and hyphens")
+        return v
 
 
 class UserLogin(BaseModel):
@@ -68,18 +116,36 @@ class UserResponse(BaseModel):
 
 class UserUpdate(BaseModel):
     """Модель обновления пользователя"""
-    username: Optional[str] = None
-    city: Optional[str] = None
-    bio: Optional[str] = None
-    interests: Optional[str] = None
+    username: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    city: Optional[str] = Field(default=None, max_length=100)
+    bio: Optional[str] = Field(default=None, max_length=200)
+    interests: Optional[str] = Field(default=None, max_length=500)
     old_password: Optional[str] = None
-    new_password: Optional[str] = None
+    new_password: Optional[str] = Field(default=None, min_length=8, max_length=128)
     avatar_url: Optional[str] = None
 
     _sanitize = field_validator(
         "username", "city", "bio", "interests",
         mode="before",
-    )(_sanitize_optional)
+    )(_sanitize_optional_strict)
+
+    @field_validator("username")
+    @classmethod
+    def _validate_username(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        if not _USERNAME_RE.fullmatch(v):
+            raise ValueError("Username can only contain letters, numbers, hyphens, and underscores")
+        return v
+
+    @field_validator("city")
+    @classmethod
+    def _validate_city(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        if not _CITY_RE.fullmatch(v):
+            raise ValueError("City can only contain letters, spaces, and hyphens")
+        return v
 
 
 POSITIVE_REVIEW_TAGS: List[str] = [
