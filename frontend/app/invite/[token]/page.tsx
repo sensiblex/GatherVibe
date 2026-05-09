@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '../../context/AuthContext';
 import { apiFetch } from '../../lib/apiFetch';
 import { toast } from '../../components/Toast';
+import { resolveApiBase } from '../../lib/apiBase';
 
 interface InvitePreview {
   id: number;
@@ -20,7 +21,7 @@ interface InvitePreview {
   is_open: boolean;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 function formatDate(ts: number | null): string | null {
   if (!ts) return null;
@@ -194,3 +195,4 @@ export default function InvitePage() {
     </main>
   );
 }
+

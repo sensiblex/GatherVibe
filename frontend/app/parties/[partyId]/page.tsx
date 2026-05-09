@@ -19,8 +19,9 @@ import { apiFetch } from '../../lib/apiFetch';
 import { extractApiErrorMessage } from '../../lib/apiErrors';
 import { getSocket } from '../../lib/socket';
 import { buildEventIdentityMeta } from '../../lib/event-identity';
+import { resolveApiBase } from '../../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 const POLL_INTERVAL = 5000;
 
 function toMediaUrl(path: string | null | undefined): string | null {
@@ -546,7 +547,7 @@ export default function PartyDetailPage() {
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
       <div className="flex flex-col items-center justify-center py-32 gap-4">
-        <span className="text-5xl">😕</span>
+        <span className="text-5xl">⚠️</span>
         <p style={{ color: 'var(--text-muted)' }}>Не удалось загрузить компанию</p>
         <p className="text-sm" style={{ color: 'var(--error)' }}>{error}</p>
         <button onClick={() => router.back()} className="gv-btn-primary">
@@ -830,7 +831,7 @@ export default function PartyDetailPage() {
                         <button onClick={() => setKickTarget(member)} disabled={actionLoading}
                           className="ml-1 text-xs px-2 py-1 rounded-lg transition disabled:opacity-50 hover:opacity-80"
                           style={{ background: 'var(--error-hl)', color: 'var(--error)', border: '1px solid color-mix(in oklch, var(--error) 30%, transparent)' }}
-                          title="Исключить">🚫 Кик</button>
+                          title="�?сключить">🚫 Кик</button>
                       )}
                       {isCreator && !eventEnded && member.status === 'invited' && (
                         <button onClick={() => handleCancelInvite(member.id)} disabled={actionLoading}
@@ -1073,3 +1074,4 @@ export default function PartyDetailPage() {
     </div>
   );
 }
+

@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Socket } from 'socket.io-client';
 import { apiFetch } from '../../lib/apiFetch';
 import { toast } from '../Toast';
+import { resolveApiBase } from '../../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 interface PinnedBlock {
   id: number;
@@ -211,3 +212,4 @@ export default function PinnedBlock({ partyId, isCreator, socket }: PinnedBlockP
     </div>
   );
 }
+

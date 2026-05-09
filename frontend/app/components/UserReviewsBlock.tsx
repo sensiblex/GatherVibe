@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { apiFetch } from '../lib/apiFetch';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 interface ReviewOut {
   id: number;
@@ -435,4 +436,5 @@ function EmptyState() {
     </div>
   );
 }
+
 

@@ -8,8 +8,9 @@ import { apiFetch } from '../lib/apiFetch';
 import { toast } from './Toast';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { extractApiErrorMessage } from '../lib/apiErrors';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 const POLL_INTERVAL = 5000;
 
 export interface PartyMember {
@@ -399,3 +400,4 @@ export default function EventParty({
     </div>
   );
 }
+

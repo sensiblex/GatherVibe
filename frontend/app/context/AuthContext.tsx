@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { apiFetch } from '../lib/apiFetch';
+import { resolveApiBase } from '../lib/apiBase';
 
 export type UserRole = 'user' | 'moderator' | 'admin';
 
@@ -30,7 +31,7 @@ const AuthContext = createContext<AuthContextValue>({
   logout: () => {},
 });
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   // `token` держим как маркер (truthy/null) — реальный JWT в HttpOnly cookie.
@@ -100,3 +101,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export function useAuth() {
   return useContext(AuthContext);
 }
+

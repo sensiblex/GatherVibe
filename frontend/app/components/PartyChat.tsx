@@ -6,8 +6,9 @@ import { useAuth } from '../context/AuthContext';
 import { getSocket } from '../lib/socket';
 import { apiFetch } from '../lib/apiFetch';
 import ReportButton from './ReportButton';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 function toMediaUrl(path: string | null | undefined): string | null {
   if (!path) return null;
@@ -424,4 +425,5 @@ export default function PartyChat({
     </div>
   );
 }
+
 

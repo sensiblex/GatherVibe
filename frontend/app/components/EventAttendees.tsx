@@ -7,8 +7,9 @@ import { getInterestLabel } from '../lib/interests';
 import { sendInvite } from '../lib/partyInviteApi';
 import { extractApiErrorMessage } from '../lib/apiErrors';
 import { toast } from './Toast';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 function toMediaUrl(path: string | null | undefined): string | null {
   if (!path) return null;

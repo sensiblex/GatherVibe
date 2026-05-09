@@ -7,8 +7,9 @@ import {
   PartyRecapData, RecapItem, LifecycleStatus,
 } from '../lib/partyRecapApi';
 import { toast } from './Toast';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 const REACTION_EMOJIS = ['🔥', '❤️', '😂', '👏', '🎉', '✨'];
 
 interface Props {
@@ -318,7 +319,7 @@ function RecapCard({
                   color: item.is_pinned_highlight ? 'var(--primary)' : 'var(--text-faint)',
                   background: item.is_pinned_highlight ? 'var(--primary-hl)' : 'transparent',
                 }}>
-                {item.is_pinned_highlight ? '★ Закреплено' : '☆ Закрепить'}
+                {item.is_pinned_highlight ? '📌 Закреплено' : '📌 Закрепить'}
               </button>
             )}
             {isCreator && photo && (
@@ -461,3 +462,4 @@ function RecapLightbox({
     </div>
   );
 }
+

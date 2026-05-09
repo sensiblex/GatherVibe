@@ -10,8 +10,9 @@ import UserReviewsBlock from '../components/UserReviewsBlock';
 import { INTERESTS_LIST, getInterestLabel } from '../lib/interests';
 import { translateCategory } from '../events/utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 function toMediaUrl(path?: string | null): string | null {
   if (!path) return null;
@@ -669,7 +670,7 @@ export default function ProfilePage() {
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
       <div className="flex flex-col items-center justify-center py-32 gap-4">
-        <span className="text-5xl">😕</span>
+        <span className="text-5xl">⚠️</span>
         <p style={{ color: 'var(--error)' }}>{error}</p>
         <button onClick={() => router.push('/')} className="gv-btn-primary">На главную</button>
       </div>
@@ -827,3 +828,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+

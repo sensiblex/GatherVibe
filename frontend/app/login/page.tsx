@@ -6,8 +6,9 @@ import Link from 'next/link';
 import Navbar from '../components/Navbar';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../lib/apiFetch';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 export default function LoginPage() {
   const router = useRouter();
@@ -183,17 +184,6 @@ export default function LoginPage() {
                 {loading ? 'Входим...' : 'Войти'}
               </button>
             </form>
-
-            {process.env.NODE_ENV === 'development' && (
-              <button
-                type="button"
-                onClick={() => setForm({ email: 'test@example.com', password: 'testpass123' })}
-                className="w-full mt-4 text-xs py-1.5 transition hover:opacity-80"
-                style={{ color: 'var(--text-muted)' }}
-              >
-                Использовать тестовые данные
-              </button>
-            )}
           </div>
 
           <p className="text-center text-sm mt-6" style={{ color: 'var(--text-muted)' }}>

@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const rewriteTarget = process.env.NEXT_REWRITE_TARGET || 'http://localhost:8000';
+
 const nextConfig = {
   devIndicators: false,
   reactStrictMode: false,
@@ -17,11 +19,11 @@ const nextConfig = {
     return [
       {
         source: '/socket.io/:path*',
-        destination: 'http://backend:8000/socket.io/:path*',
+        destination: `${rewriteTarget}/socket.io/:path*`,
       },
       {
         source: '/api/:path*',
-        destination: 'http://backend:8000/:path*',
+        destination: `${rewriteTarget}/:path*`,
       },
     ];
   },

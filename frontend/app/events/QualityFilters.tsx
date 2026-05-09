@@ -4,8 +4,7 @@ import type { PermanenceMode } from './event-filters';
 
 interface Props {
   permanence: PermanenceMode;
-  hasCover: boolean;
-  onChange: (patch: { permanence?: PermanenceMode; hasCover?: boolean }) => void;
+  onChange: (patch: { permanence?: PermanenceMode }) => void;
 }
 
 function chip(on: boolean) {
@@ -22,20 +21,17 @@ function chip(on: boolean) {
   } as const;
 }
 
-export default function QualityFilters({ permanence, hasCover, onChange }: Props) {
+export default function QualityFilters({ permanence, onChange }: Props) {
   const togglePerm = (mode: PermanenceMode) =>
     onChange({ permanence: permanence === mode ? 'all' : mode });
 
   return (
-    <div className="flex flex-wrap gap-2" aria-label="Качественные фильтры">
-      <button aria-pressed={permanence === 'only'}    onClick={() => togglePerm('only')}    style={chip(permanence === 'only')}>
-        🖼 Только постоянные
+    <div className="flex flex-wrap gap-2" aria-label="Тип события">
+      <button aria-pressed={permanence === 'only'} onClick={() => togglePerm('only')} style={chip(permanence === 'only')}>
+        Только постоянные
       </button>
       <button aria-pressed={permanence === 'exclude'} onClick={() => togglePerm('exclude')} style={chip(permanence === 'exclude')}>
-        🎭 Только разовые
-      </button>
-      <button aria-pressed={hasCover} onClick={() => onChange({ hasCover: !hasCover })} style={chip(hasCover)}>
-        📸 С картинкой
+        Только разовые
       </button>
     </div>
   );

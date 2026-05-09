@@ -7,8 +7,9 @@ import { useNotifications } from '../context/NotificationsContext';
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../lib/apiFetch';
 import NavbarInvitesDropdown from './NavbarInvitesDropdown';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 function toMediaUrl(path: string | null): string | null {
   if (!path) return null;

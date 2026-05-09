@@ -283,9 +283,6 @@ export default function EventsMap({
           <h2>
             Карта событий
           </h2>
-          <span className="gv-map-count">
-            {formatMapStats(mapped.length, events.length)}
-          </span>
         </div>
         <button
           onClick={toggleCollapse}

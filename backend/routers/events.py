@@ -4,6 +4,7 @@ from sqlalchemy import func as sa_func, select as sa_select, update as sa_update
 from typing import Optional, List
 from datetime import datetime
 import httpx
+import logging
 import time
 import os
 import uuid
@@ -24,6 +25,7 @@ import kudago_api_async
 import kudago_cache
 
 router = APIRouter(tags=["events"])
+logger = logging.getLogger("routers.events")
 
 
 
@@ -303,7 +305,16 @@ async def get_event(event_id: int, db: Session = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Событие не найдено")
         raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(exc)}")
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
+        logger.warning("KudaGo list fallback failed, returning empty results: %s", e)
+        return {
+            "count": 0,
+            "next": None,
+            "previous": None,
+            "page": page,
+            "page_size": page_size,
+            "results": [],
+            "from_cache": False,
+        }
     return kudago_api.parse_event_detail(raw)
 
 
@@ -600,7 +611,16 @@ def kudago_get_events(
             "from_cache": False,
         }
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
+        logger.warning("KudaGo list fallback failed, returning empty results: %s", e)
+        return {
+            "count": 0,
+            "next": None,
+            "previous": None,
+            "page": page,
+            "page_size": page_size,
+            "results": [],
+            "from_cache": False,
+        }
 
 
 @router.post("/kudago/sync", status_code=202)

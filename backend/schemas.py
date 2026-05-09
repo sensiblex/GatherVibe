@@ -7,16 +7,19 @@ from utils.sanitize import sanitize_text
 
 
 def _sanitize_optional(cls, v):
+    """Санитизация опциональных полей"""
     return sanitize_text(v)
 
 
 def _sanitize_list(cls, v):
+    """Санитизация списка"""
     if v is None:
         return None
     return [sanitize_text(x) for x in v if x is not None]
 
 
 class UserCreate(BaseModel):
+    """Модель создания пользователя"""
     email: EmailStr
     username: str = Field(min_length=1, max_length=50)
     password: str = Field(min_length=8, max_length=128)
@@ -27,11 +30,13 @@ class UserCreate(BaseModel):
 
 
 class UserLogin(BaseModel):
+    """Модель логина пользователя"""
     email: EmailStr
     password: str
 
 
 class Token(BaseModel):
+    """Модель токена"""
     access_token: str
     token_type: str
     user_id: int
@@ -40,6 +45,7 @@ class Token(BaseModel):
 
 
 class UserResponse(BaseModel):
+    """Модель ответа пользователя"""
     id: int
     email: str
     username: str
@@ -61,6 +67,7 @@ class UserResponse(BaseModel):
 
 
 class UserUpdate(BaseModel):
+    """Модель обновления пользователя"""
     username: Optional[str] = None
     city: Optional[str] = None
     bio: Optional[str] = None
@@ -76,6 +83,7 @@ class UserUpdate(BaseModel):
 
 
 POSITIVE_REVIEW_TAGS: List[str] = [
+    """Теги положительных отзывов"""
     "Пунктуальный",
     "Общительный",
     "Весёлый",
@@ -87,6 +95,7 @@ POSITIVE_REVIEW_TAGS: List[str] = [
 ]
 
 NEGATIVE_REVIEW_TAGS: List[str] = [
+    """Теги отрицательных отзывов"""
     "Опоздал",
     "Не пришёл",
     "Грубый",
@@ -99,6 +108,7 @@ ALLOWED_REVIEW_TAGS: List[str] = POSITIVE_REVIEW_TAGS + NEGATIVE_REVIEW_TAGS
 
 
 class ReviewCreate(BaseModel):
+    """Модель создания отзыва"""
     reviewed_id: int
     party_id: int
     rating: int = Field(..., ge=1, le=5)
@@ -109,6 +119,7 @@ class ReviewCreate(BaseModel):
 
 
 class ReviewOut(BaseModel):
+    """Модель ответа отзыва"""
     id: int
     reviewer_id: int
     reviewer_username: str
@@ -124,6 +135,7 @@ class ReviewOut(BaseModel):
 
 
 class ReviewUpdate(BaseModel):
+    """Модель обновления отзыва"""
     rating: Optional[int] = Field(None, ge=1, le=5)
     text: Optional[str] = Field(None, max_length=2000)
     tags: Optional[List[str]] = None
@@ -132,6 +144,7 @@ class ReviewUpdate(BaseModel):
 
 
 class ReviewSummary(BaseModel):
+    """Модель суммы отзывов"""
     avg_rating: Optional[float]
     total_reviews: int
     reviews: List[ReviewOut]
@@ -145,6 +158,7 @@ class ReviewSummary(BaseModel):
 
 
 class ReviewableUser(BaseModel):
+    """Модель пользователя, на которого оставили отзыв"""
     user_id: int
     username: str
     avatar_url: Optional[str] = None
@@ -153,12 +167,14 @@ class ReviewableUser(BaseModel):
 
 
 class ReviewReport(BaseModel):
+    """Модель отчета об отзыве"""
     reason: Optional[str] = None
 
     _sanitize = field_validator("reason", mode="before")(_sanitize_optional)
 
 
 class EventBase(BaseModel):
+    """Модель основы события"""
     title: str
     description: Optional[str] = None
     date_time: datetime
@@ -173,10 +189,12 @@ class EventBase(BaseModel):
 
 
 class EventCreate(EventBase):
+    """Модель создания события"""
     pass
 
 
 class EventUpdate(BaseModel):
+    """Модель обновления события"""
     title: Optional[str] = None
     description: Optional[str] = None
     date_time: Optional[datetime] = None
@@ -192,6 +210,7 @@ class EventUpdate(BaseModel):
 
 
 class EventResponse(EventBase):
+    """Модель ответа события"""
     id: int
     created_by: int
     current_participants: int
@@ -206,6 +225,7 @@ class EventResponse(EventBase):
 
 
 class PartySearchParams(BaseModel):
+    """Модель параметров поиска событий"""
     q: Optional[str] = None
     city: Optional[str] = None
     date_from: Optional[datetime] = None
@@ -218,6 +238,7 @@ class PartySearchParams(BaseModel):
 
 
 class PartySearchItem(BaseModel):
+    """Модель элемента поиска событий"""
     id: int
     event_id: str
     title: str
@@ -238,6 +259,7 @@ class PartySearchItem(BaseModel):
 
 
 class PartySearchResponse(BaseModel):
+    """Модель ответа поиска событий"""
     items: List[PartySearchItem]
     total: int
     page: int
@@ -259,6 +281,7 @@ class PartySearchResponse(BaseModel):
 
 
 class MeetingPlanUpdate(BaseModel):
+    """Модель обновления плана встречи"""
     meet_time: Optional[datetime] = None
     meet_location: Optional[str] = Field(None, max_length=300)
     note: Optional[str] = Field(None, max_length=300)
@@ -270,6 +293,7 @@ class MeetingPlanUpdate(BaseModel):
 
 
 class MeetingPlanResponse(BaseModel):
+    """Модель ответа плана встречи"""
     meet_time: Optional[datetime] = None
     meet_location: Optional[str] = None
     note: Optional[str] = None
@@ -281,6 +305,7 @@ class MeetingPlanResponse(BaseModel):
 
 
 class MeetingPlanHistoryItem(BaseModel):
+    """Модель элемента истории плана встречи"""
     meet_time: Optional[datetime] = None
     meet_location: Optional[str] = None
     note: Optional[str] = None

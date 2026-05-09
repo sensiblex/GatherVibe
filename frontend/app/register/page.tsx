@@ -7,8 +7,9 @@ import Navbar from '../components/Navbar';
 import { INTERESTS_LIST } from '../lib/interests';
 import { KUDAGO_CITIES } from '../events/event-filters';
 import { validateRegisterStep1 } from './register-city';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -235,3 +236,4 @@ export default function RegisterPage() {
     </div>
   );
 }
+

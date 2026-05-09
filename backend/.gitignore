@@ -7,3 +7,5 @@ __pycache__/
 gathervibe.db
 *.db
 *.sqlite3
+uploads/avatars/
+backend/uploads/avatars/

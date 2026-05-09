@@ -109,11 +109,12 @@ def login(
     import os as _os
     # COOKIE_SECURE=true в production (HTTPS). В docker-compose дев HTTP — false.
     _secure = _os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
+    _samesite = "none" if _secure else "lax"
     response.set_cookie(
         key="token",
         value=token_data["access_token"],
         httponly=True,
-        samesite="lax",
+        samesite=_samesite,
         secure=_secure,
         max_age=604800,
         path="/",
@@ -178,9 +179,10 @@ def logout(
                 db.commit()
     import os as _os
     _secure = _os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
+    _samesite = "none" if _secure else "lax"
     # delete_cookie должен матчить атрибуты set_cookie, иначе при Secure=True
     # браузер не удалит cookie.
-    response.delete_cookie(key="token", path="/", httponly=True, samesite="lax", secure=_secure)
+    response.delete_cookie(key="token", path="/", httponly=True, samesite=_samesite, secure=_secure)
     return None
 
 

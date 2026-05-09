@@ -142,6 +142,9 @@ function FeaturedCardInner({ event, attendeeCount = 0, isViewed = false, onClick
               Просмотрено
             </span>
           )}
+          {isViewed && attendeeCount > 0 && (
+            <span style={{ color: 'rgba(255,255,255,0.5)', margin: '0 2px' }}>•</span>
+          )}
           <svg
             width="14"
             height="14"
