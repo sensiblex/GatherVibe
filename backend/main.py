@@ -3,7 +3,7 @@ import logging
 import socketio
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
@@ -494,8 +494,7 @@ async def disconnect(sid):
 
 @sio.on('join_event_chat')
 async def join_event_chat(sid, data):
-    if data is not None and not isinstance(data, dict):
-        data = {}
+    data = _normalize_socket_data(data)
     db = SessionLocal()
     try:
         user = await _authenticate_sid(sid, data, db)
@@ -504,32 +503,15 @@ async def join_event_chat(sid, data):
         await sio.emit('error', {'message': 'Требуется авторизация'}, room=sid)
         db.close()
         return
-    event_id = (data or {}).get('eventId')
+    event_id = data.get('eventId')
     if not event_id:
         db.close()
         return
-    # event_attendees.event_id хранится как строка (поддержка и числовых local id,
-    # и KudaGo id). Если для этого event_id есть запись в нашей events-таблице —
-    # это локальное событие, требуем attendance. Иначе считаем KudaGo (публичный чат).
-    event_id_str = str(event_id)
-    from models.attendee import EventAttendee
-    from models.event import Event
-    is_local = False
-    try:
-        local_id = int(event_id_str)
-        is_local = db.query(Event).filter(Event.id == local_id).first() is not None
-    except (ValueError, TypeError):
-        pass
-    if is_local:
-        is_attendee = db.query(EventAttendee).filter(
-            EventAttendee.event_id == event_id_str,
-            EventAttendee.user_id == user.id,
-        ).first()
-        if not is_attendee:
-            logger.warning(f"join_event_chat: user {user.id} не подписан на event {event_id_str}, sid={sid}")
-            await sio.emit('error', {'message': 'Нужно быть участником события'}, room=sid)
-            db.close()
-            return
+    if not _check_event_attendance(db, event_id, user.id):
+        logger.warning(f"join_event_chat: user {user.id} не подписан на event {event_id}, sid={sid}")
+        await sio.emit('error', {'message': 'Нужно быть участником события'}, room=sid)
+        db.close()
+        return
     await sio.enter_room(sid, f'event_{event_id}')
     await sio.emit('user_joined', {'sid': sid, 'userId': user.id, 'username': user.username}, room=f'event_{event_id}')
     db.close()
@@ -549,13 +531,60 @@ def _socket_sanction_block(user) -> str | None:
     return None
 
 
-@sio.on('send_message')
-async def send_message(sid, data: dict):
-    if data is not None and not isinstance(data, dict):
-        data = {}
+def _check_party_access(db, party: EventParty, user_id: int) -> bool:
+    """Проверяет, имеет ли пользователь доступ к чату компании."""
+    if party.creator_id == user_id:
+        return True
+    return db.query(PartyMember).filter(
+        PartyMember.party_id == party.id,
+        PartyMember.user_id == user_id,
+        PartyMember.status == MemberStatus.accepted,
+    ).first() is not None
+
+
+def _check_event_attendance(db, event_id: str | int, user_id: int) -> bool:
+    """Проверяет, имеет ли пользователь доступ к чату события."""
+    from models.attendee import EventAttendee
+    from models.event import Event
+
+    event_id_str = str(event_id)
+    try:
+        local_id = int(event_id_str)
+        is_local = db.query(Event).filter(Event.id == local_id).first() is not None
+    except (ValueError, TypeError):
+        is_local = False
+
+    if is_local:
+        return db.query(EventAttendee).filter(
+            EventAttendee.event_id == event_id_str,
+            EventAttendee.user_id == user_id,
+        ).first() is not None
+    return True  # KudaGo события публичные
+
+
+def _normalize_socket_data(data: any) -> dict:
+    """Нормализует данные из Socket.IO в dict."""
+    if data is None or not isinstance(data, dict):
+        return {}
+    return data
+
+
+@contextmanager
+def get_db_session():
+    """Context manager для управления сессией БД."""
     db = SessionLocal()
     try:
-        user = await _authenticate_sid(sid, data or {}, db)
+        yield db
+    finally:
+        db.close()
+
+
+@sio.on('send_message')
+async def send_message(sid, data: dict):
+    data = _normalize_socket_data(data)
+    db = SessionLocal()
+    try:
+        user = await _authenticate_sid(sid, data, db)
     except (ValueError, Exception) as e:
         await sio.emit('error', {'message': str(e)}, room=sid)
         db.close()
@@ -571,26 +600,10 @@ async def send_message(sid, data: dict):
         db.close()
         await sio.emit('error', {'message': 'eventId и message обязательны'}, room=sid)
         return
-    # Same attendance check as join_event_chat: нельзя писать в чат локальных
-    # событий, на которое ты не записан. Для KudaGo (отсутствует в events) — публично.
-    event_id_str = str(event_id)
-    from models.attendee import EventAttendee
-    from models.event import Event
-    is_local = False
-    try:
-        local_id = int(event_id_str)
-        is_local = db.query(Event).filter(Event.id == local_id).first() is not None
-    except (ValueError, TypeError):
-        pass
-    if is_local:
-        is_attendee = db.query(EventAttendee).filter(
-            EventAttendee.event_id == event_id_str,
-            EventAttendee.user_id == user.id,
-        ).first()
-        if not is_attendee:
-            db.close()
-            await sio.emit('error', {'message': 'Нужно быть участником события'}, room=sid)
-            return
+    if not _check_event_attendance(db, event_id, user.id):
+        db.close()
+        await sio.emit('error', {'message': 'Нужно быть участником события'}, room=sid)
+        return
     if len(message_text) > 2000:
         db.close()
         await sio.emit('error', {'message': 'Сообщение слишком длинное (макс. 2000 символов)'}, room=sid)
@@ -628,16 +641,15 @@ async def leave_event_chat(sid, event_id: str):
 
 @sio.on('join_party_chat')
 async def join_party_chat(sid, data: dict):
-    if data is not None and not isinstance(data, dict):
-        data = {}
+    data = _normalize_socket_data(data)
     db = SessionLocal()
     try:
-        user = await _authenticate_sid(sid, data or {}, db)
+        user = await _authenticate_sid(sid, data, db)
     except (ValueError, Exception) as e:
         await sio.emit('error', {'message': str(e)}, room=sid)
         db.close()
         return
-    party_id = (data or {}).get('partyId')
+    party_id = data.get('partyId')
     if not party_id:
         await sio.emit('error', {'message': 'partyId отсутствует'}, room=sid)
         db.close()
@@ -647,13 +659,7 @@ async def join_party_chat(sid, data: dict):
         await sio.emit('error', {'message': 'Пати не найдена'}, room=sid)
         db.close()
         return
-    is_creator = party.creator_id == user.id
-    is_member = db.query(PartyMember).filter(
-        PartyMember.party_id == party_id,
-        PartyMember.user_id == user.id,
-        PartyMember.status == MemberStatus.accepted,
-    ).first() is not None
-    if not (is_creator or is_member):
+    if not _check_party_access(db, party, user.id):
         await sio.emit('error', {'message': 'Нет доступа к этому чату'}, room=sid)
         db.close()
         return
@@ -684,11 +690,10 @@ def _is_allowed_party_file_type(file_type: str) -> bool:
 
 @sio.on('send_party_message')
 async def send_party_message(sid, data: dict):
-    if data is not None and not isinstance(data, dict):
-        data = {}
+    data = _normalize_socket_data(data)
     db = SessionLocal()
     try:
-        user = await _authenticate_sid(sid, data or {}, db)
+        user = await _authenticate_sid(sid, data, db)
     except (ValueError, Exception) as e:
         logger.warning("send_party_message: auth failed sid=%s err=%s", sid, e)
         await sio.emit('error', {'message': str(e)}, room=sid)
@@ -737,21 +742,8 @@ async def send_party_message(sid, data: dict):
         except Exception:
             pass
 
-    db2 = SessionLocal()
-    try:
-        party = db2.query(EventParty).filter(EventParty.id == party_id).first()
-        is_member = party and (
-            party.creator_id == user.id or
-            db2.query(PartyMember).filter(
-                PartyMember.party_id == party_id,
-                PartyMember.user_id == user.id,
-                PartyMember.status == MemberStatus.accepted,
-            ).first() is not None
-        )
-    finally:
-        db2.close()
-
-    if not is_member:
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party or not _check_party_access(db, party, user.id):
         await sio.emit('error', {'message': 'Нет доступа к этому чату'}, room=sid)
         db.close()
         return
@@ -824,11 +816,10 @@ ALLOWED_REACTION_EMOJIS = {'👍', '❤️', '😂'}
 
 @sio.on('add_party_reaction')
 async def add_party_reaction(sid, data: dict):
-    if data is not None and not isinstance(data, dict):
-        data = {}
-    party_id = (data or {}).get('party_id')
-    message_id = (data or {}).get('message_id')
-    emoji = (data or {}).get('emoji')
+    data = _normalize_socket_data(data)
+    party_id = data.get('party_id')
+    message_id = data.get('message_id')
+    emoji = data.get('emoji')
     if not party_id or not message_id or not emoji:
         await sio.emit('error', {'message': 'party_id, message_id и emoji обязательны'}, room=sid)
         return
@@ -839,21 +830,13 @@ async def add_party_reaction(sid, data: dict):
     db = SessionLocal()
     try:
         try:
-            user = await _authenticate_sid(sid, data or {}, db)
+            user = await _authenticate_sid(sid, data, db)
         except (ValueError, Exception) as e:
             await sio.emit('error', {'message': str(e)}, room=sid)
             return
 
         party = db.query(EventParty).filter(EventParty.id == party_id).first()
-        is_member = party and (
-            party.creator_id == user.id or
-            db.query(PartyMember).filter(
-                PartyMember.party_id == party_id,
-                PartyMember.user_id == user.id,
-                PartyMember.status == MemberStatus.accepted,
-            ).first() is not None
-        )
-        if not is_member:
+        if not party or not _check_party_access(db, party, user.id):
             await sio.emit('error', {'message': 'Нет доступа к этому чату'}, room=sid)
             return
 
