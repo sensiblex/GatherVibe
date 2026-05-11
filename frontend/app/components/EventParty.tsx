@@ -47,7 +47,6 @@ const cardStyle = {
   border: '1px solid var(--border)',
 };
 
-// ─── JoinModal ────────────────────────────────────────────────────────
 function JoinModal({
   party,
   token,
@@ -361,10 +360,13 @@ export default function EventParty({
           </p>
         </div>
         <button
-          onClick={() => token
-            ? router.push(`/events/${urlEventId}/create-party`)
-            : (window.location.href = '/login')
-          }
+          onClick={() => {
+            if (token) {
+              window.location.href = `/events/${eventId}/create-party`;
+            } else {
+              window.location.href = '/login';
+            }
+          }}
           className="text-white text-sm font-bold px-4 py-1.5 rounded-full hover:opacity-90 shadow-sm transition"
           style={{ background: 'linear-gradient(135deg,#9333ea,#ec4899)' }}
         >

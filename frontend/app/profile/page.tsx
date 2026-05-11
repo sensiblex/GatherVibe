@@ -54,6 +54,7 @@ function EditProfileModal({
   onSave: (updated: User) => void;
   onClose: () => void;
 }) {
+  const { refreshUser } = useAuth();
   const [username, setUsername] = useState(user.username);
   const [city, setCity] = useState(user.city || '');
   const [cityValid, setCityValid] = useState(!!user.city);
@@ -97,6 +98,12 @@ function EditProfileModal({
         return;
       }
       onSave(await res.json());
+      // Refresh user data in AuthContext after profile update
+      await refreshUser();
+      // Clear stored city filter so profile city takes effect on events page
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('events_city');
+      }
     } catch {
       setError('Не удалось сохранить');
     }

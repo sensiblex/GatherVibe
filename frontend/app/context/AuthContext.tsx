@@ -10,6 +10,7 @@ interface AuthUser {
   id: number;
   username: string;
   email: string;
+  city?: string;
   email_notifications?: boolean;
   role?: UserRole;
 }
@@ -21,6 +22,7 @@ interface AuthContextValue {
   isLoading: boolean;
   login: (token: string, user: AuthUser) => void;
   logout: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -29,6 +31,7 @@ const AuthContext = createContext<AuthContextValue>({
   isLoading: true,
   login: () => {},
   logout: () => {},
+  refreshUser: async () => {},
 });
 
 const API_BASE = resolveApiBase();
@@ -54,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           id: data.id,
           username: data.username,
           email: data.email,
+          city: data.city,
           email_notifications: data.email_notifications,
           role: (data.role as UserRole) || 'user',
         });
@@ -91,8 +95,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.dispatchEvent(new Event('auth:logout'));
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const r = await apiFetch('/users/me', { skipAuthRedirect: true });
+      if (r.ok) {
+        const data = await r.json();
+        setUser({
+          id: data.id,
+          username: data.username,
+          email: data.email,
+          city: data.city,
+          email_notifications: data.email_notifications,
+          role: (data.role as UserRole) || 'user',
+        });
+      }
+    } catch (err) {
+      console.error('Failed to refresh user:', err);
+    }
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

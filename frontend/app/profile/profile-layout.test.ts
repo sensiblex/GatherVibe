@@ -16,7 +16,8 @@ describe('Profile page layout', () => {
     expect(source).not.toContain('<aside>');
     expect(source).not.toContain('<div className="p-card-title">Настройки</div>');
 
-    expect(source).toContain('<div className="p-card-title">О себе</div>');
+    expect(source).toContain('<div className="profile-about-inline">');
+    expect(source).toContain('<div className="profile-about-title">О себе</div>');
     expect(source).toContain('<div className="p-card-title">Отзывы</div>');
     expect(source).toContain('Сменить пароль');
     expect(source).toContain('Приватность');

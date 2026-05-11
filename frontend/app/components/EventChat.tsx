@@ -38,8 +38,11 @@ export default function EventChat({
   const [input, setInput] = useState('');
   const [connected, setConnected] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [userScrolled, setUserScrolled] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const initialScrollDoneRef = useRef(false);
 
   useEffect(() => {
     // Load history — через apiFetch (cookie auth). AbortController чтобы
@@ -98,8 +101,25 @@ export default function EventChat({
   }, [eventId, token]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+
+    if (!initialScrollDoneRef.current && historyLoaded) {
+      initialScrollDoneRef.current = true;
+    }
+  }, [messages, userScrolled, historyLoaded]);
+
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+      setUserScrolled(!isAtBottom);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const sendMessage = () => {
     const text = input.trim();
@@ -143,6 +163,7 @@ export default function EventChat({
 
       {/* Messages */}
       <div
+        ref={messagesContainerRef}
         className="px-4 py-4 h-72 overflow-y-auto flex flex-col gap-2"
         style={{ background: 'var(--surface-2)' }}
       >
