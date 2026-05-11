@@ -13,6 +13,46 @@ export const KUDAGO_CITIES = [
 
 export type CitySlug = typeof KUDAGO_CITIES[number]['slug'];
 
+/** Map city name (case-insensitive) to KudaGo slug. Returns null if not supported. */
+export function cityNameToSlug(cityName: string | null | undefined): CitySlug | null {
+  if (!cityName || typeof cityName !== 'string') return null;
+  const normalized = cityName.trim().toLowerCase();
+  if (!normalized) return null;
+
+  // Direct name matches (case-insensitive)
+  const directMatch = KUDAGO_CITIES.find(c => c.name.toLowerCase() === normalized);
+  if (directMatch) return directMatch.slug;
+
+  // Common aliases and variations
+  const aliases: Record<string, CitySlug> = {
+    'москва': 'msk',
+    'moscow': 'msk',
+    'мск': 'msk',
+    'msk': 'msk',
+    'санкт-петербург': 'spb',
+    'санкт петербург': 'spb',
+    'петербург': 'spb',
+    'питер': 'spb',
+    'спб': 'spb',
+    'st petersburg': 'spb',
+    'saint petersburg': 'spb',
+    'spb': 'spb',
+    'екатеринбург': 'ekb',
+    'екб': 'ekb',
+    'ekb': 'ekb',
+    'yekaterinburg': 'ekb',
+    'казань': 'kzn',
+    'kzn': 'kzn',
+    'kazan': 'kzn',
+    'нижний новгород': 'nnv',
+    'нижний': 'nnv',
+    'nnv': 'nnv',
+    'nizhny novgorod': 'nnv',
+  };
+
+  return aliases[normalized] ?? null;
+}
+
 export type PriceMode = 'all' | 'free' | 'paid';
 export type SortMode = 'date' | 'popularity' | 'newest' | 'ending_soon' | 'most_discussed' | 'alphabetical' | 'nearest';
 export type TimeOfDay = 'morning' | 'day' | 'evening' | 'night';
