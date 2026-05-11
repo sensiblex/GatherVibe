@@ -9,7 +9,7 @@ TDD тесты для системы отзывов.
 
 Используем in-memory SQLite + фикстуры из conftest.py.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import time
 import pytest
 from fastapi.testclient import TestClient
@@ -160,7 +160,7 @@ def test_summary_excludes_hidden_and_deleted(client: TestClient, db, user_a, use
 def test_summary_pagination(client: TestClient, db, user_a, user_b):
     party = _make_past_party(db, creator_id=user_a.id, members=[user_b.id])
     reviewers = [_make_user(db, f"r{i}", f"r{i}@x.x") for i in range(15)]
-    base = datetime.utcnow()
+    base = datetime.now(timezone.utc)
     for i, u in enumerate(reviewers):
         _seed_review(
             db,

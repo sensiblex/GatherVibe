@@ -12,7 +12,7 @@ _SQL_KEYWORD_RE = re.compile(
     flags=re.IGNORECASE,
 )
 _USERNAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
-_CITY_RE = re.compile(r"^[a-zA-Zа-яА-ЯёЁ\s-]+$")
+_CITY_RE = re.compile(r"^[a-zA-Zа-яА-ЯёЁ\s,-]+$")
 
 
 def _reject_sql_tokens(value: str) -> None:
@@ -149,7 +149,6 @@ class UserUpdate(BaseModel):
 
 
 POSITIVE_REVIEW_TAGS: List[str] = [
-    """Теги положительных отзывов"""
     "Пунктуальный",
     "Общительный",
     "Весёлый",
@@ -161,7 +160,6 @@ POSITIVE_REVIEW_TAGS: List[str] = [
 ]
 
 NEGATIVE_REVIEW_TAGS: List[str] = [
-    """Теги отрицательных отзывов"""
     "Опоздал",
     "Не пришёл",
     "Грубый",
