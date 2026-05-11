@@ -111,7 +111,7 @@ async def create_review(
         review.rating = payload.rating
         review.text = payload.text
         review.tags = tags or None
-        review.updated_at = datetime.utcnow()
+        review.updated_at = datetime.now(timezone.utc)
     else:
         review = PartyReview(
             reviewer_id=current_user.id,
@@ -229,7 +229,7 @@ def update_review(
             raise HTTPException(status_code=400, detail=f"Недопустимые теги: {invalid}")
         review.tags = payload.tags or None
 
-    review.updated_at = datetime.utcnow()
+    review.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(review)
     _recalc_trust_score(review.reviewed_id, db)
@@ -263,7 +263,7 @@ def delete_review(
 
     reviewed_id = review.reviewed_id
     review.is_deleted = True
-    review.updated_at = datetime.utcnow()
+    review.updated_at = datetime.now(timezone.utc)
     db.commit()
     _recalc_trust_score(reviewed_id, db)
 
@@ -373,7 +373,7 @@ async def get_reviewable_users(
     db: Session = Depends(get_db),
 ):
     current_user = get_current_user_from_token(token, db)
-    now_ts = int(datetime.utcnow().timestamp())
+    now_ts = int(datetime.now(timezone.utc).timestamp())
 
     member_party_ids = [
         pm.party_id
