@@ -87,6 +87,22 @@ def test_filter_by_city(client: TestClient, db, user_a, user_b, token_a):
     assert data["items"][0]["city"] == "Moscow"
 
 
+def test_filter_by_multiple_cities(client: TestClient, db, user_a, user_b, token_a):
+    _make_party(db, user_a.id, title="Moscow meetup", city="Москва")
+    _make_party(db, user_b.id, title="Kazan walk", city="Казань")
+    _make_party(db, user_b.id, title="SPb walk", city="Санкт-Петербург")
+
+    resp = client.get(
+        "/parties/search?city=Москва&city=Казань",
+        headers=_auth_headers(token_a),
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 2
+    assert {item["title"] for item in data["items"]} == {"Moscow meetup", "Kazan walk"}
+
+
 def test_filter_by_date_range(client: TestClient, db, user_a, token_a):
     now = datetime.utcnow()
     _make_party(

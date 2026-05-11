@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func as sa_func
+from sqlalchemy import func as sa_func, or_
 from sqlalchemy.orm import Session
 from typing import Literal, Optional, List
 from datetime import datetime, timezone
@@ -368,7 +368,7 @@ def get_my_pending_requests(
 @router.get("/parties/search", response_model=PartySearchResponse)
 def search_parties(
     q: Optional[str] = Query(default=None, max_length=200),
-    city: Optional[str] = Query(default=None, max_length=100),
+    city: Optional[List[str]] = Query(default=None, max_length=100),
     date_from: Optional[datetime] = Query(default=None),
     date_to: Optional[datetime] = Query(default=None),
     min_members: Optional[int] = Query(default=None, ge=1),
@@ -389,6 +389,13 @@ def search_parties(
 
     date_from_ts = _to_unix_ts(date_from)
     date_to_ts = _to_unix_ts(date_to)
+
+    city_filters = [
+        item.strip()
+        for raw in (city or [])
+        for item in raw.split(",")
+        if item.strip()
+    ]
 
     member_count_sq = (
         db.query(
@@ -418,8 +425,8 @@ def search_parties(
             EventParty.title.ilike(pattern) | EventParty.description.ilike(pattern)
         )
 
-    if city and city.strip():
-        base_q = base_q.filter(EventParty.city.ilike(f"%{city.strip()}%"))
+    if city_filters:
+        base_q = base_q.filter(or_(*[EventParty.city.ilike(f"%{item}%") for item in city_filters]))
 
     if date_from_ts is not None:
         base_q = base_q.filter(
@@ -455,8 +462,8 @@ def search_parties(
         count_q = count_q.filter(
             EventParty.title.ilike(pattern) | EventParty.description.ilike(pattern)
         )
-    if city and city.strip():
-        count_q = count_q.filter(EventParty.city.ilike(f"%{city.strip()}%"))
+    if city_filters:
+        count_q = count_q.filter(or_(*[EventParty.city.ilike(f"%{item}%") for item in city_filters]))
     if date_from_ts is not None:
         count_q = count_q.filter(
             EventParty.event_date_ts.isnot(None),

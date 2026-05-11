@@ -8,6 +8,14 @@ import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../lib/apiFetch';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { buildEventIdentityMeta } from '../lib/event-identity';
+import {
+  POPULAR_PARTY_CITIES,
+  buildPartiesSearchQuery,
+  buildPartiesUrlQuery,
+  countActivePartyFilters,
+  togglePartyCity,
+  type PartySortMode,
+} from './parties-filters';
 
 const PAGE_SIZE = 20;
 
@@ -264,18 +272,16 @@ export default function PartiesSearchPage() {
   // Filter state
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch]           = useState('');
-  const [city, setCity]               = useState('');
-  const [cityInput, setCityInput]     = useState('');
+  const [selectedCities, setSelectedCities] = useState<string[]>([]);
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [dateFrom, setDateFrom]       = useState('');
   const [dateTo, setDateTo]           = useState('');
   const [minMembers, setMinMembers]   = useState('');
   const [maxMembers, setMaxMembers]   = useState('');
-  const [sortBy, setSortBy]           = useState<'new' | 'popular' | 'date'>('new');
+  const [sortBy, setSortBy]           = useState<PartySortMode>('new');
   const [onlyOpen, setOnlyOpen]       = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cityDebRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadingRef  = useRef(false);
 
@@ -286,20 +292,43 @@ export default function PartiesSearchPage() {
     }
   }, [authLoading, token, router]);
 
+  useEffect(() => {
+    if (!filterDrawerOpen || typeof window === 'undefined') return;
+
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFilterDrawerOpen(false);
+    };
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    const prevOverflow = document.body.style.overflow;
+    const prevPaddingRight = document.body.style.paddingRight;
+
+    document.addEventListener('keydown', handleKey);
+    document.body.style.overflow = 'hidden';
+    if (scrollbarWidth > 0) {
+      document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = prevOverflow;
+      document.body.style.paddingRight = prevPaddingRight;
+    };
+  }, [filterDrawerOpen]);
+
   // ── Read filters from URL on mount ─────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const p = new URLSearchParams(window.location.search);
     const q = p.get('q') || '';
     if (q) { setSearchInput(q); setSearch(q); }
-    const c = p.get('city') || '';
-    if (c) { setCityInput(c); setCity(c); }
+    const cities = p.getAll('city');
+    if (cities.length > 0) setSelectedCities(cities);
     if (p.get('date_from')) setDateFrom(p.get('date_from')!);
     if (p.get('date_to'))   setDateTo(p.get('date_to')!);
     if (p.get('min_members')) setMinMembers(p.get('min_members')!);
     if (p.get('max_members')) setMaxMembers(p.get('max_members')!);
     if (p.get('sort_by') && ['new', 'popular', 'date'].includes(p.get('sort_by')!))
-      setSortBy(p.get('sort_by') as 'new' | 'popular' | 'date');
+      setSortBy(p.get('sort_by') as PartySortMode);
     if (p.get('only_open') === 'true') setOnlyOpen(true);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -307,24 +336,24 @@ export default function PartiesSearchPage() {
   // ── Sync filters to URL ────────────────────────────────────────────────────
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const p = new URLSearchParams();
-    if (search)     p.set('q', search);
-    if (city)       p.set('city', city);
-    if (dateFrom)   p.set('date_from', dateFrom);
-    if (dateTo)     p.set('date_to', dateTo);
-    if (minMembers) p.set('min_members', minMembers);
-    if (maxMembers) p.set('max_members', maxMembers);
-    if (sortBy !== 'new') p.set('sort_by', sortBy);
-    if (onlyOpen)   p.set('only_open', 'true');
-    const qs = p.toString();
+    const qs = buildPartiesUrlQuery({
+      search,
+      cities: selectedCities,
+      dateFrom,
+      dateTo,
+      minMembers,
+      maxMembers,
+      sortBy,
+      onlyOpen,
+    });
     router.replace(qs ? `/parties?${qs}` : '/parties', { scroll: false });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, city, dateFrom, dateTo, minMembers, maxMembers, sortBy, onlyOpen]);
+  }, [search, selectedCities, dateFrom, dateTo, minMembers, maxMembers, sortBy, onlyOpen]);
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
   const load = useCallback(async (
     pageNum: number,
-    q: string, c: string, from: string, to: string,
+    q: string, cities: string[], from: string, to: string,
     minM: string, maxM: string,
     sort: string,
     append: boolean,
@@ -336,18 +365,18 @@ export default function PartiesSearchPage() {
     setError(null);
 
     try {
-      const params = new URLSearchParams({
-        page: String(pageNum),
-        per_page: String(PAGE_SIZE),
-        sort_by: sort,
+      const params = buildPartiesSearchQuery({
+        page: pageNum,
+        pageSize: PAGE_SIZE,
+        search: q,
+        cities,
+        dateFrom: from,
+        dateTo: to,
+        minMembers: minM,
+        maxMembers: maxM,
+        sortBy: sort as PartySortMode,
+        onlyOpen,
       });
-      if (q.trim()) params.set('q', q.trim());
-      if (c.trim()) params.set('city', c.trim());
-      if (from)     params.set('date_from', `${from}T00:00:00`);
-      if (to)       params.set('date_to', `${to}T23:59:59`);
-      if (minM)     params.set('min_members', minM);
-      if (maxM)     params.set('max_members', maxM);
-      if (onlyOpen) params.set('is_open', 'true');
 
       const res = await apiFetch(`/parties/search?${params}`);
       if (!res.ok) throw new Error(`Ошибка ${res.status}`);
@@ -382,7 +411,7 @@ export default function PartiesSearchPage() {
   const pageRef       = useRef(page);
   const totalPagesRef = useRef(totalPages);
   const searchRef     = useRef(search);
-  const cityRef       = useRef(city);
+  const citiesRef     = useRef(selectedCities);
   const dateFromRef   = useRef(dateFrom);
   const dateToRef     = useRef(dateTo);
   const minMRef       = useRef(minMembers);
@@ -392,7 +421,7 @@ export default function PartiesSearchPage() {
   pageRef.current       = page;
   totalPagesRef.current = totalPages;
   searchRef.current     = search;
-  cityRef.current       = city;
+  citiesRef.current     = selectedCities;
   dateFromRef.current   = dateFrom;
   dateToRef.current     = dateTo;
   minMRef.current       = minMembers;
@@ -402,9 +431,9 @@ export default function PartiesSearchPage() {
   // ── Reset on filter change ────────────────────────────────────────────────
   useEffect(() => {
     setPage(1);
-    load(1, search, city, dateFrom, dateTo, minMembers, maxMembers, sortBy, false);
+    load(1, search, selectedCities, dateFrom, dateTo, minMembers, maxMembers, sortBy, false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, city, dateFrom, dateTo, minMembers, maxMembers, sortBy, onlyOpen, load]);
+  }, [search, selectedCities, dateFrom, dateTo, minMembers, maxMembers, sortBy, onlyOpen, load]);
 
   // ── Infinite scroll ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -421,7 +450,7 @@ export default function PartiesSearchPage() {
           setPage(next);
           load(
             next,
-            searchRef.current, cityRef.current,
+            searchRef.current, citiesRef.current,
             dateFromRef.current, dateToRef.current,
             minMRef.current, maxMRef.current,
             sortByRef.current, true,
@@ -441,27 +470,37 @@ export default function PartiesSearchPage() {
     debounceRef.current = setTimeout(() => setSearch(val), 400);
   };
 
-  const onCityChange = (val: string) => {
-    setCityInput(val);
-    if (cityDebRef.current) clearTimeout(cityDebRef.current);
-    cityDebRef.current = setTimeout(() => setCity(val), 400);
+  const toggleCity = (city: string) => {
+    setSelectedCities(prev => togglePartyCity(prev, city));
   };
 
   const clearFilters = () => {
     setSearchInput(''); setSearch('');
-    setCityInput(''); setCity('');
+    setSelectedCities([]);
     setDateFrom(''); setDateTo('');
     setMinMembers(''); setMaxMembers('');
     setSortBy('new');
     setOnlyOpen(false);
   };
 
-  const hasActive = !!(search || city || dateFrom || dateTo || minMembers || maxMembers || sortBy !== 'new' || onlyOpen);
+  const activeFilterCount = countActivePartyFilters({
+    search,
+    cities: selectedCities,
+    dateFrom,
+    dateTo,
+    minMembers,
+    maxMembers,
+    sortBy,
+    onlyOpen,
+  });
+  const hasActive = activeFilterCount > 0;
 
   // ── Active filter chips ───────────────────────────────────────────────────
   const chips: { label: string; clear: () => void }[] = [];
   if (search)     chips.push({ label: `«${search}»`, clear: () => { setSearchInput(''); setSearch(''); } });
-  if (city)       chips.push({ label: `📍 ${city}`, clear: () => { setCityInput(''); setCity(''); } });
+  selectedCities.forEach(city => {
+    chips.push({ label: `📍 ${city}`, clear: () => setSelectedCities(prev => prev.filter(c => c !== city)) });
+  });
   if (dateFrom)   chips.push({ label: `с ${new Date(dateFrom).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`, clear: () => setDateFrom('') });
   if (dateTo)     chips.push({ label: `по ${new Date(dateTo).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`, clear: () => setDateTo('') });
   if (minMembers) chips.push({ label: `мин. ${minMembers} чел.`, clear: () => setMinMembers('') });
@@ -491,24 +530,35 @@ export default function PartiesSearchPage() {
               )}
             </div>
             <button
-              onClick={() => setShowFilters(v => !v)}
+              onClick={() => setFilterDrawerOpen(true)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition"
               style={{
-                background: showFilters ? 'var(--primary)' : 'var(--surface-2)',
-                color: showFilters ? 'var(--text-inverse)' : 'var(--text-muted)',
-                border: '1px solid var(--border)',
+                background: activeFilterCount > 0 ? 'var(--primary)' : 'var(--surface)',
+                color: activeFilterCount > 0 ? 'var(--text-inverse)' : 'var(--text)',
+                border: `1px solid ${activeFilterCount > 0 ? 'var(--primary)' : 'var(--border)'}`,
+                boxShadow: activeFilterCount > 0 ? '0 6px 18px var(--primary-ring)' : 'var(--shadow-sm)',
               }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M22 3H2l8 9.46V19l4 2v-8.54z" />
               </svg>
               Фильтры
-              {hasActive && (
+              {activeFilterCount > 0 && (
                 <span
-                  className="w-5 h-5 rounded-full text-[10px] font-black flex items-center justify-center"
-                  style={{ background: showFilters ? 'rgba(255,255,255,0.3)' : 'var(--primary)', color: showFilters ? '#fff' : 'var(--text-inverse)' }}
+                  className="inline-flex items-center justify-center"
+                  style={{
+                    minWidth: 20,
+                    height: 20,
+                    padding: '0 6px',
+                    borderRadius: 'var(--r-full)',
+                    background: 'rgba(255,255,255,0.24)',
+                    color: 'inherit',
+                    fontSize: 11,
+                    fontWeight: 900,
+                    lineHeight: 1,
+                  }}
                 >
-                  {chips.length}
+                  {activeFilterCount}
                 </span>
               )}
             </button>
@@ -539,7 +589,7 @@ export default function PartiesSearchPage() {
             {/* Sort */}
             <select
               value={sortBy}
-              onChange={e => setSortBy(e.target.value as 'new' | 'popular' | 'date')}
+              onChange={e => setSortBy(e.target.value as PartySortMode)}
               style={inputStyle}
               onFocus={focusInput}
               onBlur={blurInput}
@@ -552,11 +602,12 @@ export default function PartiesSearchPage() {
             {/* Only open toggle */}
             <button
               onClick={() => setOnlyOpen(v => !v)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition"
               style={{
-                background: onlyOpen ? 'var(--success)' : 'var(--surface-2)',
-                color: onlyOpen ? '#fff' : 'var(--text-muted)',
-                border: '1px solid var(--border)',
+                background: onlyOpen ? 'var(--primary)' : 'var(--surface-2)',
+                color: onlyOpen ? 'var(--text-inverse)' : 'var(--text-muted)',
+                border: `1px solid ${onlyOpen ? 'var(--primary)' : 'var(--border)'}`,
+                boxShadow: onlyOpen ? '0 2px 8px var(--primary-ring)' : 'none',
               }}
             >
               ✅ Открытые
@@ -565,7 +616,7 @@ export default function PartiesSearchPage() {
             {hasActive && (
               <button
                 onClick={clearFilters}
-                className="px-4 py-2.5 rounded-xl text-sm transition"
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold transition"
                 style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
               >
                 Сбросить ×
@@ -573,98 +624,6 @@ export default function PartiesSearchPage() {
             )}
           </div>
 
-          {/* ── Extended filters panel ──────────────────────────────────── */}
-          {showFilters && (
-            <div
-              className="mt-4 p-4 rounded-2xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
-              style={{
-                background: 'var(--surface-2)',
-                border: '1px solid var(--border)',
-              }}
-            >
-              {/* City */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold" style={{ color: 'var(--text-faint)' }}>
-                  📍 Город
-                </label>
-                <input
-                  type="text"
-                  value={cityInput}
-                  onChange={e => onCityChange(e.target.value)}
-                  placeholder="Москва, Казань..."
-                  style={{ ...inputStyle, width: '100%' }}
-                  onFocus={focusInput}
-                  onBlur={blurInput}
-                />
-              </div>
-
-              {/* Date from */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold" style={{ color: 'var(--text-faint)' }}>
-                  📅 Создана после
-                </label>
-                <input
-                  type="date"
-                  value={dateFrom}
-                  onChange={e => {
-                    setDateFrom(e.target.value);
-                    if (dateTo && e.target.value > dateTo) setDateTo(e.target.value);
-                  }}
-                  style={{ ...inputStyle, width: '100%', cursor: 'pointer' }}
-                  onFocus={focusInput}
-                  onBlur={blurInput}
-                />
-              </div>
-
-              {/* Date to */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold" style={{ color: 'var(--text-faint)' }}>
-                  📅 Создана до
-                </label>
-                <input
-                  type="date"
-                  value={dateTo}
-                  min={dateFrom}
-                  onChange={e => setDateTo(e.target.value)}
-                  style={{ ...inputStyle, width: '100%', cursor: 'pointer' }}
-                  onFocus={focusInput}
-                  onBlur={blurInput}
-                />
-              </div>
-
-              {/* Members range */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-semibold" style={{ color: 'var(--text-faint)' }}>
-                  👥 Размер компании
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    value={minMembers}
-                    onChange={e => setMinMembers(e.target.value)}
-                    placeholder="от"
-                    min={1}
-                    style={{ ...inputStyle, width: '100%' }}
-                    onFocus={focusInput}
-                    onBlur={blurInput}
-                  />
-                  <span style={{ color: 'var(--text-faint)' }}>—</span>
-                  <input
-                    type="number"
-                    value={maxMembers}
-                    onChange={e => setMaxMembers(e.target.value)}
-                    placeholder="до"
-                    min={1}
-                    style={{ ...inputStyle, width: '100%' }}
-                    onFocus={focusInput}
-                    onBlur={blurInput}
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── Active filter chips ──────────────────────────────────────── */}
           {chips.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2">
               {chips.map((chip, i) => (
@@ -692,6 +651,220 @@ export default function PartiesSearchPage() {
         </div>
       </div>
 
+      {/* ── Filter drawer ─────────────────────────────────────────────────── */}
+      {filterDrawerOpen && (
+        <>
+          <div
+            className="fixed inset-0"
+            style={{
+              background: 'rgba(0,0,0,0.45)',
+              backdropFilter: 'blur(2px)',
+              zIndex: 1000,
+            }}
+            onClick={() => setFilterDrawerOpen(false)}
+          />
+
+          <aside
+                className="fixed top-0 right-0 h-full overflow-y-auto flex flex-col"
+                style={{
+                  width: 460,
+                  maxWidth: '100vw',
+                  background: 'var(--surface)',
+                  borderLeft: '1px solid var(--border)',
+                  boxShadow: 'var(--shadow-lg)',
+                  animation: 'filterDrawerSlideIn 0.25s cubic-bezier(0.16,1,0.3,1) forwards',
+                  zIndex: 1001,
+                }}
+              >
+                <div
+                  className="sticky top-0 z-10 flex items-center justify-between gap-3"
+                  style={{
+                    padding: '0.75rem 1rem',
+                    background: 'var(--surface)',
+                    borderBottom: '1px solid var(--divider)',
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-black" style={{ color: 'var(--text)', lineHeight: 1.1 }}>Фильтры</h2>
+                    {activeFilterCount > 0 && (
+                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Активно: {activeFilterCount}</span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setFilterDrawerOpen(false)}
+                    className="flex items-center justify-center w-9 h-9 rounded-full transition"
+                    style={{
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--border)',
+                      color: 'var(--text-muted)',
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                      <path d="M1 1l12 12M13 1L1 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="flex flex-col gap-4" style={{ padding: '1rem' }}>
+                  <section className="flex flex-col gap-3">
+                    <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Город</h3>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {POPULAR_PARTY_CITIES.map(city => (
+                        <label
+                          key={city}
+                          className="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition"
+                          style={{
+                            background: selectedCities.includes(city) ? 'var(--primary-hl)' : 'var(--surface-2)',
+                            border: `1px solid ${selectedCities.includes(city) ? 'var(--primary)' : 'var(--border)'}`,
+                            color: selectedCities.includes(city) ? 'var(--primary)' : 'var(--text-muted)',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedCities.includes(city)}
+                            onChange={() => toggleCity(city)}
+                            style={{
+                              width: 16,
+                              height: 16,
+                              accentColor: 'var(--primary)',
+                              cursor: 'pointer',
+                            }}
+                          />
+                          <span className="text-sm font-semibold">{city}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </section>
+
+                  <div style={{ borderTop: '1px solid var(--divider)' }} />
+
+                  <section className="flex flex-col gap-3">
+                    <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Дата создания</h3>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input
+                        type="date"
+                        value={dateFrom}
+                        onChange={e => {
+                          setDateFrom(e.target.value);
+                          if (dateTo && e.target.value > dateTo) setDateTo(e.target.value);
+                        }}
+                        style={{ ...inputStyle, width: '100%', cursor: 'pointer' }}
+                        onFocus={focusInput}
+                        onBlur={blurInput}
+                      />
+                      <span style={{ color: 'var(--text-faint)' }}>—</span>
+                      <input
+                        type="date"
+                        value={dateTo}
+                        min={dateFrom}
+                        onChange={e => setDateTo(e.target.value)}
+                        style={{ ...inputStyle, width: '100%', cursor: 'pointer' }}
+                        onFocus={focusInput}
+                        onBlur={blurInput}
+                      />
+                    </div>
+                  </section>
+
+                  <div style={{ borderTop: '1px solid var(--divider)' }} />
+
+                  <section className="flex flex-col gap-3">
+                    <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Размер компании</h3>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        value={minMembers}
+                        onChange={e => setMinMembers(e.target.value)}
+                        placeholder="от"
+                        min={1}
+                        style={{ ...inputStyle, width: '100%' }}
+                        onFocus={focusInput}
+                        onBlur={blurInput}
+                      />
+                      <span style={{ color: 'var(--text-faint)' }}>—</span>
+                      <input
+                        type="number"
+                        value={maxMembers}
+                        onChange={e => setMaxMembers(e.target.value)}
+                        placeholder="до"
+                        min={1}
+                        style={{ ...inputStyle, width: '100%' }}
+                        onFocus={focusInput}
+                        onBlur={blurInput}
+                      />
+                    </div>
+                  </section>
+
+                  <div style={{ borderTop: '1px solid var(--divider)' }} />
+
+                  <section className="flex flex-col gap-3">
+                    <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Сортировка</h3>
+                    <select
+                      value={sortBy}
+                      onChange={e => setSortBy(e.target.value as PartySortMode)}
+                      style={inputStyle}
+                      onFocus={focusInput}
+                      onBlur={blurInput}
+                    >
+                      <option value="new">Сначала новые</option>
+                      <option value="popular">По популярности</option>
+                      <option value="date">По дате создания</option>
+                    </select>
+                  </section>
+
+                  <div style={{ borderTop: '1px solid var(--divider)' }} />
+
+                  <section className="flex flex-col gap-3">
+                    <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Статус</h3>
+                    <button
+                      onClick={() => setOnlyOpen(v => !v)}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition"
+                      style={{
+                        background: onlyOpen ? 'var(--primary)' : 'var(--surface-2)',
+                        color: onlyOpen ? 'var(--text-inverse)' : 'var(--text-muted)',
+                        border: `1px solid ${onlyOpen ? 'var(--primary)' : 'var(--border)'}`,
+                        boxShadow: onlyOpen ? '0 2px 8px var(--primary-ring)' : 'none',
+                      }}
+                    >
+                      ✅ Только открытые
+                    </button>
+                  </section>
+                </div>
+
+                <div
+                  className="sticky bottom-0 flex gap-3"
+                  style={{
+                    padding: '1rem 1.25rem',
+                    background: 'var(--surface)',
+                    borderTop: '1px solid var(--divider)',
+                  }}
+                >
+                  {hasActive && (
+                    <button onClick={clearFilters} className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold transition" style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}>
+                      Сбросить
+                    </button>
+                  )}
+                  <button onClick={() => setFilterDrawerOpen(false)} className="gv-btn-primary flex-1">
+                    Применить
+                  </button>
+                </div>
+              </aside>
+
+              <style>{`
+                @keyframes filterDrawerSlideIn {
+                  from { transform: translateX(100%); opacity: 0.6; }
+                  to   { transform: translateX(0);    opacity: 1; }
+                }
+
+                @media (max-width: 640px) {
+                  aside {
+                    width: 100vw !important;
+                    border-left: none !important;
+                  }
+                }
+              `}</style>
+            </>
+          )}
+
       {/* ── Main content ────────────────────────────────────────────────────── */}
       <main className="container mx-auto px-4 py-8">
 
@@ -711,7 +884,7 @@ export default function PartiesSearchPage() {
             </p>
             <p className="text-sm" style={{ color: 'var(--error)' }}>{error}</p>
             <button
-              onClick={() => load(1, search, city, dateFrom, dateTo, minMembers, maxMembers, sortBy, false)}
+              onClick={() => load(1, search, selectedCities, dateFrom, dateTo, minMembers, maxMembers, sortBy, false)}
               className="gv-btn-primary"
             >
               Попробовать снова
@@ -759,7 +932,7 @@ export default function PartiesSearchPage() {
                     load(
                       next,
                       search,
-                      city,
+                      selectedCities,
                       dateFrom,
                       dateTo,
                       minMembers,

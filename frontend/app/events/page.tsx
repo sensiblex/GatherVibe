@@ -26,6 +26,7 @@ import {
   toggleCategory,
   isValidCity,
   quickDateRange,
+  cityNameToSlug,
   SORT_OPTIONS,
   KUDAGO_CITIES,
   type CitySlug,
@@ -36,6 +37,7 @@ import {
   type PermanenceMode,
   type QuickDate,
 } from './event-filters';
+import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../lib/apiFetch';
 import { hasMoreEvents, mergeEventPages } from './events-pagination';
 import {
@@ -56,6 +58,7 @@ const PAGE_SIZE = 60;
 const DIRECT_BACKEND_BASE =
   (process.env.NEXT_PUBLIC_DIRECT_API_URL && process.env.NEXT_PUBLIC_DIRECT_API_URL.trim()) ||
   resolveApiBase();
+const STORAGE_CITY_KEY = 'events_city';
 
 interface Category { slug: string; name: string; }
 
@@ -99,6 +102,7 @@ function MasonrySkeleton() {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function EventsPage() {
+  const { user } = useAuth();
   const [events, setEvents]       = useState<KudaGoEvent[]>([]);
   const [loading, setLoading]     = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -107,7 +111,7 @@ export default function EventsPage() {
   const [categories, setCategories] = useState<Category[]>([]);
 
   // Filters
-  const [city, setCity]               = useState<CitySlug>('kzn');
+  const [city, setCity]               = useState<CitySlug>('msk');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch]           = useState('');
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
@@ -200,8 +204,26 @@ export default function EventsPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const p = new URLSearchParams(window.location.search);
+
+    // Determine initial city with priority: URL → localStorage → user profile → Moscow
     const cityParam = p.get('city');
-    if (cityParam && isValidCity(cityParam)) setCity(cityParam);
+    if (cityParam && isValidCity(cityParam)) {
+      setCity(cityParam);
+    } else {
+      // Try localStorage
+      const storedCity = localStorage.getItem(STORAGE_CITY_KEY);
+      if (storedCity && isValidCity(storedCity)) {
+        setCity(storedCity);
+      } else {
+        // Try user profile city
+        const profileCitySlug = cityNameToSlug(user?.city);
+        if (profileCitySlug) {
+          setCity(profileCitySlug);
+        }
+        // Otherwise keep default 'msk'
+      }
+    }
+
     const q = p.get('search') || '';
     if (q) { setSearchInput(q); setSearch(q); }
     const cats = p.get('categories');
@@ -237,7 +259,7 @@ export default function EventsPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const p = new URLSearchParams();
-    if (city !== 'kzn') p.set('city', city);
+    if (city !== 'msk') p.set('city', city);
     if (search)   p.set('search',     search);
     if (selectedCats.length) p.set('categories', selectedCats.join(','));
     if (priceMode !== 'all') p.set('price', priceMode);
@@ -265,6 +287,50 @@ export default function EventsPage() {
     router.replace(qs ? `/events?${qs}` : '/events', { scroll: false });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo, sortBy, maxAge, tags, geo, hideViewed]);
+
+  // Save city to localStorage when it changes (user manually selected)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(STORAGE_CITY_KEY, city);
+  }, [city]);
+
+  // When user loads after initial render, try to use their profile city
+  // (only if city is still default and no URL param/localStorage override)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!user) return; // User not loaded yet or not logged in
+
+    const p = new URLSearchParams(window.location.search);
+    const cityParam = p.get('city');
+    const storedCity = localStorage.getItem(STORAGE_CITY_KEY);
+
+    // Only apply profile city if no explicit override exists
+    if (!cityParam && !storedCity) {
+      const profileCitySlug = cityNameToSlug(user.city);
+      if (profileCitySlug) {
+        setCity(profileCitySlug);
+      }
+    }
+  }, [user]);
+
+  // When user's profile city changes, update the events page city
+  // (only if no explicit URL param or localStorage override)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!user) return; // User not loaded yet or not logged in
+
+    const p = new URLSearchParams(window.location.search);
+    const cityParam = p.get('city');
+    const storedCity = localStorage.getItem(STORAGE_CITY_KEY);
+
+    // Only apply profile city change if no explicit override exists
+    if (!cityParam && !storedCity) {
+      const profileCitySlug = cityNameToSlug(user.city);
+      if (profileCitySlug && profileCitySlug !== city) {
+        setCity(profileCitySlug);
+      }
+    }
+  }, [user?.city, city]);
 
   // Load events from API
   const load = useCallback(async (
