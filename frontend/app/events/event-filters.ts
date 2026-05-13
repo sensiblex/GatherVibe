@@ -258,6 +258,41 @@ export function quickDateRange(preset: QuickDate, now: Date = new Date()): { sin
   }
 }
 
+export function quickDateInputRange(
+  preset: QuickDate,
+  now: Date = new Date(),
+): { dateFrom: string; dateTo: string } {
+  const startOfDay = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+  const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  const iso = (d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const today = startOfDay(now);
+  switch (preset) {
+    case 'today':
+      return { dateFrom: iso(today), dateTo: iso(today) };
+    case 'tomorrow': {
+      const tomorrow = addDays(today, 1);
+      return { dateFrom: iso(tomorrow), dateTo: iso(tomorrow) };
+    }
+    case 'weekend': {
+      const dow = today.getDay();
+      const daysToSat = dow === 6 ? 0 : (6 - dow) % 7;
+      const sat = addDays(today, daysToSat);
+      const sun = addDays(sat, 1);
+      return { dateFrom: iso(sat), dateTo: iso(sun) };
+    }
+    case 'week':
+      return { dateFrom: iso(today), dateTo: iso(addDays(today, 6)) };
+    case 'month':
+      return { dateFrom: iso(today), dateTo: iso(addDays(today, 29)) };
+  }
+}
+
 /** Toggle a tag in/out of the current selection. */
 export function toggleTag(selected: string[], tag: string): string[] {
   if (!tag) return [];

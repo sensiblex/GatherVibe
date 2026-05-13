@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 
 import Navbar from '../components/Navbar';
 import EventsMap from '../components/EventsMap';
+import DatePicker from '../components/DatePicker';
 import { KudaGoEvent } from '../components/EventCard';
 import EventDetailDrawer from './EventDetailDrawer';
 import DateStrip from './DateStrip';
@@ -25,7 +26,7 @@ import {
   buildKudaGoQuery,
   toggleCategory,
   isValidCity,
-  quickDateRange,
+  quickDateInputRange,
   cityNameToSlug,
   SORT_OPTIONS,
   KUDAGO_CITIES,
@@ -149,6 +150,23 @@ export default function EventsPage() {
   const requestSeqRef = useRef(0);
   const hasLoadedOnceRef = useRef(false);
   const router = useRouter();
+
+  // Sort dropdown refs
+  const sortDropdownRef = useRef<HTMLDivElement>(null);
+  const sortCheckboxRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (sortDropdownRef.current && !sortDropdownRef.current.contains(event.target as Node)) {
+        if (sortCheckboxRef.current) {
+          sortCheckboxRef.current.checked = false;
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const refreshViewedEventIds = useCallback(() => {
     setViewedEventIds(new Set(readViewedEventIds()));
@@ -336,7 +354,7 @@ export default function EventsPage() {
   const load = useCallback(async (
     loc: CitySlug, s: string, cats: string[], price: PriceMode, minP: string, maxP: string, from: string, to: string,
     age: number | null, ts: string[], gp: GeoPoint | null, sort: SortMode,
-    qd: QuickDate | null, tod: TimeOfDay | null, perm: PermanenceMode,
+    tod: TimeOfDay | null, perm: PermanenceMode,
     ovp: boolean,
     fh: number | null, th: number | null,
     hst: boolean,
@@ -351,14 +369,8 @@ export default function EventsPage() {
     else setIsRefreshing(true);
     setError(null);
     try {
-      // Quick-date preset overrides manual date range.
       let sinceTs: number | undefined = from ? localStartTs(from) : undefined;
       let untilTs: number | undefined = to   ? localEndTs(to)     : undefined;
-      if (qd) {
-        const r = quickDateRange(qd);
-        sinceTs = r.since;
-        untilTs = r.until;
-      }
 
       const buildQuery = (queryPage: number, queryPageSize: number) => buildKudaGoQuery({
         location: loc,
@@ -457,7 +469,7 @@ export default function EventsPage() {
     load(
       city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
       maxAge, tags, geo, sortBy,
-      quickDate, timeOfDay, permanence, onlyVerifiedPlace,
+      timeOfDay, permanence, onlyVerifiedPlace,
       fromHour, toHour,
       hideStarted,
       1, false,
@@ -465,7 +477,7 @@ export default function EventsPage() {
   }, [
     city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
     maxAge, tags, geo, sortBy,
-    quickDate, timeOfDay, permanence, onlyVerifiedPlace,
+    timeOfDay, permanence, onlyVerifiedPlace,
     fromHour, toHour, hideStarted,
     load,
   ]);
@@ -476,14 +488,14 @@ export default function EventsPage() {
     load(
       city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
       maxAge, tags, geo, sortBy,
-      quickDate, timeOfDay, permanence, onlyVerifiedPlace,
+      timeOfDay, permanence, onlyVerifiedPlace,
       fromHour, toHour,
       hideStarted,
       page + 1, true,
     );
   }, [
     isLoadingMore, canLoadMore, load, city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
-    maxAge, tags, geo, sortBy, quickDate, timeOfDay, permanence, onlyVerifiedPlace, fromHour, toHour,
+    maxAge, tags, geo, sortBy, timeOfDay, permanence, onlyVerifiedPlace, fromHour, toHour,
     hideStarted, page,
   ]);
 
@@ -502,6 +514,30 @@ export default function EventsPage() {
     setSelectedCats(current => (
       current.includes(slug) ? current : toggleCategory(current, slug)
     ));
+  }, []);
+
+  const applyQuickDate = useCallback((value: QuickDate | null) => {
+    setQuickDate(value);
+    if (!value) {
+      setDateFrom('');
+      setDateTo('');
+      return;
+    }
+
+    const range = quickDateInputRange(value);
+    setDateFrom(range.dateFrom);
+    setDateTo(range.dateTo);
+  }, []);
+
+  const applyDateFrom = useCallback((value: string) => {
+    setQuickDate(null);
+    setDateFrom(value);
+    if (dateTo && value > dateTo) setDateTo(value);
+  }, [dateTo]);
+
+  const applyDateTo = useCallback((value: string) => {
+    setQuickDate(null);
+    setDateTo(value);
   }, []);
 
   const clearFilters = useCallback(() => {
@@ -530,12 +566,11 @@ export default function EventsPage() {
       priceMode !== 'all',
       !!minPrice,
       !!maxPrice,
-      !!dateFrom || !!dateTo,
+      !!dateFrom || !!dateTo || !!quickDate,
       sortBy !== 'date',
       maxAge !== null,
       tags.length > 0,
       !!geo,
-      !!quickDate,
       !!timeOfDay,
       permanence !== 'all',
       onlyVerifiedPlace,
@@ -793,23 +828,39 @@ export default function EventsPage() {
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
                     <CityFilter value={city} onChange={setCity} />
                     <PriceToggle value={priceMode} onChange={setPriceMode} />
-                    <select
-                      value={sortBy}
-                      onChange={e => setSortBy(e.target.value as SortMode)}
-                      className="input"
-                      style={{ width: 'auto', minWidth: 140, padding: '.65rem 1rem', fontSize: '.875rem' }}
-                      aria-label="Сортировка"
-                    >
-                      {SORT_OPTIONS.map(o => (
-                        <option
-                          key={o.value}
-                          value={o.value}
-                          disabled={o.value === 'nearest' && !geo}
-                        >
-                          {o.label}{o.value === 'nearest' && !geo ? ' (нужна геолокация)' : ''}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="dropdown" ref={sortDropdownRef}>
+                      <input type="checkbox" id="events-sort-dropdown" ref={sortCheckboxRef} />
+                      <label htmlFor="events-sort-dropdown" className="dropdown-btn" style={{ padding: '.65rem 1rem', fontSize: '.875rem' }} aria-label="Сортировка">
+                        <span>{SORT_OPTIONS.find(o => o.value === sortBy)?.label || 'Сортировка'}</span>
+                        <span className="arrow"></span>
+                      </label>
+
+                      <ul className="dropdown-content" role="menu">
+                        {SORT_OPTIONS.map(o => (
+                          <li key={o.value}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!(o.value === 'nearest' && !geo)) {
+                                  setSortBy(o.value);
+                                  if (sortCheckboxRef.current) sortCheckboxRef.current.checked = false;
+                                }
+                              }}
+                              role="menuitem"
+                              disabled={o.value === 'nearest' && !geo}
+                              style={{
+                                padding: '.65rem 1rem',
+                                fontSize: '.875rem',
+                                opacity: o.value === 'nearest' && !geo ? 0.5 : 1,
+                                cursor: o.value === 'nearest' && !geo ? 'not-allowed' : 'pointer'
+                              }}
+                            >
+                              {o.label}{o.value === 'nearest' && !geo ? ' (нужна геолокация)' : ''}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   </div>
                   <div className="flex flex-col gap-2">
                     <span className="t-xs font-semibold" style={{ color: 'var(--text-muted)' }}>Цена</span>
@@ -838,80 +889,38 @@ export default function EventsPage() {
                       />
                     </div>
                   </div>
-                  <label
-                    className="flex items-center justify-between gap-3"
-                    style={{
-                      padding: '0.75rem 0.9rem',
-                      borderRadius: 'var(--r-xl)',
-                      background: 'var(--surface-2)',
-                      border: `1px solid ${hideViewed ? 'var(--primary)' : 'var(--border)'}`,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-                      Убрать просмотренные
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={hideViewed}
-                      onChange={e => setHideViewed(e.target.checked)}
-                      aria-label="Убрать просмотренные события"
-                      style={{
-                        width: 18,
-                        height: 18,
-                        accentColor: 'var(--primary)',
-                        flexShrink: 0,
-                      }}
-                    />
-                  </label>
+                  <div className="checkbox-wrapper-33">
+                    <label className="checkbox">
+                      <input
+                        className="checkbox__trigger visuallyhidden"
+                        type="checkbox"
+                        checked={hideViewed}
+                        onChange={e => setHideViewed(e.target.checked)}
+                        aria-label="Убрать просмотренные события"
+                      />
+                      <span className="checkbox__symbol">
+                        <svg aria-hidden="true" className="icon-checkbox" width="28px" height="28px" viewBox="0 0 28 28" version="1" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M4 14l8 7L24 7"></path>
+                        </svg>
+                      </span>
+                      <p className="checkbox__textwrapper" style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text)' }}>Убрать просмотренные</p>
+                    </label>
+                  </div>
                 </section>
 
                 <div style={{ borderTop: '1px solid var(--divider)' }} />
 
                 <section className="flex flex-col gap-3">
                   <h3 className="t-label">Дата и время</h3>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <input
-                      type="date"
-                      value={dateFrom}
-                      min={todayStr}
-                      suppressHydrationWarning
-                      onChange={e => {
-                        setDateFrom(e.target.value);
-                        if (dateTo && e.target.value > dateTo) setDateTo(e.target.value);
-                      }}
-                      className="input"
-                      style={{ width: '100%', padding: '.65rem 1rem', fontSize: '.875rem' }}
-                    />
-                    <span className="t-xs" style={{ color: 'var(--text-dim)' }}>-</span>
-                    <input
-                      type="date"
-                      value={dateTo}
-                      min={dateFrom || todayStr}
-                      suppressHydrationWarning
-                      onChange={e => setDateTo(e.target.value)}
-                      className="input"
-                      style={{ width: '100%', padding: '.65rem 1rem', fontSize: '.875rem' }}
-                    />
-                  </div>
+                  <DatePicker
+                    dateFrom={dateFrom}
+                    dateTo={dateTo}
+                    onDateFromChange={applyDateFrom}
+                    onDateToChange={applyDateTo}
+                    minDate={todayStr}
+                  />
 
-                  {(dateFrom || dateTo) && (
-                    <span className="badge badge-ink" style={{ gap: 6, width: 'fit-content' }}>
-                      {dateFrom && dateTo && dateFrom === dateTo
-                        ? displayDate(dateFrom, { day: 'numeric', month: 'long' })
-                        : [
-                            dateFrom && `с ${displayDate(dateFrom, { day: 'numeric', month: 'short' })}`,
-                            dateTo   && `по ${displayDate(dateTo, { day: 'numeric', month: 'short' })}`,
-                          ].filter(Boolean).join(' ')}
-                      <button
-                        onClick={() => { setDateFrom(''); setDateTo(''); }}
-                        style={{ marginLeft: 4, background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, lineHeight: 1 }}
-                        aria-label="Сбросить даты"
-                      >x</button>
-                    </span>
-                  )}
-
-                  <QuickDateChips active={quickDate} onSelect={setQuickDate} />
+                  <QuickDateChips active={quickDate} onSelect={applyQuickDate} />
                   <TimeOfDayFilter value={timeOfDay} onChange={setTimeOfDay} />
                   <TimeRangeSlider from={fromHour} to={toHour} onChange={(f, t) => { setFromHour(f); setToHour(t); }} />
                   <button
@@ -1040,7 +1049,7 @@ export default function EventsPage() {
               onClick={() => load(
                 city, search, selectedCats, priceMode, minPrice, maxPrice, dateFrom, dateTo,
                 maxAge, tags, geo, sortBy,
-                quickDate, timeOfDay, permanence, onlyVerifiedPlace,
+                timeOfDay, permanence, onlyVerifiedPlace,
                 fromHour, toHour,
                 hideStarted,
                 1, false,
