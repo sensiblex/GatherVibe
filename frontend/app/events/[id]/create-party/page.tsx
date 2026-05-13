@@ -8,6 +8,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { apiFetch } from '../../../lib/apiFetch';
 import { buildPermanentDateOptions, type ScheduleEntry } from './date-options';
 import { extractSchedulesFromAllDates } from '../../utils';
+import DateTimePickerButton from './DateTimePickerButton';
 
 const MAX_EVENT_DATE_FUTURE_DAYS = 180;
 
@@ -227,13 +228,12 @@ export default function CreatePartyPage() {
                     <div className="text-sm" style={{ color: 'var(--text-faint)' }}>
                       Не удалось построить даты по расписанию. Укажите дату и время вручную.
                     </div>
-                    <input
-                      type="datetime-local"
+                    <DateTimePickerButton
                       value={manualDateTime}
-                      onChange={(e) => setManualDateTime(e.target.value)}
+                      onChange={setManualDateTime}
                       min={toDateTimeLocalValue(new Date())}
                       max={toDateTimeLocalValue(new Date(Date.now() + MAX_EVENT_DATE_FUTURE_DAYS * 24 * 3600 * 1000))}
-                      className="gv-input"
+                      placeholder="Выберите дату и время"
                     />
                   </>
                 )}
