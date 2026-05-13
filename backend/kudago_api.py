@@ -35,7 +35,7 @@ def _get(path: str, params: dict) -> dict:
             backoff *= 2
     if last_exc is not None:
         raise last_exc
-    raise httpx.HTTPStatusError("KudaGo rate-limited/unavailable after retries", request=None, response=None)
+    raise RuntimeError("KudaGo rate-limited/unavailable after retries")
 
 
 def get_events(

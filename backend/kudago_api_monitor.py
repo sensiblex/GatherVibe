@@ -12,11 +12,6 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from threading import Lock
 
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger("kudago_api")
 
 

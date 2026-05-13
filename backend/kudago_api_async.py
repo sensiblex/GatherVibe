@@ -16,6 +16,7 @@ from kudago_api_models import (
 )
 from kudago_api_cache import cached
 from kudago_api_monitor import monitor_async_request
+from kudago_common import safe_str as _safe_str
 
 logger = logging.getLogger("kudago_api_async")
 
@@ -275,8 +276,6 @@ async def get_locations() -> List[Dict[str, Any]]:
 
 
 # ==================== Функции парсинга ====================
-
-from kudago_common import safe_str as _safe_str  # noqa: E402
 
 
 async def parse_events(raw: Dict[str, Any]) -> List[Dict[str, Any]]:

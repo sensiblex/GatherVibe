@@ -3,6 +3,7 @@
 Поддержка Redis и in-memory кэширования (lru_cache).
 """
 import hashlib
+import inspect
 import json
 import logging
 import time
@@ -67,6 +68,8 @@ class InMemoryCache:
         
         # LRU: удалить старые записи если кэш полон
         if len(self._cache) >= self._max_size and hashed_key not in self._cache:
+            if not self._timestamps:
+                return
             oldest_key = min(self._timestamps, key=self._timestamps.get)
             del self._cache[oldest_key]
             del self._timestamps[oldest_key]
@@ -248,7 +251,7 @@ def cached(ttl: Optional[int] = None, key_prefix: str = ""):
                 return func(*args, **kwargs)
             
             # Создание ключа кэша
-            cache_key = f"{key_prefix}:{func.__name__}:{str(args)}:{str(kwargs)}"
+            cache_key = f"{key_prefix}:{func.__name__}:{json.dumps(args, default=str)}:{json.dumps(kwargs, default=str)}"
             
             cache = get_cache_instance()
             cached_value = cache.get(cache_key)
@@ -274,7 +277,7 @@ def cached(ttl: Optional[int] = None, key_prefix: str = ""):
                 return await func(*args, **kwargs)
             
             # Создание ключа кэша
-            cache_key = f"{key_prefix}:{func.__name__}:{str(args)}:{str(kwargs)}"
+            cache_key = f"{key_prefix}:{func.__name__}:{json.dumps(args, default=str)}:{json.dumps(kwargs, default=str)}"
             
             cache = get_cache_instance()
             cached_value = cache.get(cache_key)
@@ -295,15 +298,11 @@ def cached(ttl: Optional[int] = None, key_prefix: str = ""):
             return result
         
         # Возвращаем соответствующую обёртку
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             return async_wrapper
         return sync_wrapper
     
     return decorator
-
-
-# Для поддержки asyncio
-import asyncio
 
 
 # ==================== Утилиты ====================

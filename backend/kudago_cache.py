@@ -13,6 +13,12 @@ import re
 
 from sqlalchemy import func, or_
 
+import kudago_api
+from database import SessionLocal
+from models.kudago_event import KudaGoEvent
+from models.party import EventParty, PartyMember
+from models.attendee import EventAttendee
+
 
 def _json_list(val):
     if not val:
@@ -108,12 +114,6 @@ def _matches_hour_range(start_time: Optional[str], from_hour: int, to_hour: int)
     if from_hour <= to_hour:
         return from_hour <= h < to_hour
     return h >= from_hour or h < to_hour
-
-import kudago_api
-from database import SessionLocal
-from models.kudago_event import KudaGoEvent
-from models.party import EventParty, PartyMember
-from models.attendee import EventAttendee
 
 logger = logging.getLogger(__name__)
 
