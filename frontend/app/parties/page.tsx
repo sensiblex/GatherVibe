@@ -4,12 +4,15 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Navbar from '../components/Navbar';
+import NumberInput from '../components/NumberInput';
+import DatePicker from '../components/DatePicker';
 import { useAuth } from '../context/AuthContext';
 import { apiFetch } from '../lib/apiFetch';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { buildEventIdentityMeta } from '../lib/event-identity';
 import {
   POPULAR_PARTY_CITIES,
+  CITY_CODE_TO_NAME,
   buildPartiesSearchQuery,
   buildPartiesUrlQuery,
   countActivePartyFilters,
@@ -18,6 +21,12 @@ import {
 } from './parties-filters';
 
 const PAGE_SIZE = 20;
+
+const SORT_OPTIONS = [
+  { value: 'new' as PartySortMode, label: 'Сначала новые' },
+  { value: 'popular' as PartySortMode, label: 'По популярности' },
+  { value: 'date' as PartySortMode, label: 'По дате создания' },
+];
 
 interface PartyItem {
   id: number;
@@ -46,7 +55,7 @@ interface SearchResponse {
 
 // ─── Party Card ──────────────────────────────────────────────────────────────
 
-function PartyCard({ party }: { party: PartyItem }) {
+function PartyCard({ party, index }: { party: PartyItem; index: number }) {
   const filled = party.member_count + 1; // +1 for creator
   const capacity = party.max_members;
   const pct = Math.min(100, Math.round((filled / capacity) * 100));
@@ -65,6 +74,7 @@ function PartyCard({ party }: { party: PartyItem }) {
         background: 'var(--surface)',
         border: '1px solid var(--border)',
         boxShadow: 'var(--shadow-sm)',
+        animation: `fadeInUp 0.3s ease-out ${Math.min(index * 0.05, 0.3)}s both`,
       }}
       onMouseEnter={e => {
         (e.currentTarget as HTMLElement).style.boxShadow = 'var(--shadow-md)';
@@ -285,6 +295,32 @@ export default function PartiesSearchPage() {
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadingRef  = useRef(false);
 
+  // Sort dropdown refs
+  const sortDropdownRef = useRef<HTMLDivElement>(null);
+  const sortCheckboxRef = useRef<HTMLInputElement>(null);
+
+  // Drawer sort dropdown refs
+  const drawerSortDropdownRef = useRef<HTMLDivElement>(null);
+  const drawerSortCheckboxRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (sortDropdownRef.current && !sortDropdownRef.current.contains(event.target as Node)) {
+        if (sortCheckboxRef.current) {
+          sortCheckboxRef.current.checked = false;
+        }
+      }
+      if (drawerSortDropdownRef.current && !drawerSortDropdownRef.current.contains(event.target as Node)) {
+        if (drawerSortCheckboxRef.current) {
+          drawerSortCheckboxRef.current.checked = false;
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // ── Redirect unauthenticated users ────────────────────────────────────────
   useEffect(() => {
     if (!authLoading && !token) {
@@ -498,8 +534,8 @@ export default function PartiesSearchPage() {
   // ── Active filter chips ───────────────────────────────────────────────────
   const chips: { label: string; clear: () => void }[] = [];
   if (search)     chips.push({ label: `«${search}»`, clear: () => { setSearchInput(''); setSearch(''); } });
-  selectedCities.forEach(city => {
-    chips.push({ label: `📍 ${city}`, clear: () => setSelectedCities(prev => prev.filter(c => c !== city)) });
+  selectedCities.forEach(cityCode => {
+    chips.push({ label: `📍 ${CITY_CODE_TO_NAME[cityCode]}`, clear: () => setSelectedCities(prev => prev.filter(c => c !== cityCode)) });
   });
   if (dateFrom)   chips.push({ label: `с ${new Date(dateFrom).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`, clear: () => setDateFrom('') });
   if (dateTo)     chips.push({ label: `по ${new Date(dateTo).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`, clear: () => setDateTo('') });
@@ -587,17 +623,31 @@ export default function PartiesSearchPage() {
             </div>
 
             {/* Sort */}
-            <select
-              value={sortBy}
-              onChange={e => setSortBy(e.target.value as PartySortMode)}
-              style={inputStyle}
-              onFocus={focusInput}
-              onBlur={blurInput}
-            >
-              <option value="new">Сначала новые</option>
-              <option value="popular">По популярности</option>
-              <option value="date">По дате создания</option>
-            </select>
+            <div className="dropdown" ref={sortDropdownRef}>
+              <input type="checkbox" id="parties-sort-dropdown" ref={sortCheckboxRef} />
+              <label htmlFor="parties-sort-dropdown" className="dropdown-btn" style={{ padding: '.625rem 1rem', fontSize: '.875rem' }} aria-label="Сортировка">
+                <span>{SORT_OPTIONS.find(o => o.value === sortBy)?.label || 'Сортировка'}</span>
+                <span className="arrow"></span>
+              </label>
+
+              <ul className="dropdown-content" role="menu">
+                {SORT_OPTIONS.map(o => (
+                  <li key={o.value}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSortBy(o.value);
+                        if (sortCheckboxRef.current) sortCheckboxRef.current.checked = false;
+                      }}
+                      role="menuitem"
+                      style={{ padding: '.625rem 1rem', fontSize: '.875rem' }}
+                    >
+                      {o.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
 
             {/* Only open toggle */}
             <button
@@ -709,29 +759,23 @@ export default function PartiesSearchPage() {
                   <section className="flex flex-col gap-3">
                     <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Город</h3>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                      {POPULAR_PARTY_CITIES.map(city => (
-                        <label
-                          key={city}
-                          className="flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition"
-                          style={{
-                            background: selectedCities.includes(city) ? 'var(--primary-hl)' : 'var(--surface-2)',
-                            border: `1px solid ${selectedCities.includes(city) ? 'var(--primary)' : 'var(--border)'}`,
-                            color: selectedCities.includes(city) ? 'var(--primary)' : 'var(--text-muted)',
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedCities.includes(city)}
-                            onChange={() => toggleCity(city)}
-                            style={{
-                              width: 16,
-                              height: 16,
-                              accentColor: 'var(--primary)',
-                              cursor: 'pointer',
-                            }}
-                          />
-                          <span className="text-sm font-semibold">{city}</span>
-                        </label>
+                      {POPULAR_PARTY_CITIES.map(cityCode => (
+                        <div key={cityCode} className="checkbox-wrapper-33">
+                          <label className="checkbox">
+                            <input
+                              className="checkbox__trigger visuallyhidden"
+                              type="checkbox"
+                              checked={selectedCities.includes(cityCode)}
+                              onChange={() => toggleCity(cityCode)}
+                            />
+                            <span className="checkbox__symbol">
+                              <svg aria-hidden="true" className="icon-checkbox" width="28px" height="28px" viewBox="0 0 28 28" version="1" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M4 14l8 7L24 7"></path>
+                              </svg>
+                            </span>
+                            <p className="checkbox__textwrapper" style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text)' }}>{CITY_CODE_TO_NAME[cityCode]}</p>
+                          </label>
+                        </div>
                       ))}
                     </div>
                   </section>
@@ -740,29 +784,12 @@ export default function PartiesSearchPage() {
 
                   <section className="flex flex-col gap-3">
                     <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Дата создания</h3>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <input
-                        type="date"
-                        value={dateFrom}
-                        onChange={e => {
-                          setDateFrom(e.target.value);
-                          if (dateTo && e.target.value > dateTo) setDateTo(e.target.value);
-                        }}
-                        style={{ ...inputStyle, width: '100%', cursor: 'pointer' }}
-                        onFocus={focusInput}
-                        onBlur={blurInput}
-                      />
-                      <span style={{ color: 'var(--text-faint)' }}>—</span>
-                      <input
-                        type="date"
-                        value={dateTo}
-                        min={dateFrom}
-                        onChange={e => setDateTo(e.target.value)}
-                        style={{ ...inputStyle, width: '100%', cursor: 'pointer' }}
-                        onFocus={focusInput}
-                        onBlur={blurInput}
-                      />
-                    </div>
+                    <DatePicker
+                      dateFrom={dateFrom}
+                      dateTo={dateTo}
+                      onDateFromChange={setDateFrom}
+                      onDateToChange={setDateTo}
+                    />
                   </section>
 
                   <div style={{ borderTop: '1px solid var(--divider)' }} />
@@ -770,26 +797,34 @@ export default function PartiesSearchPage() {
                   <section className="flex flex-col gap-3">
                     <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Размер компании</h3>
                     <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        value={minMembers}
-                        onChange={e => setMinMembers(e.target.value)}
-                        placeholder="от"
+                      <NumberInput
+                        mode="spinner"
                         min={1}
-                        style={{ ...inputStyle, width: '100%' }}
-                        onFocus={focusInput}
-                        onBlur={blurInput}
+                        max={50}
+                        value={minMembers ? Number(minMembers) : null}
+                        onChange={(value) => {
+                          setMinMembers(value?.toString() || '');
+                          if (maxMembers && value && Number(value) > Number(maxMembers)) {
+                            setMaxMembers(value?.toString() || '');
+                          }
+                        }}
+                        placeholder="от"
+                        style={{ width: '100%' }}
                       />
                       <span style={{ color: 'var(--text-faint)' }}>—</span>
-                      <input
-                        type="number"
-                        value={maxMembers}
-                        onChange={e => setMaxMembers(e.target.value)}
-                        placeholder="до"
+                      <NumberInput
+                        mode="spinner"
                         min={1}
-                        style={{ ...inputStyle, width: '100%' }}
-                        onFocus={focusInput}
-                        onBlur={blurInput}
+                        max={50}
+                        value={maxMembers ? Number(maxMembers) : null}
+                        onChange={(value) => {
+                          setMaxMembers(value?.toString() || '');
+                          if (minMembers && value && Number(value) < Number(minMembers)) {
+                            setMinMembers(value?.toString() || '');
+                          }
+                        }}
+                        placeholder="до"
+                        style={{ width: '100%' }}
                       />
                     </div>
                   </section>
@@ -798,17 +833,31 @@ export default function PartiesSearchPage() {
 
                   <section className="flex flex-col gap-3">
                     <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-faint)' }}>Сортировка</h3>
-                    <select
-                      value={sortBy}
-                      onChange={e => setSortBy(e.target.value as PartySortMode)}
-                      style={inputStyle}
-                      onFocus={focusInput}
-                      onBlur={blurInput}
-                    >
-                      <option value="new">Сначала новые</option>
-                      <option value="popular">По популярности</option>
-                      <option value="date">По дате создания</option>
-                    </select>
+                    <div className="dropdown" ref={drawerSortDropdownRef}>
+                      <input type="checkbox" id="drawer-sort-dropdown" ref={drawerSortCheckboxRef} />
+                      <label htmlFor="drawer-sort-dropdown" className="dropdown-btn" style={{ padding: '.625rem 1rem', fontSize: '.875rem' }} aria-label="Сортировка">
+                        <span>{SORT_OPTIONS.find(o => o.value === sortBy)?.label || 'Сортировка'}</span>
+                        <span className="arrow"></span>
+                      </label>
+
+                      <ul className="dropdown-content" role="menu">
+                        {SORT_OPTIONS.map(o => (
+                          <li key={o.value}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSortBy(o.value);
+                                if (drawerSortCheckboxRef.current) drawerSortCheckboxRef.current.checked = false;
+                              }}
+                              role="menuitem"
+                              style={{ padding: '.625rem 1rem', fontSize: '.875rem' }}
+                            >
+                              {o.label}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   </section>
 
                   <div style={{ borderTop: '1px solid var(--divider)' }} />
@@ -916,7 +965,7 @@ export default function PartiesSearchPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-                {parties.map(p => <PartyCard key={p.id} party={p} />)}
+                {parties.map((p, index) => <PartyCard key={p.id} party={p} index={index} />)}
               </div>
             )}
 
