@@ -22,6 +22,7 @@ def ensure_known_flags(db: Session) -> None:
 
 
 def is_flag_enabled(db: Session, key: str, default: bool = True) -> bool:
+    """Проверяет, включён ли фич-флаг."""
     row = db.query(FeatureFlag).filter(FeatureFlag.key == key).first()
     if row is None:
         return default

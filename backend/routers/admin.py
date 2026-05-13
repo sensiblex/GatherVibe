@@ -116,6 +116,7 @@ def list_reports(
     db: Session = Depends(get_db),
     _: User = Depends(require_moderator),
 ) -> list[dict]:
+    """Возвращает список жалоб с фильтрацией по статусу и типу."""
     q = db.query(Report)
     if status:
         q = q.filter(Report.status == status)
@@ -131,6 +132,7 @@ def get_report_detail(
     db: Session = Depends(get_db),
     _: User = Depends(require_moderator),
 ):
+    """Возвращает детали жалобы с контекстом объекта."""
     r = db.query(Report).filter(Report.id == report_id).first()
     if not r:
         raise HTTPException(status_code=404, detail="Жалоба не найдена")
@@ -276,6 +278,7 @@ def resolve_report(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
+    """Применяет резолюцию к жалобе и выполняет соответствующее действие."""
     if payload.resolution not in ALLOWED_RESOLUTIONS:
         raise HTTPException(status_code=400, detail="Недопустимая резолюция")
     report = db.query(Report).filter(Report.id == report_id).first()
@@ -306,6 +309,7 @@ def reject_report(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
+    """Отклоняет жалобу без применения действий."""
     report = db.query(Report).filter(Report.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Жалоба не найдена")
@@ -330,6 +334,7 @@ def hide_chat_message(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
+    """Скрывает сообщение в чате."""
     m = db.query(ChatMessage).filter(ChatMessage.id == msg_id).first()
     if not m:
         raise HTTPException(status_code=404, detail="Сообщение не найдено")
@@ -350,6 +355,7 @@ def unhide_chat_message(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
+    """Отменяет скрытие сообщения в чате."""
     m = db.query(ChatMessage).filter(ChatMessage.id == msg_id).first()
     if not m:
         raise HTTPException(status_code=404, detail="Сообщение не найдено")
@@ -370,6 +376,7 @@ def hide_party(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
+    """Скрывает пати."""
     p = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Пати не найдена")
@@ -388,6 +395,7 @@ def unhide_party(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
+    """Отменяет скрытие пати."""
     p = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Пати не найдена")
@@ -415,6 +423,7 @@ def warn_user(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
+    """Выдаёт предупреждение пользователю."""
     u = _get_user_or_404(db, user_id)
     _ensure_can_sanction(me, u)
     u.warnings_count = (u.warnings_count or 0) + 1
@@ -432,6 +441,7 @@ def mute_user(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
+    """Блокирует возможность писать в чат на указанное время."""
     u = _get_user_or_404(db, user_id)
     _ensure_can_sanction(me, u)
     u.muted_until = datetime.utcnow() + timedelta(hours=payload.duration_hours)
@@ -449,9 +459,10 @@ def ban_user(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
+    """Блокирует пользователя на указанное время или навсегда."""
     u = _get_user_or_404(db, user_id)
     _ensure_can_sanction(me, u)
-    # Permanent ban — только admin
+    # Постоянный бан — только admin
     if payload.duration_hours is None and me.role != "admin":
         raise HTTPException(status_code=403, detail="Permanent ban может выдавать только admin")
     u.is_banned = True
@@ -475,8 +486,9 @@ def unban_user(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
+    """Снимает бан с пользователя."""
     u = _get_user_or_404(db, user_id)
-    # Permanent-бан (banned_until is NULL) может снять только админ:
+    # Постоянный бан (banned_until is NULL) может снять только админ:
     # чтобы модератор не отменял решения админов.
     if u.is_banned and u.banned_until is None and me.role != "admin":
         raise HTTPException(status_code=403, detail="Постоянный бан может снять только администратор")
@@ -495,6 +507,7 @@ def unmute_user(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
+    """Снимает ограничение на написание сообщений."""
     u = _get_user_or_404(db, user_id)
     u.muted_until = None
     log_action(db, actor=me, action="unmute_user",
@@ -513,6 +526,7 @@ def admin_delete_user(
     db: Session = Depends(get_db),
     me: User = Depends(require_admin),
 ):
+    """Удаляет пользователя и анонимизирует его контент."""
     u = _get_user_or_404(db, user_id)
     if u.id == me.id:
         admin_count = db.query(User).filter(User.role == "admin").count()
@@ -550,6 +564,7 @@ def bulk_user_action(
     db: Session = Depends(get_db),
     me: User = Depends(require_moderator),
 ):
+    """Массовое применение действий к списку пользователей."""
     if payload.action not in ("warn", "mute", "ban"):
         raise HTTPException(status_code=400, detail="Недопустимое действие")
     if payload.action == "ban" and payload.duration_hours is None and me.role != "admin":
@@ -632,6 +647,7 @@ def list_appeals(
     db: Session = Depends(get_db),
     _: User = Depends(require_moderator),
 ):
+    """Возвращает список апелляций с фильтрацией по статусу."""
     q = db.query(Appeal)
     if status:
         q = q.filter(Appeal.status == status)
@@ -648,6 +664,7 @@ def approve_appeal(
     db: Session = Depends(get_db),
     me: User = Depends(require_admin),
 ):
+    """Одобряет апелляцию и снимает бан с пользователя."""
     a = db.query(Appeal).filter(Appeal.id == appeal_id).first()
     if not a:
         raise HTTPException(status_code=404, detail="Апелляция не найдена")
@@ -676,6 +693,7 @@ def reject_appeal(
     db: Session = Depends(get_db),
     me: User = Depends(require_admin),
 ):
+    """Отклоняет апелляцию."""
     a = db.query(Appeal).filter(Appeal.id == appeal_id).first()
     if not a:
         raise HTTPException(status_code=404, detail="Апелляция не найдена")
@@ -699,6 +717,7 @@ def set_user_role(
     db: Session = Depends(get_db),
     me: User = Depends(require_admin),
 ):
+    """Изменяет роль пользователя."""
     if payload.role not in ("user", "moderator", "admin"):
         raise HTTPException(status_code=400, detail="Недопустимая роль")
     u = _get_user_or_404(db, user_id)
@@ -726,6 +745,7 @@ def admin_list_users(
     db: Session = Depends(get_db),
     _: User = Depends(require_moderator),
 ):
+    """Возвращает список пользователей с фильтрацией."""
     query = db.query(User)
     if q:
         like = f"%{q}%"
@@ -757,6 +777,7 @@ def admin_user_detail(
     db: Session = Depends(get_db),
     _: User = Depends(require_moderator),
 ):
+    """Возвращает детальную информацию о пользователе и жалобы на него."""
     u = _get_user_or_404(db, user_id)
     against = db.query(Report).filter(
         Report.target_type == "user",
@@ -794,6 +815,7 @@ def get_audit_log(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
+    """Возвращает журнал действий администраторов."""
     q = db.query(AuditLog)
     if actor_id is not None:
         q = q.filter(AuditLog.actor_id == actor_id)
@@ -825,6 +847,7 @@ def list_flags(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ):
+    """Возвращает список фич-флагов."""
     ensure_known_flags(db)
     rows = db.query(FeatureFlag).order_by(FeatureFlag.key).all()
     return [
@@ -841,6 +864,7 @@ def toggle_flag(
     db: Session = Depends(get_db),
     me: User = Depends(require_admin),
 ):
+    """Включает или выключает фич-флаг."""
     if key not in KNOWN_FLAGS:
         raise HTTPException(status_code=404, detail="Неизвестный флаг")
     ensure_known_flags(db)

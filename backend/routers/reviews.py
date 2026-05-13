@@ -36,6 +36,7 @@ REVIEW_WINDOW_DAYS = 30
 
 
 def _recalc_trust_score(user_id: int, db: Session) -> None:
+    """Пересчитывает trust score пользователя."""
     try:
         rows = db.query(PartyReview).filter(
             PartyReview.reviewed_id == user_id,
@@ -57,6 +58,7 @@ async def create_review(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Создаёт отзыв о пользователе."""
     current_user = get_current_user_from_token(token, db)
 
     if payload.reviewed_id == current_user.id:
@@ -152,6 +154,7 @@ def report_review(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Сообщает о нарушении в отзыве."""
     current_user = get_current_user_from_token(token, db)
     review = db.query(PartyReview).filter(PartyReview.id == review_id).first()
     if not review or getattr(review, "is_deleted", False):
@@ -176,6 +179,7 @@ def get_my_review(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает отзыв пользователя о другом участнике."""
     current_user = get_current_user_from_token(token, db)
     review = db.query(PartyReview).filter(
         PartyReview.reviewer_id == current_user.id,
@@ -206,6 +210,7 @@ def update_review(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Обновляет отзыв пользователя."""
     current_user = get_current_user_from_token(token, db)
     review = db.query(PartyReview).filter(PartyReview.id == review_id).first()
     if not review or review.is_deleted:
@@ -254,6 +259,7 @@ def delete_review(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Удаляет отзыв пользователя."""
     current_user = get_current_user_from_token(token, db)
     review = db.query(PartyReview).filter(PartyReview.id == review_id).first()
     if not review or review.is_deleted:
@@ -275,6 +281,7 @@ def get_user_reviews(
     per_page: int = 10,
     db: Session = Depends(get_db),
 ):
+    """Возвращает отзывы о пользователе с пагинацией."""
     per_page = min(per_page, 50)
     page = max(page, 1)
 
@@ -372,6 +379,7 @@ async def get_reviewable_users(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает список пользователей которых можно оценить."""
     current_user = get_current_user_from_token(token, db)
     now_ts = int(datetime.now(timezone.utc).timestamp())
 

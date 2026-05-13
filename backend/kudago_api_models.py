@@ -6,8 +6,6 @@ from typing import Optional, List, Any
 from pydantic import BaseModel, Field, field_validator
 
 
-# ==================== Входные модели (запросы) ====================
-
 class EventsRequest(BaseModel):
     """Модель запроса для получения списка событий."""
     location: str = Field(default="kzn", description="Город (kzn, msk, spb)")
@@ -56,8 +54,6 @@ class EventsTodayRequest(BaseModel):
     """Модель запроса для получения событий на сегодня."""
     location: str = Field(default="kzn", description="Город")
 
-
-# ==================== Выходные модели (ответы) ====================
 
 class EventImage(BaseModel):
     """Модель изображения события."""
@@ -154,8 +150,6 @@ class LocationsResponse(BaseModel):
     """Модель ответа со списком локаций."""
     locations: List[Any] = Field(..., description="Список локаций")
 
-
-# ==================== Модели для мониторинга ====================
 
 class APIHealthStatus(BaseModel):
     """Модель статуса здоровья API."""

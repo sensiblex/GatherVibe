@@ -7,7 +7,7 @@ from database import Base
 
 
 class PartyRecap(Base):
-    """One recap container per party (auto-created on first access after event ends)."""
+    """Контейнер recap для компании (создаётся автоматически при первом доступе после окончания мероприятия)."""
     __tablename__ = "party_recaps"
 
     id          = Column(Integer, primary_key=True, index=True)
@@ -18,7 +18,7 @@ class PartyRecap(Base):
 
 
 class PartyRecapItem(Base):
-    """A single contribution to the recap (photo / note / etc.)."""
+    """Одиночный вклад в recap (фото / заметка / и т.д.)."""
     __tablename__ = "party_recap_items"
 
     id                   = Column(Integer, primary_key=True, index=True)
@@ -40,7 +40,7 @@ class PartyRecapItem(Base):
 
 
 class PartyRecapReaction(Base):
-    """Emoji reaction on a recap item — uniqueness per (item, user, emoji)."""
+    """Эмодзи-реакция на элемент recap — уникальность по (item, user, emoji)."""
     __tablename__ = "party_recap_reactions"
 
     id        = Column(Integer, primary_key=True, index=True)

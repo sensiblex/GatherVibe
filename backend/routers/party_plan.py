@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import datetime
+from datetime import datetime, timezone
 
 from deps import get_db, get_current_user_from_token, oauth2_scheme
 from schemas import MeetingPlanUpdate, MeetingPlanResponse, MeetingPlanHistoryItem
@@ -14,6 +14,7 @@ router = APIRouter(tags=["party-plan"])
 
 
 def _check_party_access(party_id: int, user_id: int, db: Session) -> EventParty:
+    """Проверяет доступ пользователя к компании."""
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
         raise HTTPException(status_code=404, detail="Компания не найдена")
@@ -36,6 +37,7 @@ def get_party_plan(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает план встречи компании."""
     current_user = get_current_user_from_token(token, db)
     _check_party_access(party_id, current_user.id, db)
 
@@ -63,6 +65,7 @@ async def update_party_plan(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Обновляет план встречи компании."""
     current_user = get_current_user_from_token(token, db)
 
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
@@ -73,8 +76,13 @@ async def update_party_plan(
 
     if body.note and len(body.note) > 300:
         raise HTTPException(status_code=422, detail="Заметка не должна превышать 300 символов")
-    if body.meet_time and body.meet_time.replace(tzinfo=None) < datetime.utcnow():
-        raise HTTPException(status_code=400, detail="Время встречи не может быть в прошлом")
+    if body.meet_time:
+        now = datetime.now(timezone.utc)
+        meet_time = body.meet_time
+        if meet_time.tzinfo is None:
+            meet_time = meet_time.replace(tzinfo=timezone.utc)
+        if meet_time < now:
+            raise HTTPException(status_code=400, detail="Время встречи не может быть в прошлом")
 
     existing = db.query(PartyMeetingPlan).filter(PartyMeetingPlan.party_id == party_id).first()
     if existing:
@@ -87,7 +95,7 @@ async def update_party_plan(
             meet_lon=existing.meet_lon,
             meet_landmark=existing.meet_landmark,
             changed_by=existing.updated_by,
-            changed_at=datetime.utcnow(),
+            changed_at=datetime.now(timezone.utc),
         )
         db.add(history_entry)
         existing.meet_time = body.meet_time
@@ -97,7 +105,7 @@ async def update_party_plan(
         existing.meet_lon = body.meet_lon
         existing.meet_landmark = body.meet_landmark
         existing.updated_by = current_user.id
-        existing.updated_at = datetime.utcnow()
+        existing.updated_at = datetime.now(timezone.utc)
         plan = existing
     else:
         plan = PartyMeetingPlan(
@@ -109,7 +117,7 @@ async def update_party_plan(
             meet_lon=body.meet_lon,
             meet_landmark=body.meet_landmark,
             updated_by=current_user.id,
-            updated_at=datetime.utcnow(),
+            updated_at=datetime.now(timezone.utc),
         )
         db.add(plan)
 
@@ -128,7 +136,7 @@ async def update_party_plan(
         message=f"📍 Точка встречи обновлена: {location_part}{landmark_part} в {time_part}",
         is_system=True,
         event_type="plan_updated",
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(timezone.utc),
     )
     db.add(system_msg)
     db.commit()
@@ -183,6 +191,7 @@ def get_party_plan_history(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает историю изменений плана встречи компании."""
     current_user = get_current_user_from_token(token, db)
     _check_party_access(party_id, current_user.id, db)
 

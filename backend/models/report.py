@@ -16,7 +16,7 @@ class Report(Base):
     id = Column(Integer, primary_key=True, index=True)
     reporter_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     target_type = Column(String(32), nullable=False)
-    target_id   = Column(String(64), nullable=False)   # stringified (int id или составной)
+    target_id   = Column(String(64), nullable=False)   # строковое представление (int id или составной)
     reason      = Column(String(32), nullable=False)
     comment     = Column(Text, nullable=True)
     status      = Column(String(16), nullable=False, default="open", server_default="open")

@@ -23,6 +23,6 @@ class ChatMessage(Base):
 
     __table_args__ = (
         # История чата: `WHERE room = X ORDER BY timestamp DESC LIMIT N` — без
-        # composite index это index scan по room + filesort.
+        # составного индекса это index scan по room + filesort.
         Index("ix_chat_messages_room_timestamp", "room", "timestamp"),
     )

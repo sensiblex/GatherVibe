@@ -1,7 +1,7 @@
 """
-Party coordination router — polls, pinned block, attendance statuses.
-All endpoints require accepted membership or creator role.
-System messages are written to chat_messages and emitted via Socket.IO.
+Маршрутизатор координации компании — голосования, закреплённый блок, статусы посещаемости.
+Все эндпоинты требуют принятого членства или роли создателя.
+Системные сообщения записываются в chat_messages и отправляются через Socket.IO.
 """
 from datetime import datetime
 from typing import List, Optional
@@ -47,7 +47,7 @@ def _check_party_access(
     db: Session,
     require_creator: bool = False,
 ) -> EventParty:
-    """Returns party if user has access. Raises 403/404 otherwise."""
+    """Возвращает компанию если пользователь имеет доступ. Иначе выбрасывает 403/404."""
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
         raise HTTPException(status_code=404, detail="Компания не найдена")
@@ -72,7 +72,7 @@ def _check_party_access(
 async def _send_system_message(
     db: Session, party_id: int, event_type: str, text: str
 ) -> None:
-    """Saves a system message to DB and emits it to the party Socket.IO room."""
+    """Сохраняет системное сообщение в БД и отправляет в Socket.IO комнату компании."""
     now = datetime.utcnow()
     msg = ChatMessage(
         room=f"party_{party_id}",
@@ -179,6 +179,7 @@ class AttendanceOut(BaseModel):
 
 
 def _build_poll_out(poll: PartyPoll, db: Session, user_id: int) -> PollOut:
+    """Строит объект PollOut с вариантами и голосом пользователя."""
     options = (
         db.query(PollOption).filter(PollOption.poll_id == poll.id).all()
     )
@@ -210,6 +211,7 @@ async def create_poll(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Создаёт голосование в компании."""
     user = get_current_user_from_token(token, db)
     _check_party_access(party_id, user.id, db, require_creator=True)
 
@@ -259,6 +261,7 @@ def get_polls(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает список голосований компании."""
     user = get_current_user_from_token(token, db)
     _check_party_access(party_id, user.id, db)
 
@@ -278,6 +281,7 @@ async def vote_poll(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Голосует в голосовании."""
     user = get_current_user_from_token(token, db)
     poll = db.query(PartyPoll).filter(PartyPoll.id == poll_id).first()
     if not poll:
@@ -326,6 +330,7 @@ async def close_poll(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Закрывает голосование."""
     user = get_current_user_from_token(token, db)
     poll = db.query(PartyPoll).filter(PartyPoll.id == poll_id).first()
     if not poll:
@@ -373,6 +378,7 @@ def get_pinned(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает закреплённый блок компании."""
     user = get_current_user_from_token(token, db)
     _check_party_access(party_id, user.id, db)
 
@@ -387,6 +393,7 @@ async def upsert_pinned(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Создаёт или обновляет закреплённый блок компании."""
     user = get_current_user_from_token(token, db)
     _check_party_access(party_id, user.id, db, require_creator=True)
 
@@ -436,6 +443,7 @@ async def set_attendance(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Устанавливает статус посещаемости пользователя."""
     user = get_current_user_from_token(token, db)
     _check_party_access(party_id, user.id, db)
 
@@ -510,6 +518,7 @@ def get_attendance(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает статусы посещаемости участников компании."""
     user = get_current_user_from_token(token, db)
     _check_party_access(party_id, user.id, db)
 

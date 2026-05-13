@@ -4,7 +4,7 @@ from database import Base
 
 
 class PartyPoll(Base):
-    """A poll within a party group."""
+    """Опрос внутри компании."""
     __tablename__ = "party_polls"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -22,7 +22,7 @@ class PartyPoll(Base):
 
 
 class PollOption(Base):
-    """An answer option for a PartyPoll."""
+    """Вариант ответа для опроса."""
     __tablename__ = "poll_options"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -34,7 +34,7 @@ class PollOption(Base):
 
 
 class PollVote(Base):
-    """A single vote cast by a user on a poll option (single-choice)."""
+    """Голос пользователя за вариант опроса (одиночный выбор)."""
     __tablename__ = "poll_votes"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -47,7 +47,7 @@ class PollVote(Base):
 
 
 class PartyPinnedBlock(Base):
-    """A single pinned coordination block per party (one-per-party via unique constraint)."""
+    """Закреплённый блок координации для компании (один на компанию через unique constraint)."""
     __tablename__ = "party_pinned_blocks"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -59,7 +59,7 @@ class PartyPinnedBlock(Base):
 
 
 class PartyAttendance(Base):
-    """Attendance status for a party participant (including creator)."""
+    """Статус присутствия участника компании (включая создателя)."""
     __tablename__ = "party_attendance"
 
     id = Column(Integer, primary_key=True, index=True)

@@ -25,8 +25,8 @@ class Event(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Listing endpoint `/events` фильтрует по is_active + сортирует по date_time
-    # — без composite index это seq scan при росте таблицы.
+    # Эндпоинт `/events` фильтрует по is_active + сортирует по date_time
+    # — без составного индекса это seq scan при росте таблицы.
     __table_args__ = (
         Index("ix_events_active_date", "is_active", "date_time"),
     )

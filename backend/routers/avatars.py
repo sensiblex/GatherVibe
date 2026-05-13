@@ -25,6 +25,7 @@ async def upload_avatar(
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
 ):
+    """Загружает аватар пользователя."""
     ext = _ALLOWED_TYPES.get(file.content_type or "")
     if ext is None:
         raise HTTPException(status_code=400, detail="Только изображения")

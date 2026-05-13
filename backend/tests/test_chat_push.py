@@ -234,6 +234,129 @@ async def test_push_payload_carries_party_id_and_type(db, user_a, user_b):
     assert data_arg["type"] == "chat_message"
 
 
+@pytest.mark.asyncio
+async def test_mark_disconnect_removes_all_party_presence(db, user_a, user_b):
+    """mark_disconnect must remove the user from ALL parties, not just one."""
+    import chat_push
+    party1 = _make_party(db, user_a.id)
+    party2 = EventParty(
+        event_id="e2", title="P2", max_members=4,
+        creator_id=user_a.id, is_open=True,
+    )
+    db.add(party2); db.commit(); db.refresh(party2)
+
+    # user_b joins both parties with the same sid
+    chat_push.mark_join_party("sid_b", user_b.id, party1.id)
+    chat_push.mark_join_party("sid_b", user_b.id, party2.id)
+
+    # Disconnect should remove from both
+    chat_push.mark_disconnect("sid_b")
+    assert not chat_push.is_user_online_in_party(user_b.id, party1.id)
+    assert not chat_push.is_user_online_in_party(user_b.id, party2.id)
+
+
+@pytest.mark.asyncio
+async def test_file_lock_released_on_exception(db, user_a, user_b):
+    """File lock must be released even if lock acquisition raises after open()."""
+    import chat_push
+
+    opened_files = []
+    original_open = open
+
+    def _tracking_open(*args, **kwargs):
+        f = original_open(*args, **kwargs)
+        opened_files.append(f)
+        # Simulate msvcrt.locking failure right after open
+        if args and ".lock" in str(args[0]):
+            raise OSError("lock acquisition failed")
+        return f
+
+    with patch("builtins.open", side_effect=_tracking_open):
+        with patch("chat_push.push_helpers.send_push_to_user"):
+            pushed = await chat_push.notify_chat_message(
+                db, _make_party(db, user_a.id),
+                sender_id=user_a.id,
+                sender_username="user_a", message_text="hi",
+                now_ts=1000,
+            )
+
+    # Lock file opened before the exception must be closed in the except block
+    for f in opened_files:
+        assert f.closed, f"File {f.name} was not closed"
+
+
+@pytest.mark.asyncio
+async def test_advisory_lock_failure_logged(db, user_a, user_b, caplog):
+    """Advisory lock failure must be logged, not silently swallowed."""
+    import chat_push
+    import logging
+
+    # Patch db.bind.dialect.name to "postgresql" so the pg_advisory branch
+    # runs, then make the advisory lock execute() raise.
+    dialect_mock = MagicMock()
+    dialect_mock.name = "postgresql"
+    bind_mock = MagicMock()
+    bind_mock.dialect = dialect_mock
+
+    original_bind = db.bind
+    original_execute = db.execute
+    db.bind = bind_mock
+
+    def _execute_selective(*args, **kwargs):
+        # Only raise for the advisory lock call
+        stmt = args[0] if args else None
+        if stmt is not None and "pg_advisory_xact_lock" in str(stmt):
+            raise OSError("lock failed")
+        return original_execute(*args, **kwargs)
+
+    try:
+        with patch.object(db, "execute", side_effect=_execute_selective):
+            with caplog.at_level(logging.WARNING, logger="chat_push"):
+                result = chat_push._ensure_cross_worker_throttle(
+                    db, user_b.id, 1, now=1000,
+                )
+    finally:
+        db.bind = original_bind
+
+    # Should fall back to best-effort (return True) and log a warning
+    assert result is True
+    assert any(
+        "Advisory lock unavailable" in r.message for r in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_push_failure_rolls_back_transaction(db, user_a, user_b):
+    """If push fails after some sends, db.commit() must not leave a broken transaction."""
+    import chat_push
+    party = _make_party(db, user_a.id)
+    _accept(db, party.id, user_b.id)
+
+    call_count = 0
+
+    def _flaky_push(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError("push service down")
+
+    with patch("chat_push.push_helpers.send_push_to_user", side_effect=_flaky_push):
+        pushed = await chat_push.notify_chat_message(
+            db, party, sender_id=user_a.id,
+            sender_username="user_a", message_text="hi",
+            now_ts=1000,
+        )
+
+    # The push for user_b failed, so nobody was pushed
+    assert pushed == set()
+
+    # The session must still be usable (not in a broken transaction state)
+    # Verify by performing a simple query
+    from models.notification import Notification
+    count = db.query(Notification).count()
+    assert count == 0
+
+
 @pytest.fixture
 def user_c(db):
     from auth import hash_password

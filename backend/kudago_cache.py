@@ -21,6 +21,9 @@ from models.attendee import EventAttendee
 
 
 def _json_list(val):
+    """
+    Преобразовать в список
+    """
     if not val:
         return []
     if isinstance(val, list):
@@ -33,13 +36,16 @@ def _json_list(val):
 
 
 def _escape_like(pattern: str) -> str:
-    """Escape LIKE wildcards so raw user input matches literally."""
+    """
+    Экранировать символы LIKE
+    """
     return pattern.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _matches_time_of_day(start_time: Optional[str], tod: str) -> bool:
-    """start_time format 'HH:MM'. Buckets: morning [0..12), day [12..17),
-    evening [17..22), night [22..24) ∪ [0..6). Events without time are excluded."""
+    """
+    Проверить соответствие времени суток
+    """
     if not start_time or ":" not in start_time:
         return False
     try:
@@ -58,6 +64,9 @@ def _matches_time_of_day(start_time: Optional[str], tod: str) -> bool:
 
 
 def _schedule_weekdays(all_dates: object) -> set[int]:
+    """
+    Получить дни недели из расписания
+    """
     weekdays: set[int] = set()
     for date_entry in _json_list(all_dates):
         if not isinstance(date_entry, dict):
@@ -90,7 +99,9 @@ def _schedule_weekdays(all_dates: object) -> set[int]:
 
 
 def _matches_weekday(start_ts: Optional[int], is_permanent: bool, allowed: set, all_dates: object = None) -> bool:
-    """Uses Python weekday() for dated events and schedules for permanent events."""
+    """
+    Проверить соответствие дня недели
+    """
     if is_permanent:
         schedule_days = _schedule_weekdays(all_dates)
         return bool(schedule_days and schedule_days & allowed)
@@ -103,8 +114,9 @@ def _matches_weekday(start_ts: Optional[int], is_permanent: bool, allowed: set, 
 
 
 def _matches_hour_range(start_time: Optional[str], from_hour: int, to_hour: int) -> bool:
-    """start_time in [from_hour, to_hour). Wraps if from > to (overnight).
-    Events without start_time don't match."""
+    """
+    Проверить соответствие часового диапазона
+    """
     if not start_time or ":" not in start_time:
         return False
     try:
@@ -125,7 +137,9 @@ PAGE_SIZE = 40
 
 
 def _parse_age(val) -> Optional[int]:
-    """Конвертирует '16+', 16, '0' → int или None."""
+    """
+    Парсить возраст
+    """
     if val is None:
         return None
     if isinstance(val, int):
@@ -137,7 +151,9 @@ def _parse_age(val) -> Optional[int]:
 
 
 def _parse_price_bounds(price: object, is_free: bool = False) -> Optional[tuple[float, float]]:
-    """Return numeric price bounds parsed from KudaGo's free-form price string."""
+    """
+    Парсить диапазон цен
+    """
     if is_free:
         return (0.0, 0.0)
     if price is None:
@@ -166,6 +182,9 @@ def _parse_price_bounds(price: object, is_free: bool = False) -> Optional[tuple[
 
 
 def _matches_price_range(row: "KudaGoEvent", min_price: Optional[float], max_price: Optional[float]) -> bool:
+    """
+    Проверить соответствие ценового диапазона
+    """
     if min_price is None and max_price is None:
         return True
     if min_price is not None and max_price is not None and min_price > max_price:
@@ -184,7 +203,9 @@ def _matches_price_range(row: "KudaGoEvent", min_price: Optional[float], max_pri
 
 
 def _parse_start_ts(raw_event: dict) -> Optional[int]:
-    """Извлекаем unix timestamp ближайшей будущей даты из сырого события KudaGo."""
+    """
+    Парсить timestamp начала события
+    """
     now_ts = int(time.time())
     raw_dates = raw_event.get("dates") or []
     future_ts = [
@@ -200,7 +221,9 @@ def _parse_start_ts(raw_event: dict) -> Optional[int]:
 
 
 def _row_from_parsed(parsed: dict, location: str) -> dict:
-    """Конвертируем результат parse_events в dict для upsert."""
+    """
+    Конвертировать результат парсинга в строку БД
+    """
     all_dates = parsed.get("all_dates") or []
     has_schedules = bool(parsed.get("has_schedules", False)) or any(
         bool(d.get("schedules")) for d in all_dates if isinstance(d, dict)
@@ -241,7 +264,9 @@ def _row_from_parsed(parsed: dict, location: str) -> dict:
 
 
 def sync_location(location: str, pages: int = PAGES_PER_SYNC) -> int:
-    """Синхронизирует события одной локации. Возвращает кол-во upserted строк."""
+    """
+    Синхронизировать события локации
+    """
     now_ts = int(time.time())
     upserted = 0
 
@@ -304,7 +329,9 @@ def sync_location(location: str, pages: int = PAGES_PER_SYNC) -> int:
 
 
 def sync_all(locations: list[str] = DEFAULT_LOCATIONS) -> dict:
-    """Синхронизирует все локации. Возвращает статистику."""
+    """
+    Синхронизировать все локации
+    """
     stats = {}
     for loc in locations:
         stats[loc] = sync_location(loc)
@@ -312,12 +339,16 @@ def sync_all(locations: list[str] = DEFAULT_LOCATIONS) -> dict:
 
 
 def location_has_cache(db, location: str) -> bool:
-    """Проверяет есть ли хоть одно событие для данной локации в кэше."""
+    """
+    Проверить наличие кэша локации
+    """
     return db.query(KudaGoEvent.id).filter(KudaGoEvent.location == location).first() is not None
 
 
 def location_has_cache_direct(location: str) -> bool:
-    """То же, но открывает свою сессию — для вызова вне request context."""
+    """
+    Проверить наличие кэша локации (новая сессия)
+    """
     db = SessionLocal()
     try:
         return location_has_cache(db, location)
@@ -326,7 +357,9 @@ def location_has_cache_direct(location: str) -> bool:
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Great-circle distance between two points in kilometres."""
+    """
+    Вычислить расстояние между точками
+    """
     R = 6371.0
     p1 = math.radians(lat1)
     p2 = math.radians(lat2)
@@ -372,10 +405,9 @@ def query_cache(
     hide_started: Optional[bool] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
-) -> dict:
+):
     """
-    Читает события из кэша БД.
-    Возвращает dict совместимый с форматом /kudago/events.
+    Запросить кэш событий
     """
     now_ts = int(time.time())
     q = db.query(KudaGoEvent).filter(KudaGoEvent.location == location)
@@ -616,6 +648,9 @@ def query_cache(
 
 
 def _row_to_response(row: KudaGoEvent) -> dict:
+    """
+    Преобразовать строку БД в ответ
+    """
     return {
         "kudago_id": row.kudago_id,
         "title": row.title,

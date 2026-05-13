@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import OAuth2
 from fastapi.openapi.models import OAuthFlows as OAuthFlowsModel
+from sqlalchemy import exists
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
@@ -42,28 +43,32 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
 
 def _is_user_banned(user: User) -> bool:
     '''возвращает True если пользователь активно забанен'''
-    if not getattr(user, "is_banned", False):
+    if not user.is_banned:
         return False
-    banned_until = getattr(user, "banned_until", None)
+    banned_until = user.banned_until
     if banned_until is None:
         return True
-    # temp ban: сравниваем naive-даты, SQLite хранит naive datetime
-    now = datetime.utcnow()
-    banned_until_naive = banned_until.replace(tzinfo=None) if getattr(banned_until, "tzinfo", None) else banned_until
-    return banned_until_naive > now
+    # temp ban: используем timezone-aware comparison
+    now = datetime.now(timezone.utc)
+    if banned_until.tzinfo is None:
+        banned_until = banned_until.replace(tzinfo=timezone.utc)
+    return banned_until > now
 
 
 def _is_token_revoked(db: Session, jti: Optional[str]) -> bool:
     '''проверяет, отозван ли токен по jti'''
     if not jti:
         return False
-    return db.query(RevokedToken).filter(RevokedToken.jti == jti).first() is not None
+    return db.query(exists().where(RevokedToken.jti == jti)).scalar()
 
 
 def get_current_user_from_token(token: str, db: Session, *, allow_banned: bool = False) -> User:
@@ -73,6 +78,8 @@ def get_current_user_from_token(token: str, db: Session, *, allow_banned: bool =
     if payload is None:
         raise HTTPException(status_code=401, detail="Неверный токен")
     jti = payload.get("jti")
+    if not jti:
+        raise ValueError("Неверный токен: отсутствует jti")
     if _is_token_revoked(db, jti):
         raise HTTPException(status_code=401, detail="Токен отозван")
     email = payload.get("sub")
@@ -81,7 +88,7 @@ def get_current_user_from_token(token: str, db: Session, *, allow_banned: bool =
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-    if not getattr(user, "is_active", True):
+    if not user.is_active:
         raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
     if not allow_banned and _is_user_banned(user):
         until = user.banned_until.isoformat() if user.banned_until else None
@@ -127,6 +134,8 @@ def get_user_from_socket_token(token: str, db: Session) -> User:
     if payload is None:
         raise ValueError("Неверный токен")
     jti = payload.get("jti")
+    if not jti:
+        raise ValueError("Неверный токен: отсутствует jti")
     if _is_token_revoked(db, jti):
         raise ValueError("Токен отозван")
     email = payload.get("sub")
@@ -135,7 +144,7 @@ def get_user_from_socket_token(token: str, db: Session) -> User:
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise ValueError("Пользователь не найден")
-    if not getattr(user, "is_active", True):
+    if not user.is_active:
         raise ValueError("Аккаунт заблокирован")
     if _is_user_banned(user):
         raise ValueError("Аккаунт заблокирован")

@@ -61,6 +61,7 @@ def list_notifications(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает список уведомлений пользователя."""
     current_user = get_current_user_from_token(token, db)
     return get_user_notifications(db, current_user.id, limit=limit, offset=offset)
 
@@ -70,6 +71,7 @@ def unread_count(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает количество непрочитанных уведомлений."""
     current_user = get_current_user_from_token(token, db)
     return {"count": get_unread_count(db, current_user.id)}
 
@@ -80,6 +82,7 @@ def read_notification(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Отмечает уведомление как прочитанное."""
     current_user = get_current_user_from_token(token, db)
     found = mark_as_read(db, body.notification_id, current_user.id)
     if not found:
@@ -93,6 +96,7 @@ def read_all_notifications(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Отмечает все уведомления как прочитанные."""
     current_user = get_current_user_from_token(token, db)
     count = mark_all_as_read(db, current_user.id)
     db.commit()
@@ -103,8 +107,7 @@ def read_all_notifications(
 
 @router.get("/notifications/vapid-public-key")
 def get_vapid_public_key():
-    """Return the VAPID public key for the frontend to create push subscriptions.
-    No authentication required."""
+    """Возвращает публичный VAPID ключ для создания push-подписок."""
     return {"public_key": VAPID_PUBLIC_KEY}
 
 
@@ -114,7 +117,7 @@ def subscribe_push(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Save or refresh a Web Push subscription for the authenticated user."""
+    """Сохраняет или обновляет Web Push подписку пользователя."""
     current_user = get_current_user_from_token(token, db)
 
     existing = (
@@ -149,7 +152,7 @@ def unsubscribe_push(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Remove a Web Push subscription for the authenticated user."""
+    """Удаляет Web Push подписку пользователя."""
     current_user = get_current_user_from_token(token, db)
 
     deleted = (
@@ -174,7 +177,7 @@ def test_push(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Send a test Web Push notification to the authenticated user."""
+    """Отправляет тестовое push-уведомление пользователю."""
     import push_helpers
     current_user = get_current_user_from_token(token, db)
     push_helpers.send_push_to_user(
@@ -195,7 +198,7 @@ def update_notification_settings(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Toggle email_notifications preference for the authenticated user."""
+    """Обновляет настройки email-уведомлений пользователя."""
     current_user = get_current_user_from_token(token, db)
     current_user.email_notifications = body.email_notifications
     db.commit()

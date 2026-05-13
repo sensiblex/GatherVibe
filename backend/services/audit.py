@@ -16,6 +16,7 @@ def log_action(
     target_id: str | int,
     extra: Optional[dict[str, Any]] = None,
 ) -> AuditLog:
+    """Записывает действие в журнал аудита."""
     entry = AuditLog(
         actor_id=actor.id,
         actor_role=getattr(actor, "role", "user"),

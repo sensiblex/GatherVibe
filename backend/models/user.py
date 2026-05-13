@@ -20,10 +20,10 @@ class User(Base):
     trust_score    = Column(Float, nullable=True, default=None)
     is_verified        = Column(Boolean, default=False, nullable=False)
     verification_token = Column(String(64), nullable=True, index=True)
-    email_notifications = Column(Boolean, default=True, nullable=False, server_default='true')
+    email_notifications = Column(Boolean, default=True, nullable=False, server_default=sa_text('true'))
 
     role = Column(String(16), default="user", nullable=False, server_default="user")
-    is_banned = Column(Boolean, default=False, nullable=False, server_default="false")
+    is_banned = Column(Boolean, default=False, nullable=False, server_default=sa_text('false'))
     banned_until = Column(DateTime(timezone=True), nullable=True)
     ban_reason = Column(String(500), nullable=True)
     muted_until = Column(DateTime(timezone=True), nullable=True)

@@ -70,6 +70,7 @@ def get_messages(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает сообщения чата для указанной комнаты."""
     current_user = get_current_user_from_token(token, db)
     if room.startswith("event_"):
         event_id = room.split("_", 1)[1]
@@ -151,6 +152,7 @@ MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 
 
 def _has_supported_image_signature(payload: bytes) -> bool:
+    """Проверяет magic number файла для определения поддерживаемых форматов изображений."""
     if payload.startswith(b"\x89PNG\r\n\x1a\n"):
         return True
     if payload.startswith(b"\xff\xd8\xff"):
@@ -168,6 +170,7 @@ async def upload_chat_file(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Загружает файл в чат с проверкой MIME типа и сигнатуры."""
     get_current_user_from_token(token, db)
     from services.feature_flags import is_flag_enabled
     if not is_flag_enabled(db, "file_upload_enabled"):
@@ -179,7 +182,7 @@ async def upload_chat_file(
         raise HTTPException(status_code=400, detail="Тип файла не разрешён")
 
     content_type = file.content_type or ""
-    if content_type not in ALLOWED_MIME_TYPES and not content_type.startswith("image/"):
+    if content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(status_code=400, detail=f"Недопустимый тип файла: {content_type}")
 
     contents = await file.read()
@@ -218,12 +221,14 @@ async def upload_chat_file(
 
 @router.get("/events/categories")
 def get_categories(db: Session = Depends(get_db)):
+    """Возвращает список уникальных категорий событий."""
     categories = db.query(Event.category).distinct().all()
     return {"categories": [cat[0] for cat in categories if cat[0]]}
 
 
 @router.get("/events/cities")
 def get_cities(db: Session = Depends(get_db)):
+    """Возвращает список уникальных городов событий."""
     cities = db.query(Event.city).distinct().all()
     return {"cities": [city[0] for city in cities if city[0]]}
 
@@ -243,6 +248,7 @@ def get_events(
     sort_by: Optional[str] = Query(default="date", pattern="^(date|price|participants)$"),
     db: Session = Depends(get_db),
 ):
+    """Возвращает список событий с фильтрацией и сортировкой."""
     now = datetime.utcnow()
     query = db.query(Event).filter(Event.is_active == True, Event.date_time >= now)
 
@@ -290,6 +296,7 @@ def get_events(
 
 @router.get("/events/{event_id}")
 async def get_event(event_id: int, db: Session = Depends(get_db)):
+    """Возвращает детали события по ID."""
     event = db.query(Event).filter(Event.id == event_id, Event.is_active == True).first()
     if event is not None:
         return EventResponse.model_validate(event)
@@ -324,6 +331,7 @@ def create_event(
     db: Session = Depends(get_db),
     token: str = Depends(oauth2_scheme),
 ):
+    """Создаёт новое событие."""
     user = get_current_user_from_token(token, db)
     db_event = Event(**event.dict(), created_by=user.id, current_participants=0)
     db.add(db_event)
@@ -339,6 +347,7 @@ def update_event(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Обновляет данные события."""
     user = get_current_user_from_token(token, db)
     event = db.query(Event).filter(Event.id == event_id).first()
     if event is None:
@@ -508,8 +517,8 @@ def kudago_get_events(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Ошибка кэша: {str(e)}")
     else:
-        # Cold cache for this location: try a lightweight on-demand warm-up first.
-        # This is crucial for msk where direct large API calls often timeout.
+        # Cold cache для этой локации: сначала попробуем лёгкий on-demand warm-up.
+        # Это критично для msk, где прямые большие API вызовы часто таймаутят.
         try:
             synced = kudago_cache.sync_location(location, pages=1)
             if synced > 0:
@@ -552,7 +561,7 @@ def kudago_get_events(
                 if warmed.get("count", 0) > 0:
                     return warmed
         except Exception:
-            # Keep old fallback path below.
+            # Сохраняем старый путь фоллбэка ниже.
             pass
 
     # Кэш пустой — фоллбэк на KudaGo API. Но KudaGo не поддерживает
@@ -634,7 +643,7 @@ def kudago_sync(
     """Принудительная синхронизация кэша событий из KudaGo API.
 
     По умолчанию запускает задачу в фоне и возвращает 202. При wait=true
-    выполняется синхронно и возвращает статистику — для ручных отладок.
+    выполняется синхронно и возвращает статистику — для ручной отладки.
     """
     loc_list = [l.strip() for l in locations.split(",")] if locations else kudago_cache.DEFAULT_LOCATIONS
 
@@ -656,6 +665,7 @@ def kudago_debug(
     _admin=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
+    """Отладочный эндпоинт для проверки кэша KudaGo."""
     import time as _time
     from models.kudago_event import KudaGoEvent as KE
     from sqlalchemy import func as sf
@@ -692,6 +702,7 @@ def kudago_debug(
 
 @router.get("/kudago/events/{event_id}")
 async def kudago_get_event_detail(event_id: int, db: Session = Depends(get_db)):
+    """Возвращает детали события из KudaGo API."""
     cached = db.query(KudaGoEvent).filter(KudaGoEvent.kudago_id == event_id).first()
     if cached is not None:
         return kudago_cache._row_to_response(cached)
@@ -708,6 +719,7 @@ async def kudago_get_event_detail(event_id: int, db: Session = Depends(get_db)):
 
 @router.get("/kudago/today")
 def kudago_events_today(location: str = Query(default="kzn")):
+    """Возвращает события KudaGo на сегодня."""
     try:
         return kudago_api.get_events_today(location=location)
     except Exception as e:
@@ -716,6 +728,7 @@ def kudago_events_today(location: str = Query(default="kzn")):
 
 @router.get("/kudago/categories")
 def kudago_categories():
+    """Возвращает категории событий KudaGo."""
     try:
         return kudago_api.get_event_categories()
     except Exception as e:
@@ -724,6 +737,7 @@ def kudago_categories():
 
 @router.get("/kudago/locations")
 def kudago_locations():
+    """Возвращает локации KudaGo."""
     try:
         return kudago_api.get_locations()
     except Exception as e:
@@ -737,7 +751,7 @@ def batch_attendee_counts(
     ids: str = Query(..., description="Comma-separated event IDs"),
     db: Session = Depends(get_db),
 ):
-    """Return attendee counts for multiple events at once."""
+    """Возвращает количество участников для нескольких событий сразу."""
     id_list = [i.strip() for i in ids.split(",") if i.strip()]
     if not id_list:
         return {}
@@ -759,6 +773,7 @@ def join_event(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Добавляет или обновляет участие пользователя в событии."""
     user = get_current_user_from_token(token, db)
     existing = db.query(EventAttendee).filter(
         EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
@@ -830,6 +845,7 @@ def leave_event(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Удаляет участие пользователя в событии."""
     user = get_current_user_from_token(token, db)
     db.query(EventAttendee).filter(
         EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
@@ -858,6 +874,7 @@ def get_my_attendance(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает статус участия текущего пользователя в событии."""
     user = get_current_user_from_token(token, db)
     row = db.query(EventAttendee).filter(
         EventAttendee.event_id == event_id, EventAttendee.user_id == user.id
@@ -875,6 +892,7 @@ def get_matches(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает участников события с совпадающими интересами."""
     user = get_current_user_from_token(token, db)
     my_interests: set = set(
         i.strip() for i in (user.interests or "").split(",") if i.strip()
@@ -919,6 +937,7 @@ def get_attendees(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает список участников события с пагинацией."""
     get_current_user_from_token(token, db)
     query = db.query(EventAttendee, User).join(User, EventAttendee.user_id == User.id).filter(
         EventAttendee.event_id == event_id

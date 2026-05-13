@@ -10,10 +10,10 @@ resend.default_http_client = RequestsClient(timeout=5)
 
 
 def send_verification_email(to_email: str, username: str, token: str) -> None:
-    """Send verification email via Resend.
+    """Отправляет письмо верификации через Resend.
 
-    In dev mode (DEV_EMAIL_OVERRIDE is set) all emails go to that address
-    so you can test with arbitrary fake emails without owning the domain.
+    В dev-режиме (DEV_EMAIL_OVERRIDE задан) все письма уходят на этот адрес,
+    чтобы можно было тестировать с произвольными фейковыми email.
     """
     if not settings.RESEND_API_KEY:
         logger.warning("[email] RESEND_API_KEY не задан — отправка пропущена")

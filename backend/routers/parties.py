@@ -176,7 +176,7 @@ class PartyInvitePreviewOut(BaseModel):
 
 
 def _ensure_invite_token(party: EventParty, db: Session) -> str:
-    """Lazy-fill missing invite_token for legacy parties."""
+    """Заполняет отсутствующий invite_token для старых компаний."""
     token = getattr(party, "invite_token", None)
     if not token:
         token = uuid.uuid4().hex
@@ -186,9 +186,7 @@ def _ensure_invite_token(party: EventParty, db: Session) -> str:
 
 
 def _build_party_out(party: EventParty, db: Session, viewer_id: Optional[int] = None) -> PartyOut:
-    # Делегируем на bulk-версию (2 запроса вместо 2× на party). Так исключаем
-    # дивёргенцию между одиночной и списковой формами и получаем то же самое
-    # bulk-оптимизированное поведение для любого callera.
+    """Строит объект PartyOut с участниками."""
     result = _build_parties_out_bulk([party], db, viewer_id=viewer_id)
     return result[0]
 
@@ -257,8 +255,7 @@ def _build_parties_out_bulk(
 
 
 def _check_and_close_party(party: EventParty, db: Session) -> bool:
-    """Checks party capacity. Must be called AFTER db.flush() with member already accepted.
-    Returns True if the party was just closed."""
+    """Проверяет заполненность компании и закрывает если нужно."""
     accepted_total = (
         db.query(PartyMember).filter(
             PartyMember.party_id == party.id,
@@ -277,7 +274,7 @@ def _check_and_close_party(party: EventParty, db: Session) -> bool:
 
 
 async def _notify_party_closed(party: EventParty, db: Session, exclude_user_ids: set) -> None:
-    """Sends party_closed notifications to all accepted members, excluding specified user IDs."""
+    """Отправляет уведомления о закрытии компании участникам."""
     members = db.query(PartyMember).filter(
         PartyMember.party_id == party.id,
         PartyMember.status == MemberStatus.accepted,
@@ -313,6 +310,7 @@ def get_my_parties(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает компании пользователя."""
     user = get_current_user_from_token(token, db)
 
     created = db.query(EventParty).filter(EventParty.creator_id == user.id).all()
@@ -336,6 +334,7 @@ def get_my_pending_requests(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает ожидающие заявки в компании пользователя."""
     current_user = get_current_user_from_token(token, db)
     rows = (
         db.query(PartyMember, User, EventParty)
@@ -381,6 +380,7 @@ def search_parties(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Ищет компании с фильтрацией и пагинацией."""
     get_current_user_from_token(token, db)
     def _to_unix_ts(dt: Optional[datetime]) -> Optional[int]:
         if dt is None:

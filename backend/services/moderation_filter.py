@@ -11,9 +11,9 @@ _REPLACEMENT = "***"
 def filter_text(db: Session, text: str) -> Tuple[str, bool]:
     """Заменяет совпадения на ***. Возвращает (text, was_changed).
 
-    - pattern с is_regex=False: case-insensitive literal search.
+    - pattern с is_regex=False: регистронезависимый поиск по литералу.
     - pattern с is_regex=True: компилируется как Python regex (IGNORECASE).
-    Невалидный regex игнорируется (safe fallback).
+    Невалидный regex игнорируется (безопасный fallback).
     """
     if not text:
         return text, False

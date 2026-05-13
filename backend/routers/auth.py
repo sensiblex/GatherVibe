@@ -63,6 +63,7 @@ def register_user(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    """Регистрирует нового пользователя."""
     _rate_limit_auth(request)
     from services.feature_flags import is_flag_enabled
     if not is_flag_enabled(db, "registration_enabled"):
@@ -100,6 +101,7 @@ def login(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    """Авторизует пользователя и возвращает токен."""
     _rate_limit_auth(request)
     user = authenticate_user(user_credentials.email, user_credentials.password, db)
     if not user:
@@ -128,6 +130,7 @@ def login(
 
 @router.get("/auth/verify-email")
 def verify_email(token: str, db: Session = Depends(get_db)):
+    """Подтверждает email пользователя по токену."""
     user = db.query(User).filter(User.verification_token == token).first()
     if not user:
         raise HTTPException(status_code=400, detail="Неверный или устаревший токен")
@@ -143,6 +146,7 @@ def resend_verification(
     background: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
+    """Отправляет повторное письмо подтверждения email."""
     email = body.email.lower().strip()
     user = db.query(User).filter(User.email == email).first()
     if not user:
@@ -169,6 +173,7 @@ def logout(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Выход из системы и отзыв токена."""
     from jwt_handler import verify_token
     from datetime import datetime
     payload = verify_token(token)
@@ -192,6 +197,7 @@ def logout(
 
 @router.get("/users/me", response_model=UserResponse)
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    """Возвращает информацию о текущем пользователе."""
     return get_current_user_from_token(token, db)
 
 
@@ -201,6 +207,7 @@ def update_profile(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Обновляет профиль пользователя."""
     user = get_current_user_from_token(token, db)
 
     if data.new_password is not None:
@@ -240,6 +247,7 @@ def update_privacy(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Обновляет настройки приватности пользователя."""
     user = get_current_user_from_token(token, db)
     if data.show_email     is not None: user.show_email     = data.show_email
     if data.show_city      is not None: user.show_city      = data.show_city

@@ -112,6 +112,7 @@ def get_users(
     city: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ):
+    """Возвращает список пользователей с фильтрацией и пагинацией."""
     get_current_user_from_token(token, db)
     query = db.query(User)
     if search:
@@ -142,6 +143,7 @@ def get_my_stats(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает статистику пользователя."""
     user = get_current_user_from_token(token, db)
 
     parties_created = db.query(EventParty).filter(
@@ -175,6 +177,7 @@ async def get_my_events(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает события пользователя (предстоящие и прошедшие)."""
     import time as _time
     user = get_current_user_from_token(token, db)
     now_ts = int(_time.time())
@@ -295,6 +298,7 @@ def get_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает профиль пользователя."""
     # Требуем авторизации — иначе любой бот может перебирать ID и собирать
     # username/bio/avatar. Приватность полей уже уважается (show_*).
     get_current_user_from_token(token, db)

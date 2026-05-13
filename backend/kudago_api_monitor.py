@@ -1,8 +1,3 @@
-"""
-Система мониторинга API KudaGo.
-Включает логирование запросов, метрики доступности, latency, ошибки.
-Поддержка экспорта в Prometheus.
-"""
 import time
 import logging
 import asyncio
@@ -15,7 +10,6 @@ from threading import Lock
 logger = logging.getLogger("kudago_api")
 
 
-# ==================== Метрики ====================
 
 class APIMetricsCollector:
     """Сборщик метрик API с thread-safe операциями."""
@@ -85,12 +79,9 @@ class APIMetricsCollector:
 metrics_collector = APIMetricsCollector()
 
 
-# ==================== Декораторы мониторинга ====================
-
 def monitor_request(func: Callable) -> Callable:
     """
-    Декоратор для мониторинга синхронных функций.
-    Логирует запросы, записывает метрики latency и ошибки.
+    Декоратор для мониторинга запросов
     """
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -121,8 +112,7 @@ def monitor_request(func: Callable) -> Callable:
 
 def monitor_async_request(func: Callable) -> Callable:
     """
-    Декоратор для мониторинга асинхронных функций.
-    Логирует запросы, записывает метрики latency и ошибки.
+    Декоратор для мониторинга асинхронных запросов
     """
     @wraps(func)
     async def wrapper(*args, **kwargs):
@@ -151,18 +141,18 @@ def monitor_async_request(func: Callable) -> Callable:
     return wrapper
 
 
-# ==================== Prometheus-экспортер ====================
-
 class PrometheusExporter:
     """
-    Экспортер метрик в формате Prometheus.
+    Экспортер метрик в Prometheus
     """
     
     def __init__(self, prefix: str = "kudago_api"):
         self.prefix = prefix
     
     def generate_metrics(self) -> str:
-        """Генерирует текстовый формат метрик для Prometheus."""
+        """
+        Сгенерировать метрики
+        """
         metrics = metrics_collector.get_metrics()
         
         lines = [
@@ -209,8 +199,7 @@ class PrometheusExporter:
 
 async def check_api_health() -> dict:
     """
-    Проверяет здоровье API.
-    Возвращает статус и метрики.
+    Проверить здоровье API
     """
     from kudago_api_async import get_event_categories
     
@@ -240,14 +229,13 @@ async def check_api_health() -> dict:
     }
 
 
-# ==================== Утилиты ====================
-
 def get_current_metrics() -> dict:
-    """Возвращает текущие метрики API."""
-    return metrics_collector.get_metrics()
+    """
+    Получить текущие метрики
+    """
 
 
 def reset_metrics():
-    """Сбрасывает все метрики."""
-    metrics_collector.reset()
-    logger.info("Metrics reset")
+    """
+    Сбросить метрики
+    """
