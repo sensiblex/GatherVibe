@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func as sa_func, or_
+from sqlalchemy import func as sa_func, or_, String
 from sqlalchemy.orm import Session
 from typing import Literal, Optional, List
 from datetime import datetime, timezone
@@ -17,6 +17,7 @@ from models.user import User
 from models.event import Event
 from models.attendee import EventAttendee
 from models.party import EventParty, PartyMember
+from models.kudago_event import KudaGoEvent
 from notification_helpers import create_notification
 import push_helpers
 
@@ -416,6 +417,7 @@ def search_parties(
         )
         .join(User, EventParty.creator_id == User.id)
         .outerjoin(member_count_sq, EventParty.id == member_count_sq.c.party_id)
+        .outerjoin(KudaGoEvent, EventParty.event_id == sa_func.cast(KudaGoEvent.kudago_id, String))
         .filter(EventParty.is_hidden == False)  # noqa: E712 — исключаем скрытые модератором
     )
 
@@ -426,7 +428,7 @@ def search_parties(
         )
 
     if city_filters:
-        base_q = base_q.filter(or_(*[EventParty.city.ilike(f"%{item}%") for item in city_filters]))
+        base_q = base_q.filter(or_(*[KudaGoEvent.location == item for item in city_filters]))
 
     if date_from_ts is not None:
         base_q = base_q.filter(
@@ -455,6 +457,7 @@ def search_parties(
     count_q = (
         db.query(sa_func.count(EventParty.id))
         .outerjoin(member_count_sq, EventParty.id == member_count_sq.c.party_id)
+        .outerjoin(KudaGoEvent, EventParty.event_id == sa_func.cast(KudaGoEvent.kudago_id, String))
         .filter(EventParty.is_hidden == False)  # noqa: E712
     )
     if q and q.strip():
@@ -463,7 +466,7 @@ def search_parties(
             EventParty.title.ilike(pattern) | EventParty.description.ilike(pattern)
         )
     if city_filters:
-        count_q = count_q.filter(or_(*[EventParty.city.ilike(f"%{item}%") for item in city_filters]))
+        count_q = count_q.filter(or_(*[KudaGoEvent.location == item for item in city_filters]))
     if date_from_ts is not None:
         count_q = count_q.filter(
             EventParty.event_date_ts.isnot(None),
