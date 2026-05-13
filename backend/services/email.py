@@ -1,3 +1,4 @@
+import html
 import logging
 import resend
 from resend.http_client_requests import RequestsClient
@@ -36,12 +37,12 @@ def send_verification_email(to_email: str, username: str, token: str) -> None:
                 <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;">
                     <h2 style="color:#01696f">Добро пожаловать в GatherVibe! 👋</h2>
                     {"<p style='background:#fef3c7;border-radius:8px;padding:10px;font-size:13px;'>"
-                     f"<b>DEV:</b> оригинальный получатель — <code>{to_email}</code></p>"
+                     f"<b>DEV:</b> оригинальный получатель — <code>{html.escape(to_email)}</code></p>"
                      if settings.DEV_EMAIL_OVERRIDE else ""}
                     <p>Нажмите кнопку ниже, чтобы подтвердить email и начать пользоваться сервисом.</p>
                     <a href="{verify_url}"
                        style="display:inline-block;margin:24px 0;padding:14px 28px;
-                              background:
+                              background:#01696f;
                               text-decoration:none;font-weight:bold;">
                        Подтвердить email
                     </a>
