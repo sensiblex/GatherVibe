@@ -18,6 +18,8 @@ const API_BASE = resolveApiBase();
 function toMediaUrl(path?: string | null): string | null {
   if (!path) return null;
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  // For uploads, don't add /api prefix since they're served directly
+  if (path.startsWith('/uploads/')) return path;
   return `${API_BASE}${path}`;
 }
 
@@ -604,6 +606,7 @@ export default function ProfilePage() {
   const [passOpen, setPassOpen]       = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
+  const [avatarTimestamp, setAvatarTimestamp] = useState(Date.now());
   const [avatarError, setAvatarError] = useState('');
   const [activeTab, setActiveTab]     = useState<'parties' | 'events'>('parties');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -656,9 +659,10 @@ export default function ProfilePage() {
       if (!res.ok) throw new Error('Не удалось обновить аватар');
       const data = await res.json() as { avatar_url: string };
       setUser(prev => prev ? { ...prev, avatar_url: data.avatar_url } : prev);
-      localStorage.setItem('avatar_url', data.avatar_url);
+      localStorage.setItem('avatar_url', toMediaUrl(data.avatar_url) || '');
+      const newTimestamp = Date.now();
+      setAvatarTimestamp(newTimestamp);
       window.dispatchEvent(new Event('avatar:updated'));
-      router.refresh();
     } catch (err: unknown) {
       setAvatarError(err instanceof Error ? err.message : 'Не удалось загрузить фото');
     }
@@ -725,7 +729,7 @@ export default function ProfilePage() {
         <div className="profile-head">
           <div style={{ position: 'relative' }}>
             {user?.avatar_url ? (
-              <img src={toMediaUrl(user.avatar_url) || undefined} alt={user.username}
+              <img src={`${toMediaUrl(user.avatar_url) || ''}?t=${avatarTimestamp}`} alt={user.username}
                 style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover' }} />
             ) : (
               <div className="av av-xl">{initials}</div>
@@ -779,25 +783,6 @@ export default function ProfilePage() {
             <button onClick={() => setEditOpen(true)} className="btn btn-ink btn-sm profile-action-btn">Редактировать</button>
             <button onClick={() => setPassOpen(true)} className="btn btn-ghost btn-sm profile-action-btn">Сменить пароль</button>
             <button onClick={() => setPrivacyOpen(true)} className="btn btn-ghost btn-sm profile-action-btn">Приватность</button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm profile-action-btn"
-              data-testid="export-data"
-              onClick={async () => {
-                const r = await apiFetch('/users/me/export');
-                if (!r.ok) return;
-                const data = await r.json();
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `gathervibe-export-${data.profile?.id}-${new Date().toISOString().slice(0, 10)}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-            >
-              Экспорт данных
-            </button>
             <button onClick={handleLogout} className="btn btn-ghost btn-sm profile-action-btn profile-action-danger">Выйти</button>
           </div>
         </div>
