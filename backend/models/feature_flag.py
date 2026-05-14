@@ -4,7 +4,7 @@ from database import Base
 
 
 class FeatureFlag(Base):
-    """Глобальный переключатель платформы. Читается в hot-path эндпоинтах."""
+    """Глобальный переключатель платформы"""
     __tablename__ = "feature_flags"
 
     key = Column(String(64), primary_key=True)

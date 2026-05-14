@@ -10,8 +10,7 @@ from sqlalchemy.orm import sessionmaker
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError(
-        "DATABASE_URL не установлен. Ожидается URL PostgreSQL, "
-        "например postgresql://user:pass@host:5432/db"
+        "DATABASE_URL не установлен."
     )
 
 # Для SQLite нужно отключить проверку того же потока

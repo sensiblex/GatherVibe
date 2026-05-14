@@ -267,8 +267,6 @@ async def upload_recap_photo(
                             detail="Воспоминания можно добавлять только после окончания события")
 
     content_type = (file.content_type or "").lower()
-    # Строгий whitelist по MIME — `startswith("image/")` больше не принимаем,
-    # иначе `image/svg+xml` проходит и даёт stored XSS при прямом открытии файла.
     if content_type not in ALLOWED_PHOTO_MIME:
         raise HTTPException(status_code=400, detail=f"Недопустимый тип файла: {content_type}")
 

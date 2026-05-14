@@ -1,4 +1,3 @@
-"""Feature-flag helpers. Defaults to True if flag row absent."""
 from sqlalchemy.orm import Session
 from models.feature_flag import FeatureFlag
 

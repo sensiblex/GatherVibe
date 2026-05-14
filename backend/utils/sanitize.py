@@ -16,7 +16,9 @@ _SQL_META_CHARS = ("'", '"', ";", "--", "/*", "*/")
 
 
 def sanitize_input(value: Optional[str], field_type: str = "text") -> Optional[str]:
-    """Sanitize user-supplied text against common SQLi and XSS payloads."""
+    """
+    Санитизирует входные данные от потенциальных уязвимостей
+    """
     if value is None:
         return None
 
@@ -37,5 +39,7 @@ def sanitize_input(value: Optional[str], field_type: str = "text") -> Optional[s
 
 
 def sanitize_text(value: Optional[str]) -> Optional[str]:
-    """Backward-compatible alias for shared text sanitization."""
+    """
+    Санитизирует текстовые данные
+    """
     return sanitize_input(value)

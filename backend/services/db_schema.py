@@ -114,12 +114,7 @@ def ensure_db_schema_compatibility(
     bind: Engine | None = None,
     mode: str | None = None,
 ) -> None:
-    """Проверяет соответствие схемы БД моделям.
-
-    strict: выбрасывает RuntimeError при несоответствии.
-    soft: логирует предупреждение и продолжает.
-    skip: пропускает проверку.
-    """
+    """Проверяет соответствие схемы БД моделям."""
     check_mode = _resolve_mode(mode)
     if check_mode == "skip":
         logger.warning("SCHEMA_CHECK_MODE=skip/SKIP_SCHEMA_CHECK -> schema compatibility check skipped.")

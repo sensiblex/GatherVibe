@@ -43,8 +43,7 @@ class PartyMember(Base):
             "status IN ('pending','accepted','rejected','left','invited','declined')",
             name="ck_party_member_status",
         ),
-        # Горячий путь: 8 мест делают count() по (party_id, status) для проверки
-        # заполненности компании. Составной индекс закрывает все эти запросы.
+
         Index("ix_party_members_party_status", "party_id", "status"),
     )
 

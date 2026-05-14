@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 
@@ -7,6 +8,8 @@ from sqlalchemy.orm import Session
 from deps import current_user, get_db
 from models.user import User
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/users/me/avatar", tags=["avatars"])
 
 _ALLOWED_TYPES = {
@@ -15,8 +18,10 @@ _ALLOWED_TYPES = {
     "image/webp": "webp",
 }
 _MAX_SIZE_BYTES = 5 * 1024 * 1024
-_UPLOAD_DIR = Path("uploads/avatars")
+_UPLOAD_DIR = Path(__file__).resolve().parent.parent / "uploads" / "avatars"
 _CHUNK_SIZE = 1024 * 1024
+
+logger.info(f"Avatar upload directory resolved to: {_UPLOAD_DIR}")
 
 
 @router.post("")
@@ -46,11 +51,13 @@ async def upload_avatar(
                 raise HTTPException(status_code=400, detail="Файл слишком большой (макс 5MB)")
             out.write(chunk)
     await file.close()
+    
+    logger.info(f"Avatar saved to: {target_path}, exists: {target_path.exists()}, absolute path: {target_path.resolve()}")
 
     old_avatar_url = user.avatar_url
     if old_avatar_url and old_avatar_url.startswith("/uploads/avatars/"):
         old_rel = old_avatar_url.removeprefix("/uploads/")
-        old_path = Path("uploads") / old_rel
+        old_path = _UPLOAD_DIR / old_rel
         if old_path != target_path and old_path.exists():
             os.remove(old_path)
 

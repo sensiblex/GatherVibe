@@ -1,27 +1,21 @@
 import asyncio
 import logging
 import socketio
-
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 from contextlib import asynccontextmanager, contextmanager
+from datetime import datetime, timezone
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime, timezone
+from fastapi.staticfiles import StaticFiles
+import os as _os
+from urllib.parse import urlparse as _urlparse
 
-logger = logging.getLogger(__name__)
-
+from deps import (
+    get_user_from_socket_token,
+)
 from services.db_schema import (
     ensure_db_schema_compatibility,
     get_current_schema_check_mode,
 )
-from deps import (
-    get_db,
-    get_current_user_from_token,
-    get_user_from_socket_token,
-    oauth2_scheme,
-    oauth2_scheme_optional,
-)
-
 from sio_instance import sio  # noqa: E402
 from database import SessionLocal  # noqa: E402
 from models.chat_message import ChatMessage  # noqa: E402
@@ -313,12 +307,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="GatherVibe API", lifespan=lifespan)
 
-from fastapi.staticfiles import StaticFiles  # noqa: E402
-import os as _os  # noqa: E402
-from urllib.parse import urlparse as _urlparse  # noqa: E402
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
+
 _os.makedirs("uploads/chat", exist_ok=True)
 _os.makedirs("uploads/avatars", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+app.mount("/uploads", StaticFiles(directory="/app/uploads"), name="uploads")
 
 DEFAULT_MAX_REQUEST_SIZE_BYTES = 10 * 1024 * 1024  # Максимальный размер запроса (10 МБ)
 app.state.max_request_size_bytes = int(

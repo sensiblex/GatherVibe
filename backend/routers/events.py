@@ -427,8 +427,7 @@ def kudago_get_events(
     db: Session = Depends(get_db),
 ):
     """Возвращает события из локального кэша. Фоллбэк на KudaGo API только для browsing без поиска."""
-    # Защита от неизвестных локаций: KudaGo поддерживает только 5 городов в API,
-    # а наш кэш — 3. Для остальных возвращаем пустой результат, а не 502.
+    # Защита от неизвестных локаций: KudaGo поддерживает только 5 городов в API
     VALID_LOCATIONS = {"msk", "spb", "ekb", "kzn", "nnv"}
     if location not in VALID_LOCATIONS:
         return {
@@ -517,8 +516,7 @@ def kudago_get_events(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Ошибка кэша: {str(e)}")
     else:
-        # Cold cache для этой локации: сначала попробуем лёгкий on-demand warm-up.
-        # Это критично для msk, где прямые большие API вызовы часто таймаутят.
+       
         try:
             synced = kudago_cache.sync_location(location, pages=1)
             if synced > 0:
@@ -564,9 +562,7 @@ def kudago_get_events(
             # Сохраняем старый путь фоллбэка ниже.
             pass
 
-    # Кэш пустой — фоллбэк на KudaGo API. Но KudaGo не поддерживает
-    # социальные/качественные/гео фильтры, поэтому если они заданы — возвращаем пусто,
-    # иначе пользователь увидит данные, которые фильтр «не применил».
+ 
     cache_only_filter_active = any([
         has_party is True, has_free_spots is True,
         (min_attendees is not None and min_attendees > 0),
@@ -640,11 +636,7 @@ def kudago_sync(
     _admin=Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """Принудительная синхронизация кэша событий из KudaGo API.
-
-    По умолчанию запускает задачу в фоне и возвращает 202. При wait=true
-    выполняется синхронно и возвращает статистику — для ручной отладки.
-    """
+    """Принудительная синхронизация кэша событий из KudaGo API"""
     loc_list = [l.strip() for l in locations.split(",")] if locations else kudago_cache.DEFAULT_LOCATIONS
 
     if wait:
@@ -744,8 +736,6 @@ def kudago_locations():
         raise HTTPException(status_code=502, detail=f"Ошибка KudaGo API: {str(e)}")
 
 
-
-
 @router.get("/attendees/batch-counts")
 def batch_attendee_counts(
     ids: str = Query(..., description="Comma-separated event IDs"),
@@ -811,8 +801,6 @@ def join_event(
 
     try:
         eid_int = int(event_id)
-        # Атомарный UPDATE с подзапросом — одна SQL-инструкция; корректен
-        # относительно concurrent attend/leave и не требует промежуточного select.
         db.execute(
             sa_update(Event)
             .where(Event.id == eid_int)
@@ -897,10 +885,6 @@ def get_matches(
     my_interests: set = set(
         i.strip() for i in (user.interests or "").split(",") if i.strip()
     )
-
-    # Pre-filter по is_looking ещё в БД; LIMIT применяем ПОСЛЕ scoring,
-    # но чтобы не держать в памяти всех attendees популярного события —
-    # загружаем хотя бы не больше 2000 (разумный потолок для in-Python sort).
     HARD_CAP = 2000
     query = (
         db.query(EventAttendee, User)

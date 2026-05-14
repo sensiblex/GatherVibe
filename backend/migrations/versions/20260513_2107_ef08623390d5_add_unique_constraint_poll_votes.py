@@ -26,8 +26,15 @@ def _has_table(name: str) -> bool:
     return name in sa.inspect(bind).get_table_names()
 
 
+def _has_constraint(constraint_name: str, table_name: str) -> bool:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    constraints = inspector.get_unique_constraints(table_name)
+    return any(c['name'] == constraint_name for c in constraints)
+
+
 def upgrade() -> None:
-    if _has_table('poll_votes'):
+    if _has_table('poll_votes') and not _has_constraint('uq_poll_user', 'poll_votes'):
         op.create_unique_constraint(
             'uq_poll_user',
             'poll_votes',

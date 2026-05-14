@@ -19,8 +19,6 @@ router = APIRouter(tags=["notifications"])
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
 
 
-
-
 class NotificationOut(BaseModel):
     id: int
     type: str
@@ -170,8 +168,6 @@ def unsubscribe_push(
     return {"ok": True}
 
 
-
-
 @router.post("/notifications/push/test", status_code=200)
 def test_push(
     token: str = Depends(oauth2_scheme),
@@ -188,8 +184,6 @@ def test_push(
     )
     db.commit()
     return {"ok": True}
-
-
 
 
 @router.patch("/notifications/settings")

@@ -12,7 +12,7 @@ logger = logging.getLogger("kudago_api")
 
 
 class APIMetricsCollector:
-    """Сборщик метрик API с thread-safe операциями."""
+    """Сборщик метрик"""
     
     def __init__(self):
         self._lock = Lock()
@@ -233,9 +233,11 @@ def get_current_metrics() -> dict:
     """
     Получить текущие метрики
     """
+    return metrics_collector.get_metrics()
 
 
 def reset_metrics():
     """
     Сбросить метрики
     """
+    metrics_collector.reset()

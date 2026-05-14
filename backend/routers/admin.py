@@ -1,4 +1,3 @@
-"""Админ-роутер: инбокс жалоб, контент-модерация, санкции, аудит."""
 from datetime import datetime, timedelta
 from typing import Any, Optional
 from pydantic import BaseModel, Field
@@ -91,6 +90,7 @@ class AuditOut(BaseModel):
 
 
 def _report_to_out(r: Report) -> dict:
+    """Преобразует Report в словарь для ответа."""
     return {
         "id": r.id,
         "reporter_id": r.reporter_id,

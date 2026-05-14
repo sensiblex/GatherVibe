@@ -1,9 +1,3 @@
-"""Общие утилиты для KudaGo-слоёв (sync и async API, кэш).
-
-Содержит чистые функции без I/O и без зависимостей от httpx/asyncio.
-Вынесено сюда, чтобы устранить дублирование между kudago_api.py и
-kudago_api_async.py.
-"""
 from typing import Any
 
 

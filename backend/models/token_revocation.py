@@ -4,6 +4,7 @@ from database import Base
 
 
 class RevokedToken(Base):
+    """ Токен, отозванный для выхода из системы """
     __tablename__ = "revoked_tokens"
 
     id         = Column(Integer, primary_key=True, index=True)

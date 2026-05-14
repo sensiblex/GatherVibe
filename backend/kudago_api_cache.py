@@ -1,6 +1,5 @@
 """
-Система кэширования для API KudaGo.
-Поддержка Redis и in-memory кэширования (lru_cache).
+Система кэширования
 """
 import hashlib
 import inspect
@@ -31,7 +30,7 @@ cache_config = CacheConfig()
 
 
 class InMemoryCache:
-    """Простой in-memory кэш с TTL и LRU вытеснением."""
+    """Простой in-memory кэш"""
     
     def __init__(self, max_size: int = 1000):
         self._cache = {}

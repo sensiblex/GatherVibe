@@ -1,6 +1,3 @@
-"""
-Pydantic-модели для валидации входных и выходных данных API KudaGo.
-"""
 from datetime import datetime, timezone
 from typing import Optional, List, Any
 from pydantic import BaseModel, Field, field_validator

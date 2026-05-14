@@ -180,10 +180,8 @@ async def notify_chat_message(
     message_text: str,
     now_ts: int | None = None,
 ) -> set[int]:
-    """Отправить throttled Web Push оффлайн участникам вечеринки.
-
-    Возвращает множество user_ids которым реально отправлен push.
-    Отправка выгружается в поток чтобы не блокировать Socket.IO.
+    """
+    Отправить Web Push оффлайн участникам вечеринки
     """
     now = now_ts if now_ts is not None else int(time.time())
     pushed: set[int] = set()

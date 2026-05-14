@@ -50,6 +50,7 @@ def has_party_notification(
     party_id: int,
     extra_data: Mapping[str, Any] | None = None,
 ) -> bool:
+    """Проверяет, существует ли уведомление с тем же получателем"""
     payload: dict[str, Any] = {"party_id": party_id}
     if extra_data:
         payload.update(extra_data)

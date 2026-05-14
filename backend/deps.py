@@ -13,7 +13,9 @@ from models.token_revocation import RevokedToken
 
 
 class OAuth2BearerOrCookie(OAuth2):
-    """Accepts a JWT from Authorization: Bearer header OR an HttpOnly 'token' cookie."""
+    """
+    Схема авторизации, которая принимает токен из заголовка Authorization или cookie.
+    """
 
     def __init__(self, tokenUrl: str, auto_error: bool = True):
         '''иниализирует схему авторизации с проверкой Bearer-токена или cookie'''

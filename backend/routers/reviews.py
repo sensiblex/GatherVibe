@@ -400,13 +400,11 @@ async def get_reviewable_users(
     if not my_party_ids:
         return []
 
-    # Batch-load все party одним запросом вместо N.
     parties_by_id = {
         p.id: p
         for p in db.query(EventParty).filter(EventParty.id.in_(my_party_ids)).all()
     }
 
-    # Сперва используем party.event_date_ts (DB-значение, без сети).
     past_party_ids: list = []
     parties_needing_kudago: list = []
     for party_id in my_party_ids:
@@ -419,8 +417,6 @@ async def get_reviewable_users(
             continue
         parties_needing_kudago.append(party)
 
-    # Для оставшихся — параллельный KudaGo fetch через asyncio.gather,
-    # чтобы N запросов уходили конкурентно, а не последовательно.
     if parties_needing_kudago:
         async def _fetch_ts(p):
             try:

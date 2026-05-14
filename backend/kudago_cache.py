@@ -1,6 +1,5 @@
 """
 KudaGo events cache — периодически подгружает события из KudaGo в БД.
-Эндпоинты читают данные из кэша вместо прямых запросов к API.
 """
 import json
 import logging
@@ -536,12 +535,10 @@ def query_cache(
 
     search_trimmed = search.strip() if search else ""
     if search_trimmed:
-        # title_lower хранит title.lower() из Python — работает с кириллицей в любой локали БД.
         pat = f"%{_escape_like(search_trimmed.lower())}%"
         q = q.filter(KudaGoEvent.title_lower.like(pat, escape="\\"))
 
     if max_age is not None:
-        # События с неизвестным возрастом не отсекаем — показываем всегда.
         q = q.filter(
             (KudaGoEvent.age_restriction == None) |  # noqa: E711
             (KudaGoEvent.age_restriction <= max_age)

@@ -16,8 +16,6 @@ from utils.sanitize import sanitize_input
 
 router = APIRouter(tags=["auth"])
 
-# TTLCache с maxsize=10000 чтобы избежать unbounded роста словаря при публичном
-# трафике. TTL здесь больше cooldown'а (+30s) — просто чтобы не чистить вручную.
 try:
     from cachetools import TTLCache as _TTLCache
     _resend_rate = _TTLCache(maxsize=10_000, ttl=90)  # type: ignore[assignment]
@@ -84,8 +82,7 @@ def register_user(
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    # Email — best effort. При проблеме с провайдером юзер сможет вручную
-    # запросить повторную отправку через /auth/resend-verification.
+
     try:
         background.add_task(send_verification_email, new_user.email, new_user.username, token)
     except Exception:
@@ -113,7 +110,6 @@ def login(
         raise HTTPException(status_code=403, detail="email_not_verified")
     token_data = create_user_token(user)
     import os as _os
-    # COOKIE_SECURE=true в production (HTTPS). В docker-compose дев HTTP — false.
     _secure = _os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
     _samesite = "none" if _secure else "lax"
     response.set_cookie(
@@ -189,8 +185,7 @@ def logout(
     import os as _os
     _secure = _os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
     _samesite = "none" if _secure else "lax"
-    # delete_cookie должен матчить атрибуты set_cookie, иначе при Secure=True
-    # браузер не удалит cookie.
+
     response.delete_cookie(key="token", path="/", httponly=True, samesite=_samesite, secure=_secure)
     return None
 

@@ -5,6 +5,7 @@ from database import Base
 
 
 class Notification(Base):
+    """ Уведомления для пользователей """
     __tablename__ = "notifications"
 
     id = Column(Integer, primary_key=True, index=True)

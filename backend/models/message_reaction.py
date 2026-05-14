@@ -3,6 +3,7 @@ from database import Base
 
 
 class MessageReaction(Base):
+    """ Реакции на сообщения в чате """
     __tablename__ = "message_reactions"
 
     id         = Column(Integer, primary_key=True, index=True)

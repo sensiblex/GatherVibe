@@ -196,11 +196,6 @@ def _build_parties_out_bulk(
     db: Session,
     viewer_id: Optional[int] = None,
 ) -> List[PartyOut]:
-    """Batch-версия _build_party_out: 2 запроса на весь список вместо 2×N.
-
-    - Одним запросом подтягивает всех creator'ов.
-    - Одним запросом — всех members (с join на User) по списку party_id.
-    """
     if not parties:
         return []
     # creators: один IN-запрос
@@ -451,9 +446,6 @@ def search_parties(
     if is_open is not None:
         base_q = base_q.filter(EventParty.is_open == is_open)
 
-    # Count на отдельном лёгком запросе — без JOIN'ов на User/member_count_sq.
-    # `base_q.count()` обёртывает всё в `SELECT count(*) FROM (... JOINs ...)` —
-    # у нас для count нужны только фильтры по EventParty.
     count_q = (
         db.query(sa_func.count(EventParty.id))
         .outerjoin(member_count_sq, EventParty.id == member_count_sq.c.party_id)
@@ -524,6 +516,7 @@ def get_party_detail(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Получает детали_party по ID."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     return _build_party_out(party, db, viewer_id=current_user.id)
@@ -535,6 +528,7 @@ def get_party_detail_public(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Получает детали_party по ID."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     return _build_party_out(party, db, viewer_id=current_user.id)
@@ -545,7 +539,7 @@ def get_party_by_invite_token(
     invite_token: str,
     db: Session = Depends(get_db),
 ):
-    """Public preview — no auth. Lets unregistered users see the party before joining."""
+    """Получает preview party по invite token."""
     party = db.query(EventParty).filter(EventParty.invite_token == invite_token).first()
     if not party:
         raise HTTPException(status_code=404, detail="Приглашение не найдено")
@@ -574,7 +568,7 @@ async def join_party_by_invite_token(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Auth-required join via shareable link. Adds the user as accepted directly."""
+    """Присоединяется к party по invite token."""
     user = get_current_user_from_token(token, db)
     party = db.query(EventParty).filter(EventParty.invite_token == invite_token).first()
     if not party:
@@ -660,7 +654,6 @@ def get_parties(
     parties = db.query(EventParty).filter(EventParty.event_id == event_id).order_by(
         EventParty.created_at.desc()
     ).all()
-    # viewer_id нужен чтобы creator видел invite_token своих party
     return _build_parties_out_bulk(parties, db, viewer_id=current_user.id)
 
 
@@ -765,6 +758,7 @@ async def create_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Создает новую party."""
     user = get_current_user_from_token(token, db)
     from services.feature_flags import is_flag_enabled
     if not is_flag_enabled(db, "party_creation_enabled"):
@@ -852,6 +846,7 @@ def update_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Обновляет party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "редактировать компанию")
@@ -884,6 +879,7 @@ async def delete_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Удаляет party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "удалить компанию")
@@ -945,6 +941,7 @@ async def join_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Присоединяется к party."""
     user = get_current_user_from_token(token, db)
     party = db.query(EventParty).filter(EventParty.id == party_id).with_for_update().first()
     if not party:
@@ -1056,6 +1053,7 @@ def leave_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Покидает party."""
     user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     if party.creator_id == user.id:
@@ -1080,6 +1078,7 @@ async def kick_member(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Исключает участника из party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "исключать участников")
@@ -1142,6 +1141,7 @@ async def accept_member(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Принимает участника в party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "принимать участников")
@@ -1187,6 +1187,7 @@ async def reject_member(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Отклоняет заявку участника в party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "отклонять заявки")
@@ -1227,6 +1228,7 @@ async def close_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Закрывает party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "закрыть компанию")
@@ -1281,6 +1283,7 @@ async def invite_to_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Приглашает пользователя в party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "приглашать")
@@ -1374,6 +1377,7 @@ async def accept_party_invite(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Принимает приглашение в party."""
     user = get_current_user_from_token(token, db)
     member = db.query(PartyMember).filter(
         PartyMember.id == invite_id,
@@ -1434,6 +1438,7 @@ async def decline_party_invite(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Отклоняет приглашение в party."""
     user = get_current_user_from_token(token, db)
     member = db.query(PartyMember).filter(
         PartyMember.id == invite_id,
@@ -1490,6 +1495,7 @@ async def cancel_party_invite(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Отменяет приглашение в party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "отменить приглашение")
@@ -1515,10 +1521,7 @@ async def cancel_party_invite(
 
 
 def expire_pending_invites(db: Session) -> list[int]:
-    """Mark invited rows as declined when the event is within 24h. Returns expired row IDs.
-
-    Caller commits. Used by the background expiry loop and tests.
-    """
+    """Отменяет приглашения в party, если событие через 24 часа."""
     import time as _time
     cutoff = int(_time.time()) + 24 * 3600
     rows = (

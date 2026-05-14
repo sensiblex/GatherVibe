@@ -14,7 +14,6 @@ _logger = logging.getLogger(__name__)
 
 
 def _get(path: str, params: dict) -> dict:
-    """GET с лёгким retry для 429/503. Raises на 4xx (кроме 429) и 5xx после последней попытки."""
     backoff = 1.0
     last_exc: Optional[Exception] = None
     for attempt in range(3):

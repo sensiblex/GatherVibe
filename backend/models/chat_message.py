@@ -22,7 +22,5 @@ class ChatMessage(Base):
     delete_reason  = Column(String(200), nullable=True)
 
     __table_args__ = (
-        # История чата: `WHERE room = X ORDER BY timestamp DESC LIMIT N` — без
-        # составного индекса это index scan по room + filesort.
         Index("ix_chat_messages_room_timestamp", "room", "timestamp"),
     )
