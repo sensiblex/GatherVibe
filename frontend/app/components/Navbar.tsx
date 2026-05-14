@@ -14,6 +14,8 @@ const API_BASE = resolveApiBase();
 function toMediaUrl(path: string | null): string | null {
   if (!path) return null;
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  // For uploads, don't add /api prefix since they're served directly
+  if (path.startsWith('/uploads/')) return path;
   return `${API_BASE}${path}`;
 }
 
@@ -82,8 +84,9 @@ export default function Navbar() {
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         const url: string | null = data?.avatar_url ?? null;
-        setAvatarUrl(url);
-        if (url) localStorage.setItem('avatar_url', url);
+        const processedUrl = toMediaUrl(url);
+        setAvatarUrl(processedUrl);
+        if (processedUrl) localStorage.setItem('avatar_url', processedUrl);
         else localStorage.removeItem('avatar_url');
       })
       .catch(() => {});
@@ -151,7 +154,7 @@ export default function Navbar() {
                 <Link href="/profile" aria-label={user.username} style={{ display: 'inline-flex' }}>
                   {avatarUrl ? (
                     <img
-                      src={toMediaUrl(avatarUrl) || undefined}
+                      src={avatarUrl}
                       alt={user.username}
                       style={{ width: 32, height: 32, borderRadius: '50%', objectFit: 'cover' }}
                     />

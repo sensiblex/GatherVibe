@@ -11,9 +11,11 @@ import { resolveApiBase } from '../lib/apiBase';
 
 const API_BASE = resolveApiBase();
 
-function toMediaUrl(path: string | null | undefined): string | null {
+function toMediaUrl(path: string | null): string | null {
   if (!path) return null;
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  // For uploads, don't add /api prefix since they're served directly
+  if (path.startsWith('/uploads/')) return path;
   return `${API_BASE}${path}`;
 }
 
@@ -436,7 +438,7 @@ export default function EventAttendees({
 
     setInvitingUserIds((prev) => new Set(prev).add(userId));
     try {
-      const res = await sendInvite(partyId, userId, null);
+      const res = await sendInvite(partyId, userId, undefined);
       if (res.ok) {
         setLocallyInvitedUserIds((prev) => new Set(prev).add(userId));
         toast('Приглашение отправлено', 'success');

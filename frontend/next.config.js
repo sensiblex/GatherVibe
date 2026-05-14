@@ -25,6 +25,10 @@ const nextConfig = {
         source: '/api/:path*',
         destination: `${rewriteTarget}/:path*`,
       },
+      {
+        source: '/uploads/:path*',
+        destination: `${rewriteTarget}/uploads/:path*`,
+      },
     ];
   },
 };

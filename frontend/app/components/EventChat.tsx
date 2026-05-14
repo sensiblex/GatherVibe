@@ -10,9 +10,11 @@ import { resolveApiBase } from '../lib/apiBase';
 
 const API_BASE = resolveApiBase();
 
-function toMediaUrl(path: string | null | undefined): string | null {
+function toMediaUrl(path: string | null): string | null {
   if (!path) return null;
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  // For uploads, don't add /api prefix since they're served directly
+  if (path.startsWith('/uploads/')) return path;
   return `${API_BASE}${path}`;
 }
 
