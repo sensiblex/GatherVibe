@@ -9,6 +9,7 @@ import {
   toggleTag,
   nextPriceMode,
   quickDateRange,
+  quickDateInputRange,
   WEEKDAYS,
   toggleWeekday,
 } from './event-filters';
@@ -385,6 +386,42 @@ describe('quickDateRange', () => {
     const r = quickDateRange('month', NOW);
     expect((r.until - r.since)).toBeGreaterThan(29 * 86400 - 60);
     expect((r.until - r.since)).toBeLessThan(30 * 86400);
+  });
+});
+
+describe('quickDateInputRange', () => {
+  const NOW = new Date(2025, 2, 14, 15, 0, 0);
+
+  it('maps today to the same DatePicker from/to date', () => {
+    expect(quickDateInputRange('today', NOW)).toEqual({
+      dateFrom: '2025-03-14',
+      dateTo: '2025-03-14',
+    });
+  });
+
+  it('maps tomorrow to tomorrow in DatePicker values', () => {
+    expect(quickDateInputRange('tomorrow', NOW)).toEqual({
+      dateFrom: '2025-03-15',
+      dateTo: '2025-03-15',
+    });
+  });
+
+  it('maps weekend to the nearest Saturday-Sunday range', () => {
+    expect(quickDateInputRange('weekend', NOW)).toEqual({
+      dateFrom: '2025-03-15',
+      dateTo: '2025-03-16',
+    });
+  });
+
+  it('maps week and month to DatePicker ranges used by filtering', () => {
+    expect(quickDateInputRange('week', NOW)).toEqual({
+      dateFrom: '2025-03-14',
+      dateTo: '2025-03-20',
+    });
+    expect(quickDateInputRange('month', NOW)).toEqual({
+      dateFrom: '2025-03-14',
+      dateTo: '2025-04-12',
+    });
   });
 });
 

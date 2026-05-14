@@ -1,8 +1,3 @@
-"""
-Party coordination router — polls, pinned block, attendance statuses.
-All endpoints require accepted membership or creator role.
-System messages are written to chat_messages and emitted via Socket.IO.
-"""
 from datetime import datetime
 from typing import List, Optional
 
@@ -38,16 +33,8 @@ from sio_instance import sio
 
 router = APIRouter(tags=["party_coordination"])
 
-# Ограничиваем размер и TTL, чтобы не утекала память на долгоживущих воркерах.
-try:
-    from cachetools import TTLCache
-    _attendance_msg_cache = TTLCache(maxsize=10_000, ttl=600)
-except ImportError:  # pragma: no cover — cachetools в requirements_docker.txt
-    _attendance_msg_cache: dict[tuple, datetime] = {}
-ATTENDANCE_RATE_LIMIT_SECONDS = 300
-
-
-
+ATTENDANCE_RATE_LIMIT_SECONDS = 60
+_attendance_action_cache: dict[tuple[int, int], datetime] = {}
 
 def _check_party_access(
     party_id: int,
@@ -55,7 +42,7 @@ def _check_party_access(
     db: Session,
     require_creator: bool = False,
 ) -> EventParty:
-    """Returns party if user has access. Raises 403/404 otherwise."""
+    """Возвращает компанию если пользователь имеет доступ. Иначе выбрасывает 403/404."""
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
         raise HTTPException(status_code=404, detail="Компания не найдена")
@@ -80,7 +67,7 @@ def _check_party_access(
 async def _send_system_message(
     db: Session, party_id: int, event_type: str, text: str
 ) -> None:
-    """Saves a system message to DB and emits it to the party Socket.IO room."""
+    """Сохраняет системное сообщение в БД и отправляет в Socket.IO комнату компании."""
     now = datetime.utcnow()
     msg = ChatMessage(
         room=f"party_{party_id}",
@@ -187,6 +174,7 @@ class AttendanceOut(BaseModel):
 
 
 def _build_poll_out(poll: PartyPoll, db: Session, user_id: int) -> PollOut:
+    """Строит объект PollOut с вариантами и голосом пользователя."""
     options = (
         db.query(PollOption).filter(PollOption.poll_id == poll.id).all()
     )
@@ -218,6 +206,7 @@ async def create_poll(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Создаёт голосование в компании."""
     user = get_current_user_from_token(token, db)
     _check_party_access(party_id, user.id, db, require_creator=True)
 
@@ -267,6 +256,7 @@ def get_polls(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает список голосований компании."""
     user = get_current_user_from_token(token, db)
     _check_party_access(party_id, user.id, db)
 
@@ -286,6 +276,7 @@ async def vote_poll(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Голосует в голосовании."""
     user = get_current_user_from_token(token, db)
     poll = db.query(PartyPoll).filter(PartyPoll.id == poll_id).first()
     if not poll:
@@ -334,6 +325,7 @@ async def close_poll(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Закрывает голосование."""
     user = get_current_user_from_token(token, db)
     poll = db.query(PartyPoll).filter(PartyPoll.id == poll_id).first()
     if not poll:
@@ -381,6 +373,7 @@ def get_pinned(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает закреплённый блок компании."""
     user = get_current_user_from_token(token, db)
     _check_party_access(party_id, user.id, db)
 
@@ -395,6 +388,7 @@ async def upsert_pinned(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Создаёт или обновляет закреплённый блок компании."""
     user = get_current_user_from_token(token, db)
     _check_party_access(party_id, user.id, db, require_creator=True)
 
@@ -444,8 +438,23 @@ async def set_attendance(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Устанавливает статус посещаемости пользователя."""
     user = get_current_user_from_token(token, db)
     _check_party_access(party_id, user.id, db)
+
+    cache_key = (party_id, user.id)
+    now = datetime.utcnow()
+    last_action_at = _attendance_action_cache.get(cache_key)
+    if last_action_at is not None:
+        elapsed = (now - last_action_at).total_seconds()
+        if elapsed < ATTENDANCE_RATE_LIMIT_SECONDS:
+            wait_seconds = int(ATTENDANCE_RATE_LIMIT_SECONDS - elapsed)
+            if wait_seconds <= 0:
+                wait_seconds = 1
+            raise HTTPException(
+                status_code=429,
+                detail=f"Слишком часто. Подождите {wait_seconds} сек.",
+            )
 
     valid_statuses = {"going", "late", "cant"}
     if body.status is not None and body.status not in valid_statuses:
@@ -461,6 +470,7 @@ async def set_attendance(
         if attendance:
             db.delete(attendance)
         db.commit()
+        _attendance_action_cache[cache_key] = now
         return {"ok": True}
 
     if attendance:
@@ -486,18 +496,14 @@ async def set_attendance(
         room=f"party_{party_id}",
     )
 
-    cache_key = (party_id, user.id)
-    now = datetime.utcnow()
-    last_msg = _attendance_msg_cache.get(cache_key)
-    if last_msg is None or (now - last_msg).total_seconds() >= ATTENDANCE_RATE_LIMIT_SECONDS:
-        _attendance_msg_cache[cache_key] = now
-        status_labels = {"going": "идёт", "late": "опоздает", "cant": "не придёт"}
-        await _send_system_message(
-            db, party_id, "attendance_changed",
-            f"👤 {user.username} — {status_labels[body.status]}",
-        )
+    status_labels = {"going": "идёт", "late": "опоздает", "cant": "не придёт"}
+    await _send_system_message(
+        db, party_id, "attendance_changed",
+        f"👤 {user.username} — {status_labels[body.status]}",
+    )
 
     db.commit()
+    _attendance_action_cache[cache_key] = now
     return {"ok": True}
 
 
@@ -507,6 +513,7 @@ def get_attendance(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает статусы посещаемости участников компании."""
     user = get_current_user_from_token(token, db)
     _check_party_access(party_id, user.id, db)
 

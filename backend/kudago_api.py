@@ -14,7 +14,6 @@ _logger = logging.getLogger(__name__)
 
 
 def _get(path: str, params: dict) -> dict:
-    """GET с лёгким retry для 429/503. Raises на 4xx (кроме 429) и 5xx после последней попытки."""
     backoff = 1.0
     last_exc: Optional[Exception] = None
     for attempt in range(3):
@@ -35,7 +34,7 @@ def _get(path: str, params: dict) -> dict:
             backoff *= 2
     if last_exc is not None:
         raise last_exc
-    raise httpx.HTTPStatusError("KudaGo rate-limited/unavailable after retries", request=None, response=None)
+    raise RuntimeError("KudaGo rate-limited/unavailable after retries")
 
 
 def get_events(
@@ -47,6 +46,9 @@ def get_events(
     actual_since: Optional[int] = None,
     actual_until: Optional[int] = None,
 ) -> dict:
+    """
+    Получить список событий
+    """
     now_ts = int(time.time())
     params: dict = {
         "location": location,
@@ -76,6 +78,9 @@ def search(
     actual_since: Optional[int] = None,
     actual_until: Optional[int] = None,
 ) -> dict:
+    """
+    Поиск событий и мест
+    """
     now_ts = int(time.time())
     params: dict = {
         "q": query,
@@ -95,6 +100,9 @@ def search(
 
 
 def get_event_by_id(event_id: int) -> dict:
+    """
+    Получить событие по ID
+    """
     params = {
         "fields": "id,title,short_title,description,body_text,categories,tags,price,is_free,age_restriction,images,dates,place,site_url,participants",
         "expand": "images,place,dates,participants",
@@ -106,6 +114,9 @@ def get_event_by_id(event_id: int) -> dict:
 
 
 def get_events_today(location: str = "kzn") -> dict:
+    """
+    Получить события на сегодня
+    """
     import datetime
     today = datetime.date.today()
     start = int(time.mktime(today.timetuple()))
@@ -114,6 +125,9 @@ def get_events_today(location: str = "kzn") -> dict:
 
 
 def get_event_categories() -> list:
+    """
+    Получить список категорий
+    """
     with httpx.Client(timeout=10) as client:
         r = client.get(f"{BASE_URL}/event-categories/")
         r.raise_for_status()
@@ -124,6 +138,9 @@ def get_event_categories() -> list:
 
 
 def get_locations() -> list:
+    """
+    Получить список локаций
+    """
     with httpx.Client(timeout=10) as client:
         r = client.get(f"{BASE_URL}/locations/")
         r.raise_for_status()
@@ -145,6 +162,9 @@ def _event_date_entry(
     start_time: Optional[str] = None,
     end_time: Optional[str] = None,
 ) -> dict:
+    """
+    Создать запись даты события
+    """
     schedules = d.get("schedules")
     return {
         "start": start_date,
@@ -160,11 +180,17 @@ def _event_date_entry(
 
 
 def _format_kudago_timestamp(ts: int) -> tuple[str, str]:
+    """
+    Преобразовать timestamp в дату и время
+    """
     dt = datetime.fromtimestamp(ts, tz=KUDAGO_TIMEZONE)
     return dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M")
 
 
 def parse_events(raw: dict, skip_date_filter: bool = False) -> list:
+    """
+    Парсить события из сырых данных
+    """
     import time
     now_ts = int(time.time())
     results = raw.get("results", [])
@@ -277,6 +303,9 @@ def parse_events(raw: dict, skip_date_filter: bool = False) -> list:
 
 
 def parse_event_detail(e: dict) -> dict:
+    """
+    Парсить детали события
+    """
     import time
     now_ts = int(time.time())
     raw_dates = e.get("dates") or []

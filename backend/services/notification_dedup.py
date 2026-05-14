@@ -11,7 +11,7 @@ from models.notification import Notification
 
 
 def normalize_notification_payload(data: Mapping[str, Any] | None) -> str | None:
-    """Serialize payload in deterministic JSON format for DB-stable comparisons."""
+    """Сериализует payload в детерминированный JSON для сравнения в БД."""
     if data is None:
         return None
     return json.dumps(dict(data), ensure_ascii=False, sort_keys=True, separators=(", ", ": "))
@@ -23,7 +23,7 @@ def has_notification(
     notif_type: str,
     data: Mapping[str, Any] | None,
 ) -> bool:
-    """Return True when a notification with same recipient/type/payload exists."""
+    """Проверяет, существует ли уведомление с тем же получателем/типом/payload."""
     serialized = normalize_notification_payload(data)
     legacy_serialized = json.dumps(dict(data)) if data is not None else None
     query = (
@@ -50,7 +50,7 @@ def has_party_notification(
     party_id: int,
     extra_data: Mapping[str, Any] | None = None,
 ) -> bool:
-    """Shortcut dedup helper for reminders/events that are keyed by party_id."""
+    """Проверяет, существует ли уведомление с тем же получателем"""
     payload: dict[str, Any] = {"party_id": party_id}
     if extra_data:
         payload.update(extra_data)

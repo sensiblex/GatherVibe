@@ -1,3 +1,6 @@
+"""
+Функции аутентификации и авторизации.
+"""
 from passlib.context import CryptContext
 from jwt_handler import create_access_token
 from datetime import timedelta
@@ -6,17 +9,17 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 def hash_password(password: str) -> str:
-    '''хэширует пароль'''
+    """Хэширует пароль."""
     return pwd_context.hash(password)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    '''проверяет пароль по хешу'''
+    """Проверяет пароль по хешу."""
     return pwd_context.verify(plain_password, hashed_password)
 
 
 def authenticate_user(email: str, password: str, db):
-    '''аутентифицирует пользователя по email и паролю'''
+    """Аутентифицирует пользователя по email и паролю."""
     from models.user import User
 
     user = db.query(User).filter(User.email == email).first()
@@ -28,15 +31,16 @@ def authenticate_user(email: str, password: str, db):
 
 
 def create_user_token(user):
-    '''генерирует токен для пользователя'''
+    """Генерирует токен для пользователя."""
+    role = getattr(user, "role", "user")
     token = create_access_token(
         data={
             "sub": user.email,
             "id": user.id,
             "username": user.username,
-            "role": getattr(user, "role", "user"),
+            "role": role,
         },
-        expires_delta=timedelta(minutes=60 * 24 * 7),  # 7 дней
+        expires_delta=timedelta(hours=2),
     )
     return {
         "access_token": token,
@@ -44,5 +48,5 @@ def create_user_token(user):
         "user_id": user.id,
         "username": user.username,
         "email": user.email,
-        "role": getattr(user, "role", "user"),
+        "role": role,
     }

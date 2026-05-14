@@ -4,6 +4,7 @@ from datetime import datetime
 
 
 class KudaGoEvent(Base):
+    """ Кэш событий из KudaGo """
     __tablename__ = "kudago_events_cache"
 
     id = Column(Integer, primary_key=True, index=True)

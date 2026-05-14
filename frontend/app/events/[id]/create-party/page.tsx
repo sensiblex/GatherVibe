@@ -6,8 +6,20 @@ import Link from 'next/link';
 import Navbar from '../../../components/Navbar';
 import { useAuth } from '../../../context/AuthContext';
 import { apiFetch } from '../../../lib/apiFetch';
+import { buildPermanentDateOptions, type ScheduleEntry } from './date-options';
+import { extractSchedulesFromAllDates } from '../../utils';
+import DateTimePickerButton from './DateTimePickerButton';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const MAX_EVENT_DATE_FUTURE_DAYS = 180;
+
+function toDateTimeLocalValue(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const h = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  return `${y}-${m}-${d}T${h}:${mm}`;
+}
 
 function parseErrorDetail(detail: unknown): string {
   if (!detail) return 'Ошибка создания';
@@ -18,7 +30,7 @@ function parseErrorDetail(detail: unknown): string {
         if (typeof e === 'object' && e !== null) {
           const loc = (e as Record<string, unknown>).loc;
           const msg = (e as Record<string, unknown>).msg;
-          const locStr = Array.isArray(loc) ? loc.join(' → ') : '';
+          const locStr = Array.isArray(loc) ? loc.join(' -> ') : '';
           return locStr ? `${locStr}: ${msg}` : String(msg ?? JSON.stringify(e));
         }
         return String(e);
@@ -29,14 +41,18 @@ function parseErrorDetail(detail: unknown): string {
 }
 
 export default function CreatePartyPage() {
-  const params  = useParams();
-  const router  = useRouter();
+  const params = useParams();
+  const router = useRouter();
   const eventId = params?.id as string;
   const { token, isLoading } = useAuth();
 
-  const [form, setForm]         = useState({ title: '', description: '', max_members: 4 });
+  const [form, setForm] = useState({ title: '', description: '', max_members: 4 });
   const [creating, setCreating] = useState(false);
-  const [error, setError]       = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedEventDateTs, setSelectedEventDateTs] = useState<number | null>(null);
+  const [isPermanentEvent, setIsPermanentEvent] = useState(false);
+  const [dateOptions, setDateOptions] = useState<Array<{ value: number; label: string }>>([]);
+  const [manualDateTime, setManualDateTime] = useState('');
 
   useEffect(() => {
     if (!isLoading && token === null) {
@@ -44,10 +60,50 @@ export default function CreatePartyPage() {
     }
   }, [isLoading, token, router]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadEvent = async () => {
+      if (!eventId) return;
+      try {
+        const res = await apiFetch(`/events/${eventId}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const isPermanent = Boolean(data?.is_permanent);
+        setIsPermanentEvent(isPermanent);
+        if (!isPermanent) return;
+        const schedules: ScheduleEntry[] = extractSchedulesFromAllDates(data?.all_dates ?? []);
+        const options = buildPermanentDateOptions(schedules);
+        setDateOptions(options);
+        setSelectedEventDateTs(options[0]?.value ?? null);
+        if (options.length > 0) setManualDateTime('');
+      } catch {
+        if (!cancelled) {
+          setDateOptions([]);
+          setSelectedEventDateTs(null);
+        }
+      }
+    };
+    void loadEvent();
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId]);
+
   const handleCreate = async () => {
     if (!token) return;
-    if (!form.title.trim()) { setError('Название обязательно'); return; }
-    setCreating(true); setError(null);
+    if (!form.title.trim()) {
+      setError('Название обязательно');
+      return;
+    }
+    const manualDateTs = manualDateTime ? Math.floor(new Date(manualDateTime).getTime() / 1000) : null;
+    const eventDateTsPayload = dateOptions.length > 0 ? selectedEventDateTs : manualDateTs;
+    if (isPermanentEvent && !eventDateTsPayload) {
+      setError('Укажите дату и время встречи');
+      return;
+    }
+    setCreating(true);
+    setError(null);
     try {
       const res = await apiFetch(`/parties/event/${eventId}`, {
         method: 'POST',
@@ -56,6 +112,7 @@ export default function CreatePartyPage() {
           title: form.title.trim(),
           description: form.description.trim() || null,
           max_members: form.max_members,
+          event_date_ts: eventDateTsPayload,
         }),
       });
       if (!res.ok) {
@@ -126,7 +183,7 @@ export default function CreatePartyPage() {
               <input
                 type="text"
                 value={form.title}
-                onChange={e => setForm(f => ({ ...f, title: e.target.value.slice(0, 60) }))}
+                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value.slice(0, 60) }))}
                 placeholder="Например: Приятная компания на вечер"
                 className="gv-input"
               />
@@ -141,7 +198,7 @@ export default function CreatePartyPage() {
               </label>
               <textarea
                 value={form.description}
-                onChange={e => setForm(f => ({ ...f, description: e.target.value.slice(0, 300) }))}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value.slice(0, 300) }))}
                 placeholder="Кого ищешь, планы на вечер, пожелания..."
                 rows={4}
                 className="gv-input resize-none"
@@ -151,6 +208,38 @@ export default function CreatePartyPage() {
               </span>
             </div>
 
+            {isPermanentEvent && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                  Дата встречи *
+                </label>
+                {dateOptions.length > 0 ? (
+                  <select
+                    value={selectedEventDateTs ?? ''}
+                    onChange={(e) => setSelectedEventDateTs(Number(e.target.value) || null)}
+                    className="gv-input"
+                  >
+                    {dateOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <>
+                    <div className="text-sm" style={{ color: 'var(--text-faint)' }}>
+                      Не удалось построить даты по расписанию. Укажите дату и время вручную.
+                    </div>
+                    <DateTimePickerButton
+                      value={manualDateTime}
+                      onChange={setManualDateTime}
+                      min={toDateTimeLocalValue(new Date())}
+                      max={toDateTimeLocalValue(new Date(Date.now() + MAX_EVENT_DATE_FUTURE_DAYS * 24 * 3600 * 1000))}
+                      placeholder="Выберите дату и время"
+                    />
+                  </>
+                )}
+              </div>
+            )}
+
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                 Макс. количество участников
@@ -158,7 +247,7 @@ export default function CreatePartyPage() {
               <div className="flex items-center gap-4">
                 <button
                   type="button"
-                  onClick={() => setForm(f => ({ ...f, max_members: Math.max(2, f.max_members - 1) }))}
+                  onClick={() => setForm((f) => ({ ...f, max_members: Math.max(2, f.max_members - 1) }))}
                   className="w-10 h-10 rounded-full font-bold text-lg transition hover:opacity-80"
                   style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}
                 >
@@ -169,7 +258,7 @@ export default function CreatePartyPage() {
                 </span>
                 <button
                   type="button"
-                  onClick={() => setForm(f => ({ ...f, max_members: Math.min(20, f.max_members + 1) }))}
+                  onClick={() => setForm((f) => ({ ...f, max_members: Math.min(20, f.max_members + 1) }))}
                   className="w-10 h-10 rounded-full font-bold text-lg transition hover:opacity-80"
                   style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}
                 >
@@ -183,7 +272,12 @@ export default function CreatePartyPage() {
           <div className="px-8 pb-8 flex gap-3">
             <button
               onClick={handleCreate}
-              disabled={creating || !form.title.trim()}
+              disabled={
+                creating
+                || !form.title.trim()
+                || (isPermanentEvent && dateOptions.length > 0 && !selectedEventDateTs)
+                || (isPermanentEvent && dateOptions.length === 0 && !manualDateTime)
+              }
               className="flex-1 text-white font-bold py-3 rounded-xl hover:opacity-90 transition disabled:opacity-60 bg-gradient-to-r from-purple-600 to-pink-600"
               style={{ boxShadow: 'var(--shadow-md)' }}
             >

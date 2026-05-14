@@ -36,6 +36,7 @@ REVIEW_WINDOW_DAYS = 30
 
 
 def _recalc_trust_score(user_id: int, db: Session) -> None:
+    """Пересчитывает trust score пользователя."""
     try:
         rows = db.query(PartyReview).filter(
             PartyReview.reviewed_id == user_id,
@@ -57,6 +58,7 @@ async def create_review(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Создаёт отзыв о пользователе."""
     current_user = get_current_user_from_token(token, db)
 
     if payload.reviewed_id == current_user.id:
@@ -111,7 +113,7 @@ async def create_review(
         review.rating = payload.rating
         review.text = payload.text
         review.tags = tags or None
-        review.updated_at = datetime.utcnow()
+        review.updated_at = datetime.now(timezone.utc)
     else:
         review = PartyReview(
             reviewer_id=current_user.id,
@@ -152,6 +154,7 @@ def report_review(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Сообщает о нарушении в отзыве."""
     current_user = get_current_user_from_token(token, db)
     review = db.query(PartyReview).filter(PartyReview.id == review_id).first()
     if not review or getattr(review, "is_deleted", False):
@@ -176,6 +179,7 @@ def get_my_review(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает отзыв пользователя о другом участнике."""
     current_user = get_current_user_from_token(token, db)
     review = db.query(PartyReview).filter(
         PartyReview.reviewer_id == current_user.id,
@@ -206,6 +210,7 @@ def update_review(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Обновляет отзыв пользователя."""
     current_user = get_current_user_from_token(token, db)
     review = db.query(PartyReview).filter(PartyReview.id == review_id).first()
     if not review or review.is_deleted:
@@ -229,7 +234,7 @@ def update_review(
             raise HTTPException(status_code=400, detail=f"Недопустимые теги: {invalid}")
         review.tags = payload.tags or None
 
-    review.updated_at = datetime.utcnow()
+    review.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(review)
     _recalc_trust_score(review.reviewed_id, db)
@@ -254,6 +259,7 @@ def delete_review(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Удаляет отзыв пользователя."""
     current_user = get_current_user_from_token(token, db)
     review = db.query(PartyReview).filter(PartyReview.id == review_id).first()
     if not review or review.is_deleted:
@@ -263,7 +269,7 @@ def delete_review(
 
     reviewed_id = review.reviewed_id
     review.is_deleted = True
-    review.updated_at = datetime.utcnow()
+    review.updated_at = datetime.now(timezone.utc)
     db.commit()
     _recalc_trust_score(reviewed_id, db)
 
@@ -275,6 +281,7 @@ def get_user_reviews(
     per_page: int = 10,
     db: Session = Depends(get_db),
 ):
+    """Возвращает отзывы о пользователе с пагинацией."""
     per_page = min(per_page, 50)
     page = max(page, 1)
 
@@ -372,8 +379,9 @@ async def get_reviewable_users(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает список пользователей которых можно оценить."""
     current_user = get_current_user_from_token(token, db)
-    now_ts = int(datetime.utcnow().timestamp())
+    now_ts = int(datetime.now(timezone.utc).timestamp())
 
     member_party_ids = [
         pm.party_id
@@ -392,13 +400,11 @@ async def get_reviewable_users(
     if not my_party_ids:
         return []
 
-    # Batch-load все party одним запросом вместо N.
     parties_by_id = {
         p.id: p
         for p in db.query(EventParty).filter(EventParty.id.in_(my_party_ids)).all()
     }
 
-    # Сперва используем party.event_date_ts (DB-значение, без сети).
     past_party_ids: list = []
     parties_needing_kudago: list = []
     for party_id in my_party_ids:
@@ -411,8 +417,6 @@ async def get_reviewable_users(
             continue
         parties_needing_kudago.append(party)
 
-    # Для оставшихся — параллельный KudaGo fetch через asyncio.gather,
-    # чтобы N запросов уходили конкурентно, а не последовательно.
     if parties_needing_kudago:
         async def _fetch_ts(p):
             try:

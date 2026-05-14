@@ -7,8 +7,17 @@ import { useNotifications } from '../context/NotificationsContext';
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../lib/apiFetch';
 import NavbarInvitesDropdown from './NavbarInvitesDropdown';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
+
+function toMediaUrl(path: string | null): string | null {
+  if (!path) return null;
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  // For uploads, don't add /api prefix since they're served directly
+  if (path.startsWith('/uploads/')) return path;
+  return `${API_BASE}${path}`;
+}
 
 function ThemeToggle() {
   const [dark, setDark] = useState(true);
@@ -75,8 +84,9 @@ export default function Navbar() {
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         const url: string | null = data?.avatar_url ?? null;
-        setAvatarUrl(url);
-        if (url) localStorage.setItem('avatar_url', url);
+        const processedUrl = toMediaUrl(url);
+        setAvatarUrl(processedUrl);
+        if (processedUrl) localStorage.setItem('avatar_url', processedUrl);
         else localStorage.removeItem('avatar_url');
       })
       .catch(() => {});

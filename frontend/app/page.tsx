@@ -65,9 +65,9 @@ export default function Home() {
             </div>
 
             <div className="hero-right fu-5">
-              <div>
-                <div className="hero-stat-num">11</div>
-                <div className="hero-stat-label">городов России</div>
+              <div className="hero-stat-item">
+                <div className="hero-stat-num">5</div>
+                <div className="hero-stat-label">городов</div>
               </div>
               <hr className="hero-stat-rule" />
               <div>
@@ -75,7 +75,7 @@ export default function Home() {
                 <div className="hero-stat-label">событий каждую неделю</div>
               </div>
               <hr className="hero-stat-rule" />
-              <div>
+              <div className="hero-stat-item">
                 <div className="hero-stat-num">0 ₽</div>
                 <div className="hero-stat-label">навсегда бесплатно</div>
               </div>

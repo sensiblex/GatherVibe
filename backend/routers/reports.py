@@ -45,6 +45,7 @@ class ReportOut(BaseModel):
 
 
 def _target_exists(db: Session, target_type: str, target_id: str) -> bool:
+    """Проверяет существование целевого объекта."""
     try:
         tid = int(target_id)
     except (TypeError, ValueError):
@@ -72,6 +73,7 @@ def create_report(
     db: Session = Depends(get_db),
     me: User = Depends(current_user),
 ):
+    """Создаёт жалобу на контент."""
     if payload.target_type not in ALLOWED_TARGET_TYPES:
         raise HTTPException(status_code=400, detail=f"Недопустимый target_type: {payload.target_type}")
     if payload.reason not in ALLOWED_REASONS:

@@ -2,36 +2,89 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Dict, List, Literal, Optional
 from datetime import datetime
 import math
+import re
 
-from utils.sanitize import sanitize_text
+from utils.sanitize import sanitize_input
+
+_SQL_META_RE = re.compile(r"(?:'|\"|;|--|/\*|\*/)")
+_SQL_KEYWORD_RE = re.compile(
+    r"\b(?:union|select|drop|insert|update|delete|exec|execute)\b",
+    flags=re.IGNORECASE,
+)
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+_CITY_RE = re.compile(r"^[a-zA-Zа-яА-ЯёЁ\s,-]+$")
+
+
+def _reject_sql_tokens(value: str) -> None:
+    if _SQL_META_RE.search(value) or _SQL_KEYWORD_RE.search(value):
+        raise ValueError("Input contains forbidden SQL tokens")
 
 
 def _sanitize_optional(cls, v):
-    return sanitize_text(v)
+    """Санитизация опциональных полей"""
+    if v is None:
+        return None
+    return sanitize_input(str(v))
+
+
+def _sanitize_optional_strict(cls, v):
+    """Строгая санитизация + SQL-токены запрещены для auth-полей."""
+    if v is None:
+        return None
+    raw = str(v)
+    _reject_sql_tokens(raw)
+    return sanitize_input(raw)
 
 
 def _sanitize_list(cls, v):
+    """Санитизация списка"""
     if v is None:
         return None
-    return [sanitize_text(x) for x in v if x is not None]
+    sanitized: List[str] = []
+    for x in v:
+        if x is None:
+            continue
+        cleaned = sanitize_input(str(x))
+        if cleaned is not None:
+            sanitized.append(cleaned)
+    return sanitized
 
 
 class UserCreate(BaseModel):
+    """Модель создания пользователя"""
     email: EmailStr
     username: str = Field(min_length=1, max_length=50)
     password: str = Field(min_length=8, max_length=128)
     city: Optional[str] = Field(default=None, max_length=100)
     interests: Optional[str] = Field(default=None, max_length=500)
 
-    _sanitize = field_validator("username", "city", "interests", mode="before")(_sanitize_optional)
+    _sanitize = field_validator("username", "city", "interests", mode="before")(_sanitize_optional_strict)
+
+    @field_validator("username")
+    @classmethod
+    def _validate_username(cls, v: str) -> str:
+        if not _USERNAME_RE.fullmatch(v):
+            raise ValueError("Username can only contain letters, numbers, hyphens, and underscores")
+        return v
+
+    @field_validator("city")
+    @classmethod
+    def _validate_city(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        if not _CITY_RE.fullmatch(v):
+            raise ValueError("City can only contain letters, spaces, and hyphens")
+        return v
 
 
 class UserLogin(BaseModel):
+    """Модель логина пользователя"""
     email: EmailStr
     password: str
 
 
 class Token(BaseModel):
+    """Модель токена"""
     access_token: str
     token_type: str
     user_id: int
@@ -40,6 +93,7 @@ class Token(BaseModel):
 
 
 class UserResponse(BaseModel):
+    """Модель ответа пользователя"""
     id: int
     email: str
     username: str
@@ -61,18 +115,37 @@ class UserResponse(BaseModel):
 
 
 class UserUpdate(BaseModel):
-    username: Optional[str] = None
-    city: Optional[str] = None
-    bio: Optional[str] = None
-    interests: Optional[str] = None
+    """Модель обновления пользователя"""
+    username: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    city: Optional[str] = Field(default=None, max_length=100)
+    bio: Optional[str] = Field(default=None, max_length=200)
+    interests: Optional[str] = Field(default=None, max_length=500)
     old_password: Optional[str] = None
-    new_password: Optional[str] = None
+    new_password: Optional[str] = Field(default=None, min_length=8, max_length=128)
     avatar_url: Optional[str] = None
 
     _sanitize = field_validator(
         "username", "city", "bio", "interests",
         mode="before",
-    )(_sanitize_optional)
+    )(_sanitize_optional_strict)
+
+    @field_validator("username")
+    @classmethod
+    def _validate_username(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        if not _USERNAME_RE.fullmatch(v):
+            raise ValueError("Username can only contain letters, numbers, hyphens, and underscores")
+        return v
+
+    @field_validator("city")
+    @classmethod
+    def _validate_city(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        if not _CITY_RE.fullmatch(v):
+            raise ValueError("City can only contain letters, spaces, and hyphens")
+        return v
 
 
 POSITIVE_REVIEW_TAGS: List[str] = [
@@ -99,6 +172,7 @@ ALLOWED_REVIEW_TAGS: List[str] = POSITIVE_REVIEW_TAGS + NEGATIVE_REVIEW_TAGS
 
 
 class ReviewCreate(BaseModel):
+    """Модель создания отзыва"""
     reviewed_id: int
     party_id: int
     rating: int = Field(..., ge=1, le=5)
@@ -109,6 +183,7 @@ class ReviewCreate(BaseModel):
 
 
 class ReviewOut(BaseModel):
+    """Модель ответа отзыва"""
     id: int
     reviewer_id: int
     reviewer_username: str
@@ -124,6 +199,7 @@ class ReviewOut(BaseModel):
 
 
 class ReviewUpdate(BaseModel):
+    """Модель обновления отзыва"""
     rating: Optional[int] = Field(None, ge=1, le=5)
     text: Optional[str] = Field(None, max_length=2000)
     tags: Optional[List[str]] = None
@@ -132,6 +208,7 @@ class ReviewUpdate(BaseModel):
 
 
 class ReviewSummary(BaseModel):
+    """Модель суммы отзывов"""
     avg_rating: Optional[float]
     total_reviews: int
     reviews: List[ReviewOut]
@@ -145,6 +222,7 @@ class ReviewSummary(BaseModel):
 
 
 class ReviewableUser(BaseModel):
+    """Модель пользователя, на которого оставили отзыв"""
     user_id: int
     username: str
     avatar_url: Optional[str] = None
@@ -153,12 +231,14 @@ class ReviewableUser(BaseModel):
 
 
 class ReviewReport(BaseModel):
+    """Модель отчета об отзыве"""
     reason: Optional[str] = None
 
     _sanitize = field_validator("reason", mode="before")(_sanitize_optional)
 
 
 class EventBase(BaseModel):
+    """Модель основы события"""
     title: str
     description: Optional[str] = None
     date_time: datetime
@@ -173,10 +253,12 @@ class EventBase(BaseModel):
 
 
 class EventCreate(EventBase):
+    """Модель создания события"""
     pass
 
 
 class EventUpdate(BaseModel):
+    """Модель обновления события"""
     title: Optional[str] = None
     description: Optional[str] = None
     date_time: Optional[datetime] = None
@@ -192,6 +274,7 @@ class EventUpdate(BaseModel):
 
 
 class EventResponse(EventBase):
+    """Модель ответа события"""
     id: int
     created_by: int
     current_participants: int
@@ -206,6 +289,7 @@ class EventResponse(EventBase):
 
 
 class PartySearchParams(BaseModel):
+    """Модель параметров поиска событий"""
     q: Optional[str] = None
     city: Optional[str] = None
     date_from: Optional[datetime] = None
@@ -218,6 +302,7 @@ class PartySearchParams(BaseModel):
 
 
 class PartySearchItem(BaseModel):
+    """Модель элемента поиска событий"""
     id: int
     event_id: str
     title: str
@@ -238,6 +323,7 @@ class PartySearchItem(BaseModel):
 
 
 class PartySearchResponse(BaseModel):
+    """Модель ответа поиска событий"""
     items: List[PartySearchItem]
     total: int
     page: int
@@ -259,6 +345,7 @@ class PartySearchResponse(BaseModel):
 
 
 class MeetingPlanUpdate(BaseModel):
+    """Модель обновления плана встречи"""
     meet_time: Optional[datetime] = None
     meet_location: Optional[str] = Field(None, max_length=300)
     note: Optional[str] = Field(None, max_length=300)
@@ -270,6 +357,7 @@ class MeetingPlanUpdate(BaseModel):
 
 
 class MeetingPlanResponse(BaseModel):
+    """Модель ответа плана встречи"""
     meet_time: Optional[datetime] = None
     meet_location: Optional[str] = None
     note: Optional[str] = None
@@ -281,6 +369,7 @@ class MeetingPlanResponse(BaseModel):
 
 
 class MeetingPlanHistoryItem(BaseModel):
+    """Модель элемента истории плана встречи"""
     meet_time: Optional[datetime] = None
     meet_location: Optional[str] = None
     note: Optional[str] = None

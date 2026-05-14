@@ -7,8 +7,9 @@ import {
   PartyRecapData, RecapItem, LifecycleStatus,
 } from '../lib/partyRecapApi';
 import { toast } from './Toast';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 const REACTION_EMOJIS = ['🔥', '❤️', '😂', '👏', '🎉', '✨'];
 
 interface Props {
@@ -36,6 +37,7 @@ export default function PartyRecapTab({ partyId, isCreator, myUserId }: Props) {
   const [noteText, setNoteText] = useState('');
   const [posting, setPosting] = useState(false);
   const [lightboxId, setLightboxId] = useState<number | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<RecapItem | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const refresh = useCallback(async () => {
@@ -86,9 +88,13 @@ export default function PartyRecapTab({ partyId, isCreator, myUserId }: Props) {
   };
 
   const handleDelete = async (item: RecapItem) => {
-    if (!confirm('Удалить пост?')) return;
-    const ok = await deleteRecapItem(partyId, item.id);
-    if (ok) refresh();
+    setDeleteTarget(item);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const ok = await deleteRecapItem(partyId, deleteTarget.id);
+    if (ok) { refresh(); setDeleteTarget(null); }
   };
 
   const handlePin = async (item: RecapItem) => {
@@ -206,9 +212,9 @@ export default function PartyRecapTab({ partyId, isCreator, myUserId }: Props) {
 
       {/* Feed */}
       <div className="rounded-2xl p-5" style={card}>
-        <h3 className="font-bold mb-3" style={{ color: 'var(--text)' }}>
+        <h3 className="font-bold mb-3 text-base" style={{ color: 'var(--text)' }}>
           Все воспоминания {items.length > 0 && (
-            <span className="text-xs font-normal" style={{ color: 'var(--text-faint)' }}>· {items.length}</span>
+            <span className="text-sm font-normal" style={{ color: 'var(--text-faint)' }}>· {items.length}</span>
           )}
         </h3>
         {items.length === 0 ? (
@@ -235,6 +241,39 @@ export default function PartyRecapTab({ partyId, isCreator, myUserId }: Props) {
           onChange={setLightboxId}
           onClose={() => setLightboxId(null)}
         />
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div
+            className="w-full max-w-sm rounded-3xl overflow-hidden"
+            style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)' }}
+          >
+            <div className="px-6 py-4 bg-gradient-to-r from-red-500 to-pink-600 flex items-center justify-between">
+              <h3 className="text-white font-black text-base">🗑️ Удалить пост?</h3>
+              <button onClick={() => setDeleteTarget(null)} className="text-white/70 hover:text-white transition text-xl">✕</button>
+            </div>
+            <div className="px-6 py-5">
+              <p className="text-sm" style={{ color: 'var(--text)' }}>
+                Вы уверены, что хотите удалить этот пост? Это действие нельзя отменить.
+              </p>
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button
+                onClick={confirmDelete}
+                className="flex-1 rounded-xl bg-gradient-to-r from-red-500 to-pink-600 py-2.5 text-sm text-white font-bold hover:opacity-90 transition">
+                Удалить
+              </button>
+              <button
+                onClick={() => setDeleteTarget(null)}
+                className="rounded-xl px-4 py-2.5 text-sm font-medium transition hover:opacity-80"
+                style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -278,8 +317,8 @@ function RecapCard({
         </button>
       )}
       <div className="p-3 flex-1 flex flex-col gap-2">
-        <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-[10px] text-white font-bold">
+        <div className="flex items-center gap-2 text-base" style={{ color: 'var(--text-muted)' }}>
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-sm text-white font-bold">
             {item.author_username.slice(0, 2).toUpperCase()}
           </div>
           <span className="font-semibold truncate">{item.author_username}</span>
@@ -288,7 +327,7 @@ function RecapCard({
           </span>
         </div>
         {item.caption && (
-          <p className="text-sm" style={{ color: 'var(--text)' }}>{item.caption}</p>
+          <p className="text-base" style={{ color: 'var(--text)' }}>{item.caption}</p>
         )}
         <div className="flex items-center gap-1.5 flex-wrap mt-auto">
           {REACTION_EMOJIS.map(emoji => {
@@ -297,7 +336,7 @@ function RecapCard({
             return (
               <button key={emoji}
                 onClick={() => onReact(item, emoji)}
-                className="text-xs px-2 py-1 rounded-full transition hover:opacity-80"
+                className="text-base px-3 py-2 rounded-full transition hover:opacity-80"
                 style={{
                   background: mine ? 'var(--primary-hl)' : 'var(--surface)',
                   border: '1px solid var(--border)',
@@ -313,17 +352,17 @@ function RecapCard({
             {isCreator && (
               <button onClick={() => onPin(item)}
                 data-testid={`recap-pin-${item.id}`}
-                className="text-[10px] px-2 py-0.5 rounded-md transition hover:opacity-80"
+                className="text-sm px-3 py-1.5 rounded-md transition hover:opacity-80"
                 style={{
                   color: item.is_pinned_highlight ? 'var(--primary)' : 'var(--text-faint)',
                   background: item.is_pinned_highlight ? 'var(--primary-hl)' : 'transparent',
                 }}>
-                {item.is_pinned_highlight ? '★ Закреплено' : '☆ Закрепить'}
+                {item.is_pinned_highlight ? '📌 Закреплено' : '📌 Закрепить'}
               </button>
             )}
             {isCreator && photo && (
               <button onClick={() => onSetCover(item.media_url!)}
-                className="text-[10px] px-2 py-0.5 rounded-md transition hover:opacity-80"
+                className="text-sm px-3 py-1.5 rounded-md transition hover:opacity-80"
                 style={{ color: 'var(--text-faint)' }}>
                 🖼 Обложка
               </button>
@@ -331,9 +370,9 @@ function RecapCard({
             {canDelete && (
               <button onClick={() => onDelete(item)}
                 data-testid={`recap-delete-${item.id}`}
-                className="ml-auto text-[10px] px-2 py-0.5 rounded-md transition hover:opacity-80"
-                style={{ color: 'var(--error)' }}>
-                🗑
+                className="ml-auto text-sm px-3 py-1.5 rounded-md transition hover:opacity-80"
+                style={{ color: 'var(--error)', border: '1px solid color-mix(in oklch, var(--error) 30%, transparent)' }}>
+                Удалить
               </button>
             )}
           </div>
@@ -461,3 +500,4 @@ function RecapLightbox({
     </div>
   );
 }
+

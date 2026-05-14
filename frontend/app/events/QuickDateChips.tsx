@@ -3,11 +3,11 @@
 import type { QuickDate } from './event-filters';
 
 const CHIPS: { value: QuickDate; label: string }[] = [
-  { value: 'today',    label: 'Сегодня' },
+  { value: 'today', label: 'Сегодня' },
   { value: 'tomorrow', label: 'Завтра' },
-  { value: 'weekend',  label: 'Выходные' },
-  { value: 'week',     label: 'Неделя' },
-  { value: 'month',    label: 'Месяц' },
+  { value: 'weekend', label: 'Выходные' },
+  { value: 'week', label: 'Неделя' },
+  { value: 'month', label: 'Месяц' },
 ];
 
 interface Props {
@@ -23,6 +23,7 @@ export default function QuickDateChips({ active, onSelect }: Props) {
         return (
           <button
             key={c.value}
+            type="button"
             onClick={() => onSelect(on ? null : c.value)}
             aria-pressed={on}
             className="whitespace-nowrap font-semibold transition"

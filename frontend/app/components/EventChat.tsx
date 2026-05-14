@@ -6,8 +6,17 @@ import { Socket } from 'socket.io-client';
 import { useAuth } from '../context/AuthContext';
 import { getSocket } from '../lib/socket';
 import { apiFetch } from '../lib/apiFetch';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
+
+function toMediaUrl(path: string | null): string | null {
+  if (!path) return null;
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  // For uploads, don't add /api prefix since they're served directly
+  if (path.startsWith('/uploads/')) return path;
+  return `${API_BASE}${path}`;
+}
 
 interface Message {
   message: string;
@@ -31,8 +40,11 @@ export default function EventChat({
   const [input, setInput] = useState('');
   const [connected, setConnected] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [userScrolled, setUserScrolled] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const initialScrollDoneRef = useRef(false);
 
   useEffect(() => {
     // Load history — через apiFetch (cookie auth). AbortController чтобы
@@ -91,8 +103,25 @@ export default function EventChat({
   }, [eventId, token]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+
+    if (!initialScrollDoneRef.current && historyLoaded) {
+      initialScrollDoneRef.current = true;
+    }
+  }, [messages, userScrolled, historyLoaded]);
+
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+      setUserScrolled(!isAtBottom);
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const sendMessage = () => {
     const text = input.trim();
@@ -136,6 +165,7 @@ export default function EventChat({
 
       {/* Messages */}
       <div
+        ref={messagesContainerRef}
         className="px-4 py-4 h-72 overflow-y-auto flex flex-col gap-2"
         style={{ background: 'var(--surface-2)' }}
       >
@@ -171,7 +201,7 @@ export default function EventChat({
                     aria-label={`Профиль ${m.username}`}
                   >
                     {m.avatarUrl ? (
-                      <img src={m.avatarUrl} alt={m.username} className="w-full h-full object-cover" />
+                      <img src={toMediaUrl(m.avatarUrl) || undefined} alt={m.username} className="w-full h-full object-cover" />
                     ) : (
                       (m.username || m.userId).slice(0, 1).toUpperCase()
                     )}
@@ -256,6 +286,7 @@ export default function EventChat({
     </div>
   );
 }
+
 
 
 

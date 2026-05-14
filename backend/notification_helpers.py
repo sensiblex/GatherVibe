@@ -18,11 +18,8 @@ def create_notification(
     body: str | None = None,
     data: dict | None = None,
 ) -> Notification:
-    """Create and flush a notification (caller must db.commit()).
-
-    Also dispatches a Web Push to every subscription the user has. Push
-    is best-effort — upstream failures never break in-app notification
-    creation.
+    """
+    Создает и фиксирует уведомление
     """
     n = Notification(
         user_id=user_id,
@@ -49,6 +46,9 @@ def get_user_notifications(
     limit: int = 50,
     offset: int = 0,
 ) -> list[Notification]:
+    """
+    Получает уведомления для пользователя
+    """
     return (
         db.query(Notification)
         .filter(
@@ -75,7 +75,10 @@ def mark_as_read(db: Session, notification_id: int, user_id: int) -> bool:
 
 
 def mark_all_as_read(db: Session, user_id: int) -> int:
-    """Mark all unread notifications for user as read. Returns count updated."""
+    """
+    Помечает все непрочитанные уведомления для пользователя как прочитанные
+    Возвращает количество обновленных уведомлений
+    """
     updated = (
         db.query(Notification)
         .filter(
@@ -91,6 +94,9 @@ def mark_all_as_read(db: Session, user_id: int) -> int:
 
 
 def get_unread_count(db: Session, user_id: int) -> int:
+    """
+    Получает количество непрочитанных уведомлений для пользователя
+    """
     return (
         db.query(Notification)
         .filter(

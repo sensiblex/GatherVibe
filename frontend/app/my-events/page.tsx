@@ -9,8 +9,9 @@ import ReviewModal, { ReviewableUser } from '../components/ReviewModal';
 import { ToastContainer } from '../components/Toast';
 import { translateCategory } from '../events/utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 interface MyEventItem {
   event_id: string;
@@ -243,3 +244,4 @@ export default function MyEventsPage() {
     </div>
   );
 }
+

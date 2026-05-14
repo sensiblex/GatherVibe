@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from datetime import datetime
 
 import resend
@@ -9,11 +10,13 @@ logger = logging.getLogger(__name__)
 resend.api_key = os.getenv("RESEND_API_KEY", "")
 _APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:3000")
 
+EMAIL_REGEX = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+
 _FROM_ADDRESS = "GatherVibe <noreply@gathervibe.ru>"
 
 
 def _hours_label(n: int) -> str:
-    """Correct Russian plural form for hours: 1 час, 2 часа, 5 часов."""
+    """Возвращает правильную форму слова час (1 час, 2 часа, 5 часов)."""
     if n % 10 == 1 and n % 100 != 11:
         return f"{n} час"
     if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
@@ -139,12 +142,16 @@ def send_event_reminder_email(
     members: list[str],
     hours_before: int,
 ) -> bool:
-    """Send an HTML event-reminder email via Resend.
+    """Отправляет email-напоминание о событии через Resend.
 
-    Returns True on success, False on failure.
+    Возвращает True при успехе, False при ошибке.
     """
+    if not EMAIL_REGEX.match(to_email):
+        logger.warning("Некорректный email адрес: %s", to_email)
+        return False
+
     if not resend.api_key:
-        logger.warning("RESEND_API_KEY not configured — skipping reminder email")
+        logger.warning("RESEND_API_KEY не настроен — пропускаем отправку email")
         return False
 
     subject = f"Событие «{event_title}» через {_hours_label(hours_before)}"
@@ -176,7 +183,7 @@ def send_event_reminder_email(
         return True
     except Exception as exc:
         logger.error(
-            "Failed to send reminder email to %s: %s",
+            "Не удалось отправить напоминание на %s: %s",
             recipient,
             exc,
         )

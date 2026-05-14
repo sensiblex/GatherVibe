@@ -1,13 +1,3 @@
-"""
-Party Recap router — post-event memories (photos, notes, reactions).
-
-Lifecycle (computed from EventParty.event_date_ts):
-  planned  : now < start
-  active   : start <= now < start + 2h
-  ended    : start + 2h <= now < start + 2h + 48h   ← upload window
-  archived : now >= start + 2h + 48h                ← read-only
-If event_date_ts is None we treat the party as `active` (no completion known).
-"""
 import os
 import uuid
 import time
@@ -106,6 +96,7 @@ class RecapOut(BaseModel):
 
 
 def _lifecycle(party: EventParty) -> str:
+    """Возвращает статус жизненного цикла компании."""
     if party.event_date_ts is None:
         return "active"
     now = int(time.time())
@@ -122,6 +113,7 @@ def _lifecycle(party: EventParty) -> str:
 
 
 def _load_party(db: Session, party_id: int) -> EventParty:
+    """Загружает компанию или выбрасывает 404."""
     party = db.query(EventParty).filter(EventParty.id == party_id).first()
     if not party:
         raise HTTPException(status_code=404, detail="Компания не найдена")
@@ -129,6 +121,7 @@ def _load_party(db: Session, party_id: int) -> EventParty:
 
 
 def _ensure_accepted_member(db: Session, party: EventParty, user: User) -> None:
+    """Проверяет что пользователь является участником компании."""
     if party.creator_id == user.id:
         return
     member = db.query(PartyMember).filter(
@@ -141,6 +134,7 @@ def _ensure_accepted_member(db: Session, party: EventParty, user: User) -> None:
 
 
 def _get_or_create_recap(db: Session, party: EventParty) -> PartyRecap:
+    """Получает или создаёт объект recap для компании."""
     recap = db.query(PartyRecap).filter(PartyRecap.party_id == party.id).first()
     if recap:
         return recap
@@ -157,6 +151,7 @@ def _serialize_item(
     user_id: int,
     authors_cache: dict[int, User] | None = None,
 ) -> RecapItemOut:
+    """Сериализует элемент recap с реакциями."""
     if authors_cache is not None and item.author_id in authors_cache:
         author = authors_cache[item.author_id]
     else:
@@ -193,6 +188,7 @@ def get_recap(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает воспоминания компании."""
     user = get_current_user_from_token(token, db)
     party = _load_party(db, party_id)
     _ensure_accepted_member(db, party, user)
@@ -224,6 +220,7 @@ def create_recap_item(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Создаёт элемент воспоминания компании."""
     user = get_current_user_from_token(token, db)
     party = _load_party(db, party_id)
     _ensure_accepted_member(db, party, user)
@@ -260,6 +257,7 @@ async def upload_recap_photo(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Загружает фото в воспоминания компании."""
     user = get_current_user_from_token(token, db)
     party = _load_party(db, party_id)
     _ensure_accepted_member(db, party, user)
@@ -269,8 +267,6 @@ async def upload_recap_photo(
                             detail="Воспоминания можно добавлять только после окончания события")
 
     content_type = (file.content_type or "").lower()
-    # Строгий whitelist по MIME — `startswith("image/")` больше не принимаем,
-    # иначе `image/svg+xml` проходит и даёт stored XSS при прямом открытии файла.
     if content_type not in ALLOWED_PHOTO_MIME:
         raise HTTPException(status_code=400, detail=f"Недопустимый тип файла: {content_type}")
 
@@ -320,6 +316,7 @@ def delete_recap_item(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Удаляет элемент воспоминания компании."""
     user = get_current_user_from_token(token, db)
     party = _load_party(db, party_id)
     _ensure_accepted_member(db, party, user)
@@ -346,6 +343,7 @@ def pin_highlight(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Закрепляет элемент воспоминания как highlight."""
     user = get_current_user_from_token(token, db)
     party = _load_party(db, party_id)
     if party.creator_id != user.id:
@@ -380,6 +378,7 @@ def unpin_highlight(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Открепляет элемент воспоминания."""
     user = get_current_user_from_token(token, db)
     party = _load_party(db, party_id)
     if party.creator_id != user.id:
@@ -405,6 +404,7 @@ def set_recap_cover(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Устанавливает обложку воспоминаний компании."""
     user = get_current_user_from_token(token, db)
     party = _load_party(db, party_id)
     if party.creator_id != user.id:
@@ -425,6 +425,7 @@ def react_to_item(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Добавляет реакцию к элементу воспоминания."""
     user = get_current_user_from_token(token, db)
     party = _load_party(db, party_id)
     _ensure_accepted_member(db, party, user)
@@ -457,6 +458,7 @@ def unreact_to_item(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Удаляет реакцию с элемента воспоминания."""
     user = get_current_user_from_token(token, db)
     party = _load_party(db, party_id)
     _ensure_accepted_member(db, party, user)

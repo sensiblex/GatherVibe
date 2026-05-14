@@ -1,5 +1,3 @@
-"""Единый интерфейс записи в AuditLog. Все action-хендлеры админ-роутера должны
-писать через log_action — прямые INSERT в audit_log запрещены."""
 from typing import Any, Optional
 from sqlalchemy.orm import Session
 
@@ -16,6 +14,7 @@ def log_action(
     target_id: str | int,
     extra: Optional[dict[str, Any]] = None,
 ) -> AuditLog:
+    """Записывает действие в журнал аудита."""
     entry = AuditLog(
         actor_id=actor.id,
         actor_role=getattr(actor, "role", "user"),

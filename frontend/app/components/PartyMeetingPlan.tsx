@@ -5,10 +5,11 @@ import dynamic from 'next/dynamic';
 import { Socket } from 'socket.io-client';
 import { apiFetch } from '../lib/apiFetch';
 import { toast } from './Toast';
+import { resolveApiBase } from '../lib/apiBase';
 
 const PartyMeetingMap = dynamic(() => import('./PartyMeetingMap'), { ssr: false });
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 interface MeetingPlan {
   meet_time: string | null;
@@ -462,3 +463,4 @@ export default function PartyMeetingPlan({ partyId, isCreator, socket }: PartyMe
     </div>
   );
 }
+

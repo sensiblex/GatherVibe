@@ -1,15 +1,3 @@
-"""Post-event background jobs.
-
-Three reminders fire AFTER an event finishes, designed to pull users back
-into the app instead of drifting to external messengers:
-
-  +2h   → review reminder    (drives reviews / trust score)
-  +1d   → recap reminder     (drives photo upload while memories are fresh)
-  +14d  → gather-again       (drives repeat events with the same crew)
-
-The runner is sync and takes an explicit `now_ts` so it's trivially testable.
-The background loop in main.py wraps it.
-"""
 import logging
 from typing import Callable
 
@@ -33,6 +21,9 @@ LOOKBACK_WINDOW_SECONDS = 7 * 24 * 3600
 
 
 def _accepted_recipients(db: Session, party: EventParty) -> set[int]:
+    """
+    Получить список ID пользователей, которые приняли участие в компании.
+    """
     rows = (
         db.query(PartyMember)
         .filter(PartyMember.party_id == party.id, PartyMember.status == "accepted")
@@ -48,6 +39,9 @@ _BodyFn = Callable[[EventParty], str]
 
 
 def _jobs() -> list[tuple[int, str, _TitleFn, _BodyFn]]:
+    """
+    Возвращает список задач для выполнения после окончания компании.
+    """
     return [
         (
             POST_EVENT_REVIEW_DELAY,
@@ -75,9 +69,8 @@ def run_post_event_jobs(
     now_ts: int,
     lookback_window: int = LOOKBACK_WINDOW_SECONDS,
 ) -> dict[str, int]:
-    """Dispatch any due post-event reminders. Returns counts per notif type.
-
-    Idempotent: each (user, party, notif_type) triple is sent at most once.
+    """
+    Отправляет напоминания пользователям после окончания компаний
     """
     counts: dict[str, int] = {
         NOTIF_REVIEW_REMINDER: 0,

@@ -9,7 +9,7 @@ TDD тесты для системы отзывов.
 
 Используем in-memory SQLite + фикстуры из conftest.py.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import time
 import pytest
 from fastapi.testclient import TestClient
@@ -160,7 +160,7 @@ def test_summary_excludes_hidden_and_deleted(client: TestClient, db, user_a, use
 def test_summary_pagination(client: TestClient, db, user_a, user_b):
     party = _make_past_party(db, creator_id=user_a.id, members=[user_b.id])
     reviewers = [_make_user(db, f"r{i}", f"r{i}@x.x") for i in range(15)]
-    base = datetime.utcnow()
+    base = datetime.now(timezone.utc)
     for i, u in enumerate(reviewers):
         _seed_review(
             db,
@@ -301,3 +301,45 @@ def test_unknown_tag_still_rejected(client: TestClient, db, user_a, user_b, toke
         headers=_auth(token_a),
     )
     assert resp.status_code == 400
+
+
+def test_post_revives_soft_deleted_review(client: TestClient, db, user_a, user_b, token_a):
+    party = _make_past_party(db, creator_id=user_a.id, members=[user_b.id])
+
+    # Create initial review
+    r1 = client.post(
+        "/reviews",
+        json={
+            "reviewed_id": user_b.id,
+            "party_id": party.id,
+            "rating": 5,
+            "text": "first",
+            "tags": ["Пунктуальный"],
+        },
+        headers=_auth(token_a),
+    )
+    assert r1.status_code == 200, r1.text
+    first_id = r1.json()["id"]
+
+    # Soft-delete it (DELETE /reviews/{id})
+    d = client.delete(f"/reviews/{first_id}", headers=_auth(token_a))
+    assert d.status_code in (204, 200), d.text
+
+    # POST again with same reviewer/reviewed/party should revive, not crash or create duplicate
+    r2 = client.post(
+        "/reviews",
+        json={
+            "reviewed_id": user_b.id,
+            "party_id": party.id,
+            "rating": 2,
+            "text": "second",
+            "tags": ["Грубый"],
+        },
+        headers=_auth(token_a),
+    )
+    assert r2.status_code == 200, r2.text
+    body2 = r2.json()
+    assert body2["id"] == first_id
+    assert body2["rating"] == 2
+    assert body2["text"] == "second"
+    assert set(body2.get("tags") or []) == {"Грубый"}

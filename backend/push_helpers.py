@@ -19,15 +19,6 @@ _vapid_load_error: Exception | None = None
 
 
 def _get_vapid() -> Vapid | None:
-    """Build (and cache) a py_vapid.Vapid instance from the configured env var.
-
-    Accepts any of:
-      * base64-encoded PEM (how production stores it — one line in .env)
-      * raw PEM string (``-----BEGIN PRIVATE KEY-----`` ... multi-line)
-      * raw base64url 32-byte EC private key (what py_vapid.from_string expects)
-
-    Returns None (and logs once) if the key is missing or malformed.
-    """
     global _vapid_instance, _vapid_load_error
     if _vapid_instance is not None:
         return _vapid_instance
@@ -69,10 +60,8 @@ def send_push(
     body: str,
     data: dict = None,
 ) -> bool:
-    """Send a Web Push notification to a single subscription.
-
-    Returns False when the subscription is expired (HTTP 410/404).
-    Returns True for every other outcome (success or transient error).
+    """
+    Отправляет push уведомление на endpoint
     """
     vapid = _get_vapid()
     if vapid is None:
@@ -125,9 +114,8 @@ def send_push_to_user(
     body: str,
     data: dict = None,
 ) -> None:
-    """Send a Web Push notification to all subscriptions of a user.
-
-    Subscriptions that return HTTP 410/404 are removed from the database.
+    """
+    Отправляет push уведомление всем подпискам пользователя.
     """
     subscriptions = (
         db.query(PushSubscription)

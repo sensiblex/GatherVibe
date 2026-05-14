@@ -1,8 +1,3 @@
-"""
-Асинхронный клиент для API KudaGo.
-Переписанная версия с использованием httpx и async/await.
-Поддержка конкурентной обработки запросов, кэширования и мониторинга.
-"""
 import httpx
 import time
 import asyncio
@@ -16,6 +11,7 @@ from kudago_api_models import (
 )
 from kudago_api_cache import cached
 from kudago_api_monitor import monitor_async_request
+from kudago_common import safe_str as _safe_str
 
 logger = logging.getLogger("kudago_api_async")
 
@@ -25,13 +21,13 @@ KUDAGO_TIMEZONE = ZoneInfo("Europe/Moscow")
 
 
 def _format_kudago_timestamp(ts: int) -> tuple[str, str]:
+    """
+    Преобразовать timestamp в дату и время
+    """
     import datetime
 
     dt = datetime.datetime.fromtimestamp(ts, tz=KUDAGO_TIMEZONE)
     return dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M")
-
-
-# ==================== Асинхронный HTTP-клиент ====================
 
 class KudaGoAsyncClient:
     """Асинхронный клиент для API KudaGo."""
@@ -74,7 +70,6 @@ class KudaGoAsyncClient:
         return response.json()
 
 
-# Глобальный экземпляр клиента
 _client: Optional[KudaGoAsyncClient] = None
 
 
@@ -94,7 +89,6 @@ async def close_client():
         _client = None
 
 
-# ==================== API методы ====================
 
 @monitor_async_request
 @cached(ttl=300, key_prefix="events")
@@ -108,19 +102,7 @@ async def get_events(
     actual_until: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
-    Получить список событий.
-    
-    Args:
-        location: Город (kzn, msk, spb и т.д.)
-        categories: Категории через запятую
-        is_free: Только бесплатные
-        page: Номер страницы
-        page_size: Размер страницы
-        actual_since: Начало периода (timestamp)
-        actual_until: Конец периода (timestamp)
-    
-    Returns:
-        Словарь с событиями
+    Получить список событий
     """
     now_ts = int(time.time())
     params: Dict[str, Any] = {
@@ -158,19 +140,6 @@ async def search(
 ) -> Dict[str, Any]:
     """
     Поиск событий и мест.
-    
-    Args:
-        query: Поисковый запрос
-        ctype: Тип контента (event, place)
-        location: Город
-        is_free: Только бесплатные
-        page: Номер страницы
-        page_size: Размер страницы
-        actual_since: Начало периода
-        actual_until: Конец периода
-    
-    Returns:
-        Результаты поиска
     """
     now_ts = int(time.time())
     params: Dict[str, Any] = {
@@ -198,12 +167,6 @@ async def search(
 async def get_event_by_id(event_id: int) -> Dict[str, Any]:
     """
     Получить событие по ID.
-    
-    Args:
-        event_id: ID события
-    
-    Returns:
-        Детали события
     """
     params = {
         "fields": "id,title,short_title,description,body_text,categories,tags,price,is_free,age_restriction,images,dates,place,site_url,participants",
@@ -218,13 +181,7 @@ async def get_event_by_id(event_id: int) -> Dict[str, Any]:
 @cached(ttl=3600, key_prefix="events_today")
 async def get_events_today(location: str = "kzn") -> Dict[str, Any]:
     """
-    Получить события на сегодня.
-    
-    Args:
-        location: Город
-    
-    Returns:
-        События на сегодня
+    Получить события на сегодня
     """
     import datetime
     today = datetime.date.today()
@@ -244,10 +201,7 @@ async def get_events_today(location: str = "kzn") -> Dict[str, Any]:
 @cached(ttl=3600, key_prefix="categories")
 async def get_event_categories() -> List[Dict[str, Any]]:
     """
-    Получить список категорий событий.
-    
-    Returns:
-        Список категорий
+    Получить список категорий событий
     """
     client = get_client()
     data = await client._request("GET", "event-categories")
@@ -261,10 +215,7 @@ async def get_event_categories() -> List[Dict[str, Any]]:
 @cached(ttl=86400, key_prefix="locations")
 async def get_locations() -> List[Dict[str, Any]]:
     """
-    Получить список доступных локаций.
-    
-    Returns:
-        Список локаций
+    Получить список доступных локаций
     """
     client = get_client()
     data = await client._request("GET", "locations")
@@ -274,20 +225,9 @@ async def get_locations() -> List[Dict[str, Any]]:
     return data.get("results", data)
 
 
-# ==================== Функции парсинга ====================
-
-from kudago_common import safe_str as _safe_str  # noqa: E402
-
-
 async def parse_events(raw: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
-    Парсить сырые данные событий в структурированный формат.
-    
-    Args:
-        raw: Сырые данные от API
-    
-    Returns:
-        Список событий
+    Парсить сырые данные событий в структурированный формат
     """
     import time
     now_ts = int(time.time())
@@ -334,12 +274,10 @@ async def parse_events(raw: Dict[str, Any]) -> List[Dict[str, Any]]:
                 if start_ts and start_ts < nearest_future_ts:
                     nearest_future_ts = start_ts
                     selected_date = d
-            
             if selected_date and selected_date.get("start"):
                 start_date, start_time = _format_kudago_timestamp(selected_date["start"])
         else:
-            # Нет будущих дат — событие уже прошло, пропускаем
-            continue  # ← ИСПРАВЛЕНИЕ
+            continue 
         
         place = e.get("place") or {}
         images = e.get("images") or []
@@ -383,13 +321,7 @@ async def parse_events(raw: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 async def parse_event_detail(e: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Парсить детальную информацию о событии.
-    
-    Args:
-        e: Сырые данные события
-    
-    Returns:
-        Детали события
+    Парсить детальную информацию о событии
     """
     import time
     now_ts = int(time.time())
@@ -436,7 +368,6 @@ async def parse_event_detail(e: Dict[str, Any]) -> Dict[str, Any]:
             start_date, start_time = _format_kudago_timestamp(selected_date["start"])
     else:
         # Нет будущих дат — событие уже прошло, не добавляем даты
-        # start_date и start_time остаются None, all_dates пуст
         pass
     
     place = e.get("place") or {}
@@ -486,22 +417,12 @@ async def parse_event_detail(e: Dict[str, Any]) -> Dict[str, Any]:
         "site_url": e.get("site_url", ""),
     }
 
-
-# ==================== Конкурентные запросы ====================
-
 async def get_multiple_events(
     event_ids: List[int],
     max_concurrent: int = 10
 ) -> List[Dict[str, Any]]:
     """
-    Получить несколько событий конкурентно.
-    
-    Args:
-        event_ids: Список ID событий
-        max_concurrent: Максимальное количество параллельных запросов
-    
-    Returns:
-        Список событий
+    Получить несколько событий
     """
     semaphore = asyncio.Semaphore(max_concurrent)
     
@@ -522,15 +443,7 @@ async def search_and_get_details(
     max_events: int = 5
 ) -> List[Dict[str, Any]]:
     """
-    Поиск событий с получением деталей конкурентно.
-    
-    Args:
-        query: Поисковый запрос
-        location: Город
-        max_events: Максимальное количество событий для получения деталей
-    
-    Returns:
-        Список событий с деталями
+    Поиск событий с получением деталей
     """
     # Поиск событий
     search_results = await search(query=query, location=location, page_size=max_events)
@@ -547,18 +460,9 @@ async def search_and_get_details(
     
     return details
 
-
-# ==================== Валидация с Pydantic ====================
-
 async def get_events_validated(request: EventsRequest) -> EventsResponse:
     """
-    Получить события с валидацией через Pydantic.
-    
-    Args:
-        request: Валидированный запрос
-    
-    Returns:
-        Валидированный ответ
+    Получить события с валидацией
     """
     raw = await get_events(
         location=request.location,
@@ -582,13 +486,7 @@ async def get_events_validated(request: EventsRequest) -> EventsResponse:
 
 async def get_event_detail_validated(event_id: int) -> EventDetailResponse:
     """
-    Получить детали события с валидацией через Pydantic.
-    
-    Args:
-        event_id: ID события
-    
-    Returns:
-        Валидированный ответ
+    Получить детали события с валидацией
     """
     raw = await get_event_by_id(event_id)
     event = await parse_event_detail(raw)
@@ -600,13 +498,7 @@ async def get_event_detail_validated(event_id: int) -> EventDetailResponse:
 
 async def search_validated(request: SearchRequest) -> SearchResponse:
     """
-    Поиск с валидацией через Pydantic.
-    
-    Args:
-        request: Валидированный запрос
-    
-    Returns:
-        Валидированный ответ
+    Поиск с валидацией
     """
     raw = await search(
         query=request.query,

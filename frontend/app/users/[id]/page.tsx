@@ -10,8 +10,9 @@ import { toast, ToastContainer } from '../../components/Toast';
 import UserReviewsBlock from '../../components/UserReviewsBlock';
 import ReportButton from '../../components/ReportButton';
 import { getInterestLabel } from '../../lib/interests';
+import { resolveApiBase } from '../../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 // Только публичные поля — email, hashed_password, is_active намеренно исключены
 interface PublicUser {
@@ -513,3 +514,4 @@ export default function UserProfilePage() {
     </div>
   );
 }
+

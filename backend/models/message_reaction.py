@@ -1,8 +1,9 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Index, Integer, String, ForeignKey, UniqueConstraint
 from database import Base
 
 
 class MessageReaction(Base):
+    """ Реакции на сообщения в чате """
     __tablename__ = "message_reactions"
 
     id         = Column(Integer, primary_key=True, index=True)
@@ -13,4 +14,5 @@ class MessageReaction(Base):
 
     __table_args__ = (
         UniqueConstraint("message_id", "user_id", "emoji", name="uq_reaction_message_user_emoji"),
+        Index("ix_message_reactions_message_user", "message_id", "user_id"),
     )

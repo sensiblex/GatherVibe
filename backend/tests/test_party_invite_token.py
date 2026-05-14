@@ -234,3 +234,41 @@ def test_join_by_token_notifies_creator(
     assert r.status_code == 200
     creator_pushes = [c for c in calls if c["user_id"] == user_a.id]
     assert len(creator_pushes) >= 1
+
+def test_create_party_persists_explicit_event_date_ts(client: TestClient, db, user_a, token_a):
+    explicit_ts = 1780000000
+    created = _create_party(
+        client,
+        token_a,
+        body={"title": "Dated party", "max_members": 4, "event_date_ts": explicit_ts},
+        event_id="event_with_date",
+    )
+    assert created["event_date_ts"] == explicit_ts
+
+    row = db.query(EventParty).filter(EventParty.id == created["id"]).first()
+    assert row is not None
+    assert row.event_date_ts == explicit_ts
+
+
+def test_create_party_rejects_too_far_event_date(client: TestClient, token_a):
+    import time
+    too_far_ts = int(time.time()) + (181 * 24 * 3600)
+    r = client.post(
+        "/parties/event/event_far_date",
+        json={"title": "Far date", "max_members": 4, "event_date_ts": too_far_ts},
+        headers=_auth(token_a),
+    )
+    assert r.status_code == 400
+    assert "слишком далек" in r.text.lower() or "далек" in r.text.lower()
+
+
+def test_create_party_rejects_past_event_date(client: TestClient, token_a):
+    import time
+    past_ts = int(time.time()) - (2 * 3600)
+    r = client.post(
+        "/parties/event/event_past_date",
+        json={"title": "Past date", "max_members": 4, "event_date_ts": past_ts},
+        headers=_auth(token_a),
+    )
+    assert r.status_code == 400
+    assert "detail" in r.text

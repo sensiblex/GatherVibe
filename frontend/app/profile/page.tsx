@@ -7,12 +7,21 @@ import { apiFetch } from '../lib/apiFetch';
 import { useAuth } from '../context/AuthContext';
 import Navbar from '../components/Navbar';
 import UserReviewsBlock from '../components/UserReviewsBlock';
+import { CityAutocomplete } from '../components/CityAutocomplete';
 import { INTERESTS_LIST, getInterestLabel } from '../lib/interests';
 import { translateCategory } from '../events/utils';
 import { capitalizeFirstDisplayChar } from '../lib/text';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-const IMGBB_KEY = process.env.NEXT_PUBLIC_IMGBB_KEY || '';
+const API_BASE = resolveApiBase();
+
+function toMediaUrl(path?: string | null): string | null {
+  if (!path) return null;
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  // For uploads, don't add /api prefix since they're served directly
+  if (path.startsWith('/uploads/')) return path;
+  return `${API_BASE}${path}`;
+}
 
 interface User {
   id: number;
@@ -47,8 +56,10 @@ function EditProfileModal({
   onSave: (updated: User) => void;
   onClose: () => void;
 }) {
+  const { refreshUser } = useAuth();
   const [username, setUsername] = useState(user.username);
   const [city, setCity] = useState(user.city || '');
+  const [cityValid, setCityValid] = useState(!!user.city);
   const [bio, setBio] = useState(user.bio || '');
   const [selectedInterests, setSelectedInterests] = useState<string[]>(
     user.interests ? user.interests.split(',').map(s => s.trim()).filter(Boolean) : []
@@ -62,8 +73,14 @@ function EditProfileModal({
     );
   };
 
+  const handleCityChange = (newCity: string, isValid: boolean) => {
+    setCity(newCity);
+    setCityValid(isValid);
+  };
+
   const handleSave = async () => {
     if (!username.trim()) { setError('Username не может быть пустым'); return; }
+    if (city && !cityValid) { setError('Выберите город из списка'); return; }
     setLoading(true);
     setError('');
     try {
@@ -83,6 +100,12 @@ function EditProfileModal({
         return;
       }
       onSave(await res.json());
+      // Refresh user data in AuthContext after profile update
+      await refreshUser();
+      // Clear stored city filter so profile city takes effect on events page
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('events_city');
+      }
     } catch {
       setError('Не удалось сохранить');
     }
@@ -114,10 +137,13 @@ function EditProfileModal({
               style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
           </div>
           <div>
-            <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Город</label>
-            <input value={city} onChange={e => setCity(e.target.value)} placeholder="Казань"
-              className="w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+            <CityAutocomplete
+              value={city}
+              onChange={handleCityChange}
+              label="Город"
+              placeholder="Начните вводить город..."
+              error={error && !cityValid && city ? 'Выберите город из списка' : undefined}
+            />
           </div>
           <div>
             <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--text)' }}>О себе</label>
@@ -355,17 +381,6 @@ function PrivacyModal({ onClose }: { onClose: () => void }) {
 }
 
 // ──────────────────────────────────────────────────────────────────
-async function uploadToImgbb(file: File): Promise<string> {
-  if (!IMGBB_KEY) throw new Error('NEXT_PUBLIC_IMGBB_KEY не задан в .env.local');
-  const form = new FormData();
-  form.append('image', file);
-  const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_KEY}`, { method: 'POST', body: form });
-  const data = await res.json() as { success: boolean; data: { url: string }; error?: { message: string } };
-  if (!data.success) throw new Error(data.error?.message || 'Ошибка загрузки изображения');
-  return data.data.url;
-}
-
-// ──────────────────────────────────────────────────────────────────
 type MemberStatus = 'pending' | 'accepted' | 'rejected' | 'left';
 
 interface PartyMemberOut {
@@ -591,6 +606,7 @@ export default function ProfilePage() {
   const [passOpen, setPassOpen]       = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
+  const [avatarTimestamp, setAvatarTimestamp] = useState(Date.now());
   const [avatarError, setAvatarError] = useState('');
   const [activeTab, setActiveTab]     = useState<'parties' | 'events'>('parties');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -634,15 +650,18 @@ export default function ProfilePage() {
     if (file.size > 5 * 1024 * 1024) { setAvatarError('Файл слишком большой (макс. 5 МБ)'); return; }
     setAvatarLoading(true); setAvatarError('');
     try {
-      const url = await uploadToImgbb(file);
-      const res = await apiFetch(`${API_BASE}/users/me`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ avatar_url: url }),
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await apiFetch(`${API_BASE}/users/me/avatar`, {
+        method: 'POST',
+        body: formData,
       });
       if (!res.ok) throw new Error('Не удалось обновить аватар');
-      setUser(await res.json() as User);
-      localStorage.setItem('avatar_url', url);
+      const data = await res.json() as { avatar_url: string };
+      setUser(prev => prev ? { ...prev, avatar_url: data.avatar_url } : prev);
+      localStorage.setItem('avatar_url', toMediaUrl(data.avatar_url) || '');
+      const newTimestamp = Date.now();
+      setAvatarTimestamp(newTimestamp);
       window.dispatchEvent(new Event('avatar:updated'));
     } catch (err: unknown) {
       setAvatarError(err instanceof Error ? err.message : 'Не удалось загрузить фото');
@@ -673,7 +692,7 @@ export default function ProfilePage() {
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
       <div className="flex flex-col items-center justify-center py-32 gap-4">
-        <span className="text-5xl">😕</span>
+        <span className="text-5xl">⚠️</span>
         <p style={{ color: 'var(--error)' }}>{error}</p>
         <button onClick={() => router.push('/')} className="gv-btn-primary">На главную</button>
       </div>
@@ -710,7 +729,7 @@ export default function ProfilePage() {
         <div className="profile-head">
           <div style={{ position: 'relative' }}>
             {user?.avatar_url ? (
-              <img src={user.avatar_url} alt={user.username}
+              <img src={`${toMediaUrl(user.avatar_url) || ''}?t=${avatarTimestamp}`} alt={user.username}
                 style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover' }} />
             ) : (
               <div className="av av-xl">{initials}</div>
@@ -764,25 +783,6 @@ export default function ProfilePage() {
             <button onClick={() => setEditOpen(true)} className="btn btn-ink btn-sm profile-action-btn">Редактировать</button>
             <button onClick={() => setPassOpen(true)} className="btn btn-ghost btn-sm profile-action-btn">Сменить пароль</button>
             <button onClick={() => setPrivacyOpen(true)} className="btn btn-ghost btn-sm profile-action-btn">Приватность</button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm profile-action-btn"
-              data-testid="export-data"
-              onClick={async () => {
-                const r = await apiFetch('/users/me/export');
-                if (!r.ok) return;
-                const data = await r.json();
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `gathervibe-export-${data.profile?.id}-${new Date().toISOString().slice(0, 10)}.json`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-            >
-              Экспорт данных
-            </button>
             <button onClick={handleLogout} className="btn btn-ghost btn-sm profile-action-btn profile-action-danger">Выйти</button>
           </div>
         </div>
@@ -831,3 +831,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+

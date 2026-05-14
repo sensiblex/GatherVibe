@@ -1,5 +1,4 @@
 """Appeals: забаненные пользователи могут подать апелляцию.
-
 ВАЖНО: get_current_user_from_token обычно блокирует забаненных (403).
 Здесь передаём allow_banned=True, чтобы принять jwt забаненного.
 """
@@ -26,6 +25,7 @@ def create_appeal(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Создаёт апелляцию от забаненного пользователя."""
     # Принимаем даже забаненного юзера
     me = get_current_user_from_token(token, db, allow_banned=True)
 

@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import { Socket } from 'socket.io-client';
 import { apiFetch } from '../../lib/apiFetch';
 import { toast } from '../Toast';
+import { resolveApiBase } from '../../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 interface AttendanceRecord {
   user_id: number;
@@ -110,6 +111,15 @@ export default function AttendanceBar({
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const timer = window.setInterval(() => {
+      setCooldownSeconds((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [cooldownSeconds]);
 
   useEffect(() => {
     apiFetch(`${API_BASE}/parties/${partyId}/attendance`)
@@ -155,9 +165,10 @@ export default function AttendanceBar({
     ? records.find((r) => r.user_id === currentUserId)
     : undefined;
   const myStatus = myRecord?.status ?? null;
+  const isCooldownActive = cooldownSeconds > 0;
 
   const handleStatusClick = async (status: AttendanceStatus) => {
-    if (!currentUserId || updating) return;
+    if (!currentUserId || updating || isCooldownActive) return;
 
     const newStatus: AttendanceStatus | null = myStatus === status ? null : status;
     setUpdating(true);
@@ -169,8 +180,16 @@ export default function AttendanceBar({
       });
       if (!res.ok) {
         const d = await res.json();
+        if (res.status === 429) {
+          const detail = typeof d?.detail === 'string' ? d.detail : '';
+          const match = detail.match(/(\d+)/);
+          const seconds = match ? Number(match[1]) : 60;
+          setCooldownSeconds(Number.isFinite(seconds) && seconds > 0 ? seconds : 60);
+        }
         toast(d?.detail ?? 'Ошибка обновления', 'error');
+        return;
       }
+      setCooldownSeconds(60);
       // State will be updated via socket event; optimistically update as well
       setRecords((prev) => {
         const filtered = prev.filter((r) => r.user_id !== currentUserId);
@@ -255,7 +274,7 @@ export default function AttendanceBar({
                 <button
                   key={s}
                   onClick={() => handleStatusClick(s)}
-                  disabled={updating}
+                  disabled={updating || isCooldownActive}
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-50 hover:opacity-80"
                   style={
                     isActive
@@ -280,9 +299,15 @@ export default function AttendanceBar({
                 </button>
               );
             })}
+            {isCooldownActive && (
+              <span className="text-xs self-center" style={{ color: 'var(--text-faint)' }}>
+                Обновить статус можно через {cooldownSeconds} сек.
+              </span>
+            )}
           </div>
         )}
       </div>
     </div>
   );
 }
+

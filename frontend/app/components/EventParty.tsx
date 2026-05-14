@@ -8,8 +8,9 @@ import { apiFetch } from '../lib/apiFetch';
 import { toast } from './Toast';
 import { capitalizeFirstDisplayChar } from '../lib/text';
 import { extractApiErrorMessage } from '../lib/apiErrors';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 const POLL_INTERVAL = 5000;
 
 export interface PartyMember {
@@ -46,7 +47,6 @@ const cardStyle = {
   border: '1px solid var(--border)',
 };
 
-// ─── JoinModal ────────────────────────────────────────────────────────
 function JoinModal({
   party,
   token,
@@ -360,10 +360,13 @@ export default function EventParty({
           </p>
         </div>
         <button
-          onClick={() => token
-            ? router.push(`/events/${urlEventId}/create-party`)
-            : (window.location.href = '/login')
-          }
+          onClick={() => {
+            if (token) {
+              window.location.href = `/events/${eventId}/create-party`;
+            } else {
+              window.location.href = '/login';
+            }
+          }}
           className="text-white text-sm font-bold px-4 py-1.5 rounded-full hover:opacity-90 shadow-sm transition"
           style={{ background: 'linear-gradient(135deg,#9333ea,#ec4899)' }}
         >
@@ -399,3 +402,4 @@ export default function EventParty({
     </div>
   );
 }
+

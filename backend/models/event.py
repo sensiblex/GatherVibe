@@ -12,21 +12,19 @@ class Event(Base):
     location = Column(String(300))
     address = Column(String(500))
     city = Column(String(100))
-    category = Column(String(50))  # концерт, выставка, фестиваль, мастер-класс
+    category = Column(String(50))  
     price = Column(Float, default=0.0)
     max_participants = Column(Integer, nullable=True)
     current_participants = Column(Integer, default=0)
     image_url = Column(String(500), nullable=True)
-    external_link = Column(String(500), nullable=True)  # ссылка на билеты
+    external_link = Column(String(500), nullable=True) 
     is_active = Column(Boolean, default=True)
 
-    # Связи
+
     created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Listing endpoint `/events` фильтрует по is_active + сортирует по date_time
-    # — без composite index это seq scan при росте таблицы.
     __table_args__ = (
         Index("ix_events_active_date", "is_active", "date_time"),
     )

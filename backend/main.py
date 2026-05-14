@@ -1,27 +1,21 @@
 import asyncio
 import logging
 import socketio
-
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
+from datetime import datetime, timezone
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime
+from fastapi.staticfiles import StaticFiles
+import os as _os
+from urllib.parse import urlparse as _urlparse
 
-logger = logging.getLogger(__name__)
-
+from deps import (
+    get_user_from_socket_token,
+)
 from services.db_schema import (
     ensure_db_schema_compatibility,
     get_current_schema_check_mode,
 )
-from deps import (
-    get_db,
-    get_current_user_from_token,
-    get_user_from_socket_token,
-    oauth2_scheme,
-    oauth2_scheme_optional,
-)
-
 from sio_instance import sio  # noqa: E402
 from database import SessionLocal  # noqa: E402
 from models.chat_message import ChatMessage  # noqa: E402
@@ -33,8 +27,9 @@ import chat_push  # noqa: E402
 
 import kudago_cache  # noqa: E402
 
-CACHE_SYNC_INTERVAL = 3600  # секунды между синками (1 час)
-REMINDER_LOOP_INTERVAL = 900  # 15 минут
+CACHE_SYNC_INTERVAL = 3600  # Интервал синхронизации кэша (1 час)
+REMINDER_LOOP_INTERVAL = 900  # Интервал цикла напоминаний (15 минут)
+REMINDER_BATCH_SIZE = 100  # Размер пакета для обработки
 
 
 async def _cache_sync_loop():
@@ -43,9 +38,9 @@ async def _cache_sync_loop():
         try:
             loop = asyncio.get_event_loop()
             stats = await loop.run_in_executor(None, kudago_cache.sync_all)
-            logger.info("KudaGo cache sync done: %s", stats)
+            logger.info("Синхронизация кэша KudaGo завершена: %s", stats)
         except Exception as exc:
-            logger.error("KudaGo cache sync error: %s", exc)
+            logger.error("Ошибка синхронизации кэша KudaGo: %s", exc)
         await asyncio.sleep(CACHE_SYNC_INTERVAL)
 
 
@@ -82,6 +77,7 @@ async def _reminder_loop():
                             EventParty.event_date_ts >= target_low,
                             EventParty.event_date_ts <= target_high,
                         )
+                        .limit(REMINDER_BATCH_SIZE)
                         .all()
                     )
                     if not parties:
@@ -149,7 +145,7 @@ async def _reminder_loop():
                                 )
                                 db.commit()
                             except Exception as exc:
-                                logger.error("Reminder loop create/commit error: %s", exc)
+                                logger.error("Ошибка создания/фиксации в цикле напоминаний: %s", exc)
                                 db.rollback()
                                 continue
 
@@ -175,18 +171,18 @@ async def _reminder_loop():
                     if email_jobs:
                         for send_result in await asyncio.gather(*email_jobs, return_exceptions=True):
                             if isinstance(send_result, Exception):
-                                logger.warning("Failed to send reminder email: %s", send_result)
+                                logger.warning("Не удалось отправить email-напоминание: %s", send_result)
             except Exception as exc:
-                logger.error("Reminder loop inner error: %s", exc)
+                logger.error("Внутренняя ошибка цикла напоминаний: %s", exc)
                 db.rollback()
             finally:
                 db.close()
         except Exception as exc:
-            logger.error("Reminder loop error: %s", exc)
+            logger.error("Ошибка цикла напоминаний: %s", exc)
 
 
 async def _post_event_loop():
-    """Background task: every 15 min dispatch +2h / +1d / +14d post-event reminders."""
+    """Фоновая задача: каждые 15 минут отправляет напоминания после события (+2ч / +1д / +14д)."""
     import time
     from post_event_jobs import run_post_event_jobs
 
@@ -199,11 +195,11 @@ async def _post_event_loop():
                     None, run_post_event_jobs, db, int(time.time())
                 )
                 if any(counts.values()):
-                    logger.info("post_event_jobs sent: %s", counts)
+                    logger.info("post_event_jobs отправлено: %s", counts)
             finally:
                 db.close()
         except Exception as exc:
-            logger.error("Post-event loop error: %s", exc)
+            logger.error("Ошибка цикла post-event: %s", exc)
 
 
 async def _invite_expiry_loop():
@@ -218,7 +214,7 @@ async def _invite_expiry_loop():
                 expired_ids = expire_pending_invites(db)
                 if expired_ids:
                     db.commit()
-                    logger.info("Expired %d party invites near event start", len(expired_ids))
+                    logger.info("Истёкло %d приглашений к компании рядом с началом события", len(expired_ids))
                     for mid in expired_ids:
                         m = db.query(PartyMember).filter(PartyMember.id == mid).first()
                         if not m or m.invited_by_user_id is None:
@@ -232,12 +228,12 @@ async def _invite_expiry_loop():
                         except Exception:
                             pass
             except Exception as exc:
-                logger.error("Invite expiry inner error: %s", exc)
+                logger.error("Внутренняя ошибка цикла истечения приглашений: %s", exc)
                 db.rollback()
             finally:
                 db.close()
         except Exception as exc:
-            logger.error("Invite expiry loop error: %s", exc)
+            logger.error("Ошибка цикла истечения приглашений: %s", exc)
 
 
 async def _db_cleanup_loop():
@@ -250,35 +246,37 @@ async def _db_cleanup_loop():
     import logging as _lg
     logger = _lg.getLogger(__name__)
     from models.token_revocation import RevokedToken
-    from datetime import datetime
+    from datetime import datetime, timezone
+
     from sqlalchemy import delete as sa_delete
     while True:
         try:
             await asyncio.sleep(3600)
             db = SessionLocal()
             try:
-                now = datetime.utcnow()
+                now = datetime.now(timezone.utc)
                 try:
                     r1 = db.execute(sa_delete(RevokedToken).where(RevokedToken.exp < now))
                     db.commit()
                     logger.info("db_cleanup: revoked=%s", r1.rowcount)
                 except Exception as exc:
-                    logger.warning("db_cleanup inner error: %s", exc)
+                    logger.warning("Внутренняя ошибка db_cleanup: %s", exc)
                     db.rollback()
             finally:
                 db.close()
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            logger.error("db_cleanup loop error: %s", exc)
+            logger.error("Ошибка цикла db_cleanup: %s", exc)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Управляет жизненным циклом приложения: запускает фоновые задачи."""
     import os as _os_lifespan
 
     schema_check_mode = get_current_schema_check_mode()
-    logger.info("Schema check mode: %s", schema_check_mode)
+    logger.info("Режим проверки схемы: %s", schema_check_mode)
     ensure_db_schema_compatibility(mode=schema_check_mode)
 
     if _os_lifespan.environ.get("SKIP_BACKGROUND_LOOPS") == "1":
@@ -286,14 +284,14 @@ async def lifespan(app: FastAPI):
         return
     loop = asyncio.get_event_loop()
     if not kudago_cache.location_has_cache_direct("kzn"):
-        logger.info("[KudaGo] Cache empty — syncing kzn on startup...")
+        logger.info("[KudaGo] Кэш пуст — синхронизация kzn при запуске...")
         try:
             n = await loop.run_in_executor(None, lambda: kudago_cache.sync_location("kzn", pages=3))
-            logger.info(f"[KudaGo] kzn sync done: {n} events")
+            logger.info(f"[KudaGo] Синхронизация kzn завершена: {n} событий")
         except Exception as exc:
-            logger.error(f"[KudaGo] kzn sync FAILED: {exc}")
+            logger.error(f"[KudaGo] Синхронизация kzn не удалась: {exc}")
     else:
-        logger.info("[KudaGo] kzn cache already populated, skipping startup sync")
+        logger.info("[KudaGo] Кэш kzn уже заполнен, пропускаем синхронизацию при запуске")
     cache_task = asyncio.create_task(_cache_sync_loop())
     reminder_task = asyncio.create_task(_reminder_loop())
     invite_expiry_task = asyncio.create_task(_invite_expiry_loop())
@@ -309,10 +307,54 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="GatherVibe API", lifespan=lifespan)
 
-from fastapi.staticfiles import StaticFiles  # noqa: E402
-import os as _os  # noqa: E402
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger(__name__)
+
 _os.makedirs("uploads/chat", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+_os.makedirs("uploads/avatars", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="/app/uploads"), name="uploads")
+
+DEFAULT_MAX_REQUEST_SIZE_BYTES = 10 * 1024 * 1024  # Максимальный размер запроса (10 МБ)
+app.state.max_request_size_bytes = int(
+    _os.environ.get("MAX_REQUEST_SIZE_BYTES", DEFAULT_MAX_REQUEST_SIZE_BYTES)
+)
+
+
+@app.middleware("http")
+async def request_size_limit_middleware(request, call_next):
+    """Ограничивает размер входящего HTTP-запроса."""
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > app.state.max_request_size_bytes:
+                from fastapi.responses import JSONResponse
+
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": "Размер запроса превышает допустимый лимит"},
+                )
+        except ValueError:
+            pass
+    return await call_next(request)
+
+
+_CSP_HEADER_VALUE = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: https:; "
+    "font-src 'self'; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none';"
+)
+
+
+@app.middleware("http")
+async def csp_middleware(request, call_next):
+    """Добавляет Content-Security-Policy заголовок ко всем ответам."""
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = _CSP_HEADER_VALUE
+    return response
 
 app.add_middleware(
     CORSMiddleware,
@@ -322,14 +364,17 @@ app.add_middleware(
         "http://localhost:3001",
         "http://127.0.0.1:3001",
         "http://localhost:8000",
-        "http://127.0.0.1:8000"
+        "http://127.0.0.1:8000",
+        "http://127.0.0.1:53669",
+        "http://127.0.0.1:49907"
     ],
+    allow_origin_regex=r"^http://(127\.0\.0\.1|localhost):\d+$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-from routers import auth, users, events, parties, reviews, notifications, party_coordination  # noqa: E402
+from routers import auth, users, events, parties, reviews, notifications, party_coordination, avatars  # noqa: E402
 from routers.party_plan import router as party_plan_router  # noqa: E402
 from routers.party_recap import router as party_recap_router  # noqa: E402
 from routers.admin import router as admin_router  # noqa: E402
@@ -346,19 +391,42 @@ app.include_router(party_plan_router)
 app.include_router(party_recap_router)
 app.include_router(reviews.router)
 app.include_router(users.router)
+app.include_router(avatars.router)
 app.include_router(events.router)
 app.include_router(notifications.router)
 
 
 @app.get("/")
 def read_root():
+    """Корневой эндпоинт для проверки работы API."""
     return {"message": "GatherVibe API работает!"}
 
 
 @app.get("/health")
 def health_check():
+    """Эндпоинт для проверки здоровья сервиса."""
     return {"status": "ok", "service": "gathervibe-backend"}
 
+
+PARTY_MESSAGE_ALLOWED_HTTPS_HOSTS = {
+    host.strip().lower()
+    for host in _os.environ.get(
+        "PARTY_MESSAGE_ALLOWED_HTTPS_HOSTS",
+        "localhost,127.0.0.1",
+    ).split(",")
+    if host.strip()
+}
+
+
+def is_allowed_party_file_url(file_url: str) -> bool:
+    """Проверяет, является ли URL файла допустимым для сообщений компании."""
+    if file_url.startswith("/uploads/"):
+        return True
+    parsed = _urlparse(file_url)
+    if parsed.scheme != "https":
+        return False
+    host = (parsed.hostname or "").lower()
+    return host in PARTY_MESSAGE_ALLOWED_HTTPS_HOSTS and parsed.path.startswith("/uploads/")
 
 
 def _extract_token_from_environ(environ: dict) -> str | None:
@@ -380,6 +448,7 @@ def _extract_token_from_environ(environ: dict) -> str | None:
 
 @sio.event
 async def connect(sid, environ):
+    """Обработка подключения клиента к Socket.IO с аутентификацией по cookie."""
     # Пытаемся аутентифицировать по cookie ещё на handshake и сохранить user_id
     # в сессии sio. Если токена нет / невалиден — соединение остаётся анонимным
     # (события типа join_event_chat потом отклонят такие sid).
@@ -389,8 +458,8 @@ async def connect(sid, environ):
         try:
             user = get_user_from_socket_token(token, db)
             await sio.save_session(sid, {"user_id": user.id, "username": user.username})
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Socket auth failed for sid %s: %s", sid, exc)
         finally:
             db.close()
     logger.info(f"Client {sid} connected")
@@ -423,15 +492,15 @@ async def _authenticate_sid(sid, data, db):
 
 @sio.event
 async def disconnect(sid):
+    """Обработка отключения клиента от Socket.IO."""
     logger.info(f"Client {sid} disconnected")
     chat_push.mark_disconnect(sid)
 
 
-
 @sio.on('join_event_chat')
 async def join_event_chat(sid, data):
-    if data is not None and not isinstance(data, dict):
-        data = {}
+    """Пользователь присоединяется к чату события."""
+    data = _normalize_socket_data(data)
     db = SessionLocal()
     try:
         user = await _authenticate_sid(sid, data, db)
@@ -440,32 +509,15 @@ async def join_event_chat(sid, data):
         await sio.emit('error', {'message': 'Требуется авторизация'}, room=sid)
         db.close()
         return
-    event_id = (data or {}).get('eventId')
+    event_id = data.get('eventId')
     if not event_id:
         db.close()
         return
-    # event_attendees.event_id хранится как строка (поддержка и числовых local id,
-    # и KudaGo id). Если для этого event_id есть запись в нашей events-таблице —
-    # это локальное событие, требуем attendance. Иначе считаем KudaGo (публичный чат).
-    event_id_str = str(event_id)
-    from models.attendee import EventAttendee
-    from models.event import Event
-    is_local = False
-    try:
-        local_id = int(event_id_str)
-        is_local = db.query(Event).filter(Event.id == local_id).first() is not None
-    except (ValueError, TypeError):
-        pass
-    if is_local:
-        is_attendee = db.query(EventAttendee).filter(
-            EventAttendee.event_id == event_id_str,
-            EventAttendee.user_id == user.id,
-        ).first()
-        if not is_attendee:
-            logger.warning(f"join_event_chat: user {user.id} не подписан на event {event_id_str}, sid={sid}")
-            await sio.emit('error', {'message': 'Нужно быть участником события'}, room=sid)
-            db.close()
-            return
+    if not _check_event_attendance(db, event_id, user.id):
+        logger.warning(f"join_event_chat: user {user.id} не подписан на event {event_id}, sid={sid}")
+        await sio.emit('error', {'message': 'Нужно быть участником события'}, room=sid)
+        db.close()
+        return
     await sio.enter_room(sid, f'event_{event_id}')
     await sio.emit('user_joined', {'sid': sid, 'userId': user.id, 'username': user.username}, room=f'event_{event_id}')
     db.close()
@@ -478,20 +530,69 @@ def _socket_sanction_block(user) -> str | None:
         return "Вы заблокированы"
     muted_until = getattr(user, "muted_until", None)
     if muted_until is not None:
-        now = datetime.utcnow()
-        mu = muted_until.replace(tzinfo=None) if getattr(muted_until, "tzinfo", None) else muted_until
-        if mu > now:
+        now = datetime.now(timezone.utc)
+        if muted_until.tzinfo is None:
+            muted_until = muted_until.replace(tzinfo=timezone.utc)
+        if muted_until > now:
             return "Вы временно не можете отправлять сообщения"
     return None
 
 
-@sio.on('send_message')
-async def send_message(sid, data: dict):
-    if data is not None and not isinstance(data, dict):
-        data = {}
+def _check_party_access(db, party: EventParty, user_id: int) -> bool:
+    """Проверяет, имеет ли пользователь доступ к чату компании."""
+    if party.creator_id == user_id:
+        return True
+    return db.query(PartyMember).filter(
+        PartyMember.party_id == party.id,
+        PartyMember.user_id == user_id,
+        PartyMember.status == MemberStatus.accepted,
+    ).first() is not None
+
+
+def _check_event_attendance(db, event_id: str | int, user_id: int) -> bool:
+    """Проверяет, имеет ли пользователь доступ к чату события."""
+    from models.attendee import EventAttendee
+    from models.event import Event
+
+    event_id_str = str(event_id)
+    try:
+        local_id = int(event_id_str)
+        is_local = db.query(Event).filter(Event.id == local_id).first() is not None
+    except (ValueError, TypeError):
+        is_local = False
+
+    if is_local:
+        return db.query(EventAttendee).filter(
+            EventAttendee.event_id == event_id_str,
+            EventAttendee.user_id == user_id,
+        ).first() is not None
+    return True  # События KudaGo публичные
+
+
+def _normalize_socket_data(data: any) -> dict:
+    """Нормализует данные из Socket.IO в dict."""
+    if data is None or not isinstance(data, dict):
+        return {}
+    return data
+
+
+@contextmanager
+def get_db_session():
+    """Context manager для управления сессией БД."""
     db = SessionLocal()
     try:
-        user = await _authenticate_sid(sid, data or {}, db)
+        yield db
+    finally:
+        db.close()
+
+
+@sio.on('send_message')
+async def send_message(sid, data: dict):
+    """Отправляет сообщение в чат события."""
+    data = _normalize_socket_data(data)
+    db = SessionLocal()
+    try:
+        user = await _authenticate_sid(sid, data, db)
     except (ValueError, Exception) as e:
         await sio.emit('error', {'message': str(e)}, room=sid)
         db.close()
@@ -507,26 +608,10 @@ async def send_message(sid, data: dict):
         db.close()
         await sio.emit('error', {'message': 'eventId и message обязательны'}, room=sid)
         return
-    # Same attendance check as join_event_chat: нельзя писать в чат локальных
-    # событий, на которое ты не записан. Для KudaGo (отсутствует в events) — публично.
-    event_id_str = str(event_id)
-    from models.attendee import EventAttendee
-    from models.event import Event
-    is_local = False
-    try:
-        local_id = int(event_id_str)
-        is_local = db.query(Event).filter(Event.id == local_id).first() is not None
-    except (ValueError, TypeError):
-        pass
-    if is_local:
-        is_attendee = db.query(EventAttendee).filter(
-            EventAttendee.event_id == event_id_str,
-            EventAttendee.user_id == user.id,
-        ).first()
-        if not is_attendee:
-            db.close()
-            await sio.emit('error', {'message': 'Нужно быть участником события'}, room=sid)
-            return
+    if not _check_event_attendance(db, event_id, user.id):
+        db.close()
+        await sio.emit('error', {'message': 'Нужно быть участником события'}, room=sid)
+        return
     if len(message_text) > 2000:
         db.close()
         await sio.emit('error', {'message': 'Сообщение слишком длинное (макс. 2000 символов)'}, room=sid)
@@ -541,7 +626,7 @@ async def send_message(sid, data: dict):
         'userId':    str(user.id),
         'username':  user.username,
         'avatarUrl': user.avatar_url,
-        'timestamp': datetime.utcnow().isoformat()
+        'timestamp': datetime.now(timezone.utc).isoformat()
     }
     try:
         db.add(ChatMessage(
@@ -549,7 +634,7 @@ async def send_message(sid, data: dict):
             user_id=str(user.id),
             username=user.username,
             message=message_text,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         ))
         db.commit()
     finally:
@@ -559,22 +644,22 @@ async def send_message(sid, data: dict):
 
 @sio.on('leave_event_chat')
 async def leave_event_chat(sid, event_id: str):
+    """Пользователь покидает чат события."""
     await sio.leave_room(sid, f'event_{event_id}')
-
 
 
 @sio.on('join_party_chat')
 async def join_party_chat(sid, data: dict):
-    if data is not None and not isinstance(data, dict):
-        data = {}
+    """Пользователь присоединяется к чату компании."""
+    data = _normalize_socket_data(data)
     db = SessionLocal()
     try:
-        user = await _authenticate_sid(sid, data or {}, db)
+        user = await _authenticate_sid(sid, data, db)
     except (ValueError, Exception) as e:
         await sio.emit('error', {'message': str(e)}, room=sid)
         db.close()
         return
-    party_id = (data or {}).get('partyId')
+    party_id = data.get('partyId')
     if not party_id:
         await sio.emit('error', {'message': 'partyId отсутствует'}, room=sid)
         db.close()
@@ -584,13 +669,7 @@ async def join_party_chat(sid, data: dict):
         await sio.emit('error', {'message': 'Пати не найдена'}, room=sid)
         db.close()
         return
-    is_creator = party.creator_id == user.id
-    is_member = db.query(PartyMember).filter(
-        PartyMember.party_id == party_id,
-        PartyMember.user_id == user.id,
-        PartyMember.status == MemberStatus.accepted,
-    ).first() is not None
-    if not (is_creator or is_member):
+    if not _check_party_access(db, party, user.id):
         await sio.emit('error', {'message': 'Нет доступа к этому чату'}, room=sid)
         db.close()
         return
@@ -616,16 +695,17 @@ ALLOWED_PARTY_MESSAGE_FILE_TYPES = {
 
 
 def _is_allowed_party_file_type(file_type: str) -> bool:
+    """Проверяет, разрешён ли тип файла для сообщений компании."""
     return file_type in ALLOWED_PARTY_MESSAGE_FILE_TYPES
 
 
 @sio.on('send_party_message')
 async def send_party_message(sid, data: dict):
-    if data is not None and not isinstance(data, dict):
-        data = {}
+    """Отправляет сообщение в чат компании."""
+    data = _normalize_socket_data(data)
     db = SessionLocal()
     try:
-        user = await _authenticate_sid(sid, data or {}, db)
+        user = await _authenticate_sid(sid, data, db)
     except (ValueError, Exception) as e:
         logger.warning("send_party_message: auth failed sid=%s err=%s", sid, e)
         await sio.emit('error', {'message': str(e)}, room=sid)
@@ -645,15 +725,14 @@ async def send_party_message(sid, data: dict):
         await sio.emit('error', {'message': 'partyId и message (или file_url) обязательны'}, room=sid)
         db.close()
         return
-    # Валидация file_url: принимаем только локальные /uploads/* и https URL
-    # (без javascript:, data:, file: — иначе stored XSS через href/src).
+    # Валидация file_url: принимаем только локальные /uploads/* и https://<allowed-host>/uploads/*.
     if file_url:
         if not isinstance(file_url, str) or len(file_url) > 500:
             await sio.emit('error', {'message': 'Некорректный file_url'}, room=sid)
             db.close()
             return
-        if not (file_url.startswith('/uploads/') or file_url.startswith('https://')):
-            await sio.emit('error', {'message': 'file_url должен быть /uploads/... или https://...'}, room=sid)
+        if not is_allowed_party_file_url(file_url):
+            await sio.emit('error', {'message': 'file_url должен быть /uploads/... или https://<allowed-host>/uploads/...'}, room=sid)
             db.close()
             return
     if file_type and (not isinstance(file_type, str) or not _is_allowed_party_file_type(file_type)):
@@ -675,21 +754,8 @@ async def send_party_message(sid, data: dict):
         except Exception:
             pass
 
-    db2 = SessionLocal()
-    try:
-        party = db2.query(EventParty).filter(EventParty.id == party_id).first()
-        is_member = party and (
-            party.creator_id == user.id or
-            db2.query(PartyMember).filter(
-                PartyMember.party_id == party_id,
-                PartyMember.user_id == user.id,
-                PartyMember.status == MemberStatus.accepted,
-            ).first() is not None
-        )
-    finally:
-        db2.close()
-
-    if not is_member:
+    party = db.query(EventParty).filter(EventParty.id == party_id).first()
+    if not party or not _check_party_access(db, party, user.id):
         await sio.emit('error', {'message': 'Нет доступа к этому чату'}, room=sid)
         db.close()
         return
@@ -700,7 +766,7 @@ async def send_party_message(sid, data: dict):
             user_id=str(user.id),
             username=user.username,
             message=message_text,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             file_url=file_url,
             file_type=file_type,
             file_name=file_name,
@@ -720,7 +786,7 @@ async def send_party_message(sid, data: dict):
         'userId':    user_id_str,
         'username':  user_username,
         'avatarUrl': user_avatar,
-        'timestamp': datetime.utcnow().isoformat(),
+        'timestamp': datetime.now(timezone.utc).isoformat(),
         'partyId':   party_id,
         'fileUrl':   file_url,
         'fileType':  file_type,
@@ -750,6 +816,7 @@ async def send_party_message(sid, data: dict):
 
 @sio.on('leave_party_chat')
 async def leave_party_chat(sid, data: dict):
+    """Пользователь покидает чат компании."""
     party_id = (data or {}).get('partyId')
     if not party_id:
         return
@@ -762,11 +829,11 @@ ALLOWED_REACTION_EMOJIS = {'👍', '❤️', '😂'}
 
 @sio.on('add_party_reaction')
 async def add_party_reaction(sid, data: dict):
-    if data is not None and not isinstance(data, dict):
-        data = {}
-    party_id = (data or {}).get('party_id')
-    message_id = (data or {}).get('message_id')
-    emoji = (data or {}).get('emoji')
+    """Добавляет или удаляет реакцию на сообщение в чате компании."""
+    data = _normalize_socket_data(data)
+    party_id = data.get('party_id')
+    message_id = data.get('message_id')
+    emoji = data.get('emoji')
     if not party_id or not message_id or not emoji:
         await sio.emit('error', {'message': 'party_id, message_id и emoji обязательны'}, room=sid)
         return
@@ -777,21 +844,13 @@ async def add_party_reaction(sid, data: dict):
     db = SessionLocal()
     try:
         try:
-            user = await _authenticate_sid(sid, data or {}, db)
+            user = await _authenticate_sid(sid, data, db)
         except (ValueError, Exception) as e:
             await sio.emit('error', {'message': str(e)}, room=sid)
             return
 
         party = db.query(EventParty).filter(EventParty.id == party_id).first()
-        is_member = party and (
-            party.creator_id == user.id or
-            db.query(PartyMember).filter(
-                PartyMember.party_id == party_id,
-                PartyMember.user_id == user.id,
-                PartyMember.status == MemberStatus.accepted,
-            ).first() is not None
-        )
-        if not is_member:
+        if not party or not _check_party_access(db, party, user.id):
             await sio.emit('error', {'message': 'Нет доступа к этому чату'}, room=sid)
             return
 
@@ -836,6 +895,7 @@ async def add_party_reaction(sid, data: dict):
 
 @sio.on('subscribe_notifications')
 async def subscribe_notifications(sid, data: dict):
+    """Подписывает пользователя на личные уведомления."""
     if data is not None and not isinstance(data, dict):
         data = {}
     db = SessionLocal()
@@ -848,7 +908,7 @@ async def subscribe_notifications(sid, data: dict):
     finally:
         db.close()
     await sio.enter_room(sid, f'user_{user.id}')
-    logger.info(f"[notifications] {sid} subscribed to user_{user.id}")
+    logger.info(f"[notifications] {sid} подписан на user_{user.id}")
 
 
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app)

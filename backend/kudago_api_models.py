@@ -1,12 +1,7 @@
-"""
-Pydantic-модели для валидации входных и выходных данных API KudaGo.
-"""
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Any
 from pydantic import BaseModel, Field, field_validator
 
-
-# ==================== Входные модели (запросы) ====================
 
 class EventsRequest(BaseModel):
     """Модель запроса для получения списка событий."""
@@ -38,6 +33,14 @@ class SearchRequest(BaseModel):
     actual_since: Optional[int] = Field(default=None, description="Начало периода")
     actual_until: Optional[int] = Field(default=None, description="Конец периода")
 
+    @field_validator("ctype")
+    @classmethod
+    def validate_ctype(cls, v: str) -> str:
+        allowed = {"event", "place"}
+        if v not in allowed:
+            raise ValueError(f"ctype должен быть одним из: {allowed}")
+        return v
+
 
 class EventByIdRequest(BaseModel):
     """Модель запроса для получения события по ID."""
@@ -48,8 +51,6 @@ class EventsTodayRequest(BaseModel):
     """Модель запроса для получения событий на сегодня."""
     location: str = Field(default="kzn", description="Город")
 
-
-# ==================== Выходные модели (ответы) ====================
 
 class EventImage(BaseModel):
     """Модель изображения события."""
@@ -147,13 +148,11 @@ class LocationsResponse(BaseModel):
     locations: List[Any] = Field(..., description="Список локаций")
 
 
-# ==================== Модели для мониторинга ====================
-
 class APIHealthStatus(BaseModel):
     """Модель статуса здоровья API."""
     status: str = Field(..., description="Статус (healthy, degraded, unhealthy)")
     latency_ms: float = Field(..., description="Задержка в миллисекундах")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Время проверки")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="Время проверки")
     service: str = Field(default="kudago_api", description="Название сервиса")
 
 

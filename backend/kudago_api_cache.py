@@ -1,8 +1,8 @@
 """
-Система кэширования для API KudaGo.
-Поддержка Redis и in-memory кэширования (lru_cache).
+Система кэширования
 """
 import hashlib
+import inspect
 import json
 import logging
 import time
@@ -11,9 +11,6 @@ from functools import wraps
 from dataclasses import dataclass
 
 logger = logging.getLogger("kudago_api_cache")
-
-
-# ==================== Конфигурация кэша ====================
 
 @dataclass
 class CacheConfig:
@@ -32,10 +29,8 @@ class CacheConfig:
 cache_config = CacheConfig()
 
 
-# ==================== In-memory кэш ====================
-
 class InMemoryCache:
-    """Простой in-memory кэш с TTL и LRU вытеснением."""
+    """Простой in-memory кэш"""
     
     def __init__(self, max_size: int = 1000):
         self._cache = {}
@@ -67,6 +62,8 @@ class InMemoryCache:
         
         # LRU: удалить старые записи если кэш полон
         if len(self._cache) >= self._max_size and hashed_key not in self._cache:
+            if not self._timestamps:
+                return
             oldest_key = min(self._timestamps, key=self._timestamps.get)
             del self._cache[oldest_key]
             del self._timestamps[oldest_key]
@@ -98,7 +95,6 @@ class InMemoryCache:
         }
 
 
-# ==================== Redis кэш ====================
 
 class RedisCache:
     """Кэш на базе Redis."""
@@ -206,10 +202,10 @@ class RedisCache:
             return {"size": 0, "type": "error", "error": str(e)}
 
 
-# ==================== Фабрика кэша ====================
-
 def get_cache() -> Any:
-    """Получить экземпляр кэша в зависимости от конфигурации."""
+    """
+    Получить экземпляр кэша
+    """
     if cache_config.use_redis:
         return RedisCache(
             host=cache_config.redis_host,
@@ -224,22 +220,18 @@ def get_cache() -> Any:
 _cache_instance = None
 
 def get_cache_instance() -> Any:
-    """Получить глобальный экземпляр кэша (singleton)."""
+    """
+    Получить глобальный экземпляр кэша
+    """
     global _cache_instance
     if _cache_instance is None:
         _cache_instance = get_cache()
     return _cache_instance
 
 
-# ==================== Декораторы кэширования ====================
-
 def cached(ttl: Optional[int] = None, key_prefix: str = ""):
     """
-    Декоратор для кэширования результатов функции.
-    
-    Args:
-        ttl: Время жизни кэша в секундах
-        key_prefix: Префикс для ключа кэша
+    Декоратор для кэширования
     """
     def decorator(func: Callable) -> Callable:
         @wraps(func)
@@ -248,7 +240,7 @@ def cached(ttl: Optional[int] = None, key_prefix: str = ""):
                 return func(*args, **kwargs)
             
             # Создание ключа кэша
-            cache_key = f"{key_prefix}:{func.__name__}:{str(args)}:{str(kwargs)}"
+            cache_key = f"{key_prefix}:{func.__name__}:{json.dumps(args, default=str)}:{json.dumps(kwargs, default=str)}"
             
             cache = get_cache_instance()
             cached_value = cache.get(cache_key)
@@ -274,7 +266,7 @@ def cached(ttl: Optional[int] = None, key_prefix: str = ""):
                 return await func(*args, **kwargs)
             
             # Создание ключа кэша
-            cache_key = f"{key_prefix}:{func.__name__}:{str(args)}:{str(kwargs)}"
+            cache_key = f"{key_prefix}:{func.__name__}:{json.dumps(args, default=str)}:{json.dumps(kwargs, default=str)}"
             
             cache = get_cache_instance()
             cached_value = cache.get(cache_key)
@@ -295,27 +287,25 @@ def cached(ttl: Optional[int] = None, key_prefix: str = ""):
             return result
         
         # Возвращаем соответствующую обёртку
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             return async_wrapper
         return sync_wrapper
     
     return decorator
 
 
-# Для поддержки asyncio
-import asyncio
-
-
-# ==================== Утилиты ====================
-
 def clear_cache():
-    """Очистить кэш."""
+    """
+    Очистить кэш
+    """
     cache = get_cache_instance()
     cache.clear()
 
 
 def get_cache_stats() -> dict:
-    """Получить статистику кэша."""
+    """
+    Получить статистику кэша
+    """
     cache = get_cache_instance()
     return cache.get_stats()
 
@@ -329,7 +319,9 @@ def configure_cache(
     redis_password: Optional[str] = None,
     default_ttl: int = 300,
 ):
-    """Настроить кэширование."""
+    """
+    Настроить кэш
+    """
     cache_config.enabled = enabled
     cache_config.use_redis = use_redis
     cache_config.redis_host = redis_host

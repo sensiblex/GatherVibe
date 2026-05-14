@@ -1,4 +1,3 @@
-"""Текстовый фильтр на основе BannedWord. Возвращает отредактированный текст и флаг изменения."""
 import re
 from typing import Tuple
 from sqlalchemy.orm import Session
@@ -9,12 +8,7 @@ _REPLACEMENT = "***"
 
 
 def filter_text(db: Session, text: str) -> Tuple[str, bool]:
-    """Заменяет совпадения на ***. Возвращает (text, was_changed).
-
-    - pattern с is_regex=False: case-insensitive literal search.
-    - pattern с is_regex=True: компилируется как Python regex (IGNORECASE).
-    Невалидный regex игнорируется (safe fallback).
-    """
+    """Заменяет совпадения на ***. Возвращает (text, was_changed)."""
     if not text:
         return text, False
     rows = db.query(BannedWord).all()

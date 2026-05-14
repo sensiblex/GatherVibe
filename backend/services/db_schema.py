@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def _load_model_modules() -> None:
-    """Import all ORM models so that Base.metadata is fully populated."""
+    """Импортирует все ORM модели для заполнения Base.metadata."""
     import models.user  # noqa: F401
     import models.event  # noqa: F401
     import models.attendee  # noqa: F401
@@ -34,6 +34,7 @@ def _load_model_modules() -> None:
 
 
 def _required_schema() -> dict[str, set[str]]:
+    """Возвращает ожидаемую схему БД из моделей."""
     _load_model_modules()
     required: dict[str, set[str]] = {}
     for table in Base.metadata.sorted_tables:
@@ -42,6 +43,7 @@ def _required_schema() -> dict[str, set[str]]:
 
 
 def _resolve_mode(raw_mode: str | None) -> str:
+    """Определяет режим проверки схемы по переменным окружения."""
     if raw_mode:
         mode = raw_mode.strip().lower()
         if mode in {"strict", "soft", "skip"}:
@@ -67,6 +69,7 @@ def _resolve_mode(raw_mode: str | None) -> str:
 
 
 def _schema_issues(bind: Engine) -> tuple[list[str], dict[str, list[str]]]:
+    """Находит отсутствующие таблицы и колонки в БД."""
     inspector = inspect(bind)
     existing_tables = set(inspector.get_table_names())
     required = _required_schema()
@@ -87,6 +90,7 @@ def _schema_issues(bind: Engine) -> tuple[list[str], dict[str, list[str]]]:
 
 
 def _format_error(missing_tables: list[str], missing_columns: dict[str, list[str]]) -> str:
+    """Формирует сообщение об ошибке несоответствия схемы."""
     parts: list[str] = ["Database schema mismatch detected."]
 
     if missing_tables:
@@ -110,12 +114,7 @@ def ensure_db_schema_compatibility(
     bind: Engine | None = None,
     mode: str | None = None,
 ) -> None:
-    """Validate that required models exist in DB schema.
-
-    `strict` raises RuntimeError and fails startup.
-    `soft` logs warning and returns.
-    `skip` bypasses checks.
-    """
+    """Проверяет соответствие схемы БД моделям."""
     check_mode = _resolve_mode(mode)
     if check_mode == "skip":
         logger.warning("SCHEMA_CHECK_MODE=skip/SKIP_SCHEMA_CHECK -> schema compatibility check skipped.")
@@ -145,4 +144,5 @@ def ensure_db_schema_compatibility(
 
 
 def get_current_schema_check_mode() -> str:
+    """Возвращает текущий режим проверки схемы."""
     return _resolve_mode(os.getenv("SCHEMA_CHECK_MODE"))

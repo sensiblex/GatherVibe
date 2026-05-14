@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func as sa_func
+from sqlalchemy import func as sa_func, or_, String
 from sqlalchemy.orm import Session
 from typing import Literal, Optional, List
 from datetime import datetime, timezone
@@ -17,6 +17,7 @@ from models.user import User
 from models.event import Event
 from models.attendee import EventAttendee
 from models.party import EventParty, PartyMember
+from models.kudago_event import KudaGoEvent
 from notification_helpers import create_notification
 import push_helpers
 
@@ -26,6 +27,8 @@ def _san(cls, v):
 
 
 router = APIRouter(tags=["parties"])
+MAX_EVENT_DATE_FUTURE_DAYS = 180
+PAST_EVENT_DATE_GRACE_SECONDS = 5 * 60
 
 
 def _require_creator(party: EventParty, current_user: User, action: str) -> None:
@@ -57,6 +60,7 @@ class PartyCreateBody(BaseModel):
     title: str = Field(..., min_length=1, max_length=60)
     description: Optional[str] = Field(None, max_length=500)
     max_members: int = Field(4, ge=2, le=50)
+    event_date_ts: Optional[int] = None
 
     _san = field_validator("title", "description", mode="before")(_san)
 
@@ -124,6 +128,7 @@ class PartyMemberOut(BaseModel):
     username: str
     city: Optional[str]
     interests: Optional[str]
+    avatar_url: Optional[str] = None
     status: MemberStatus
     joined_at: datetime
     message: Optional[str] = None
@@ -142,6 +147,7 @@ class PartyOut(BaseModel):
     max_members: int
     creator_id: int
     creator_username: str
+    creator_avatar_url: Optional[str] = None
     is_open: bool
     members: List[PartyMemberOut]
     event_title: Optional[str] = None
@@ -170,7 +176,7 @@ class PartyInvitePreviewOut(BaseModel):
 
 
 def _ensure_invite_token(party: EventParty, db: Session) -> str:
-    """Lazy-fill missing invite_token for legacy parties."""
+    """Заполняет отсутствующий invite_token для старых компаний."""
     token = getattr(party, "invite_token", None)
     if not token:
         token = uuid.uuid4().hex
@@ -180,9 +186,7 @@ def _ensure_invite_token(party: EventParty, db: Session) -> str:
 
 
 def _build_party_out(party: EventParty, db: Session, viewer_id: Optional[int] = None) -> PartyOut:
-    # Делегируем на bulk-версию (2 запроса вместо 2× на party). Так исключаем
-    # дивёргенцию между одиночной и списковой формами и получаем то же самое
-    # bulk-оптимизированное поведение для любого callera.
+    """Строит объект PartyOut с участниками."""
     result = _build_parties_out_bulk([party], db, viewer_id=viewer_id)
     return result[0]
 
@@ -192,11 +196,6 @@ def _build_parties_out_bulk(
     db: Session,
     viewer_id: Optional[int] = None,
 ) -> List[PartyOut]:
-    """Batch-версия _build_party_out: 2 запроса на весь список вместо 2×N.
-
-    - Одним запросом подтягивает всех creator'ов.
-    - Одним запросом — всех members (с join на User) по списку party_id.
-    """
     if not parties:
         return []
     # creators: один IN-запрос
@@ -227,7 +226,7 @@ def _build_parties_out_bulk(
         members = [
             PartyMemberOut(
                 id=m.id, user_id=u.id, username=u.username, city=u.city,
-                interests=u.interests, status=m.status, joined_at=m.joined_at,
+                interests=u.interests, avatar_url=u.avatar_url, status=m.status, joined_at=m.joined_at,
                 message=m.message, invited_by_user_id=m.invited_by_user_id,
                 invite_message=m.invite_message,
             )
@@ -240,6 +239,7 @@ def _build_parties_out_bulk(
             description=party.description, max_members=party.max_members,
             creator_id=party.creator_id,
             creator_username=creator.username if creator else "?",
+            creator_avatar_url=creator.avatar_url if creator else None,
             is_open=party.is_open, members=members,
             event_title=party.event_title, event_date_ts=party.event_date_ts,
             event_image_url=party.event_image_url,
@@ -250,8 +250,7 @@ def _build_parties_out_bulk(
 
 
 def _check_and_close_party(party: EventParty, db: Session) -> bool:
-    """Checks party capacity. Must be called AFTER db.flush() with member already accepted.
-    Returns True if the party was just closed."""
+    """Проверяет заполненность компании и закрывает если нужно."""
     accepted_total = (
         db.query(PartyMember).filter(
             PartyMember.party_id == party.id,
@@ -270,7 +269,7 @@ def _check_and_close_party(party: EventParty, db: Session) -> bool:
 
 
 async def _notify_party_closed(party: EventParty, db: Session, exclude_user_ids: set) -> None:
-    """Sends party_closed notifications to all accepted members, excluding specified user IDs."""
+    """Отправляет уведомления о закрытии компании участникам."""
     members = db.query(PartyMember).filter(
         PartyMember.party_id == party.id,
         PartyMember.status == MemberStatus.accepted,
@@ -306,6 +305,7 @@ def get_my_parties(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает компании пользователя."""
     user = get_current_user_from_token(token, db)
 
     created = db.query(EventParty).filter(EventParty.creator_id == user.id).all()
@@ -329,6 +329,7 @@ def get_my_pending_requests(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Возвращает ожидающие заявки в компании пользователя."""
     current_user = get_current_user_from_token(token, db)
     rows = (
         db.query(PartyMember, User, EventParty)
@@ -362,7 +363,7 @@ def get_my_pending_requests(
 @router.get("/parties/search", response_model=PartySearchResponse)
 def search_parties(
     q: Optional[str] = Query(default=None, max_length=200),
-    city: Optional[str] = Query(default=None, max_length=100),
+    city: Optional[List[str]] = Query(default=None, max_length=100),
     date_from: Optional[datetime] = Query(default=None),
     date_to: Optional[datetime] = Query(default=None),
     min_members: Optional[int] = Query(default=None, ge=1),
@@ -374,6 +375,7 @@ def search_parties(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Ищет компании с фильтрацией и пагинацией."""
     get_current_user_from_token(token, db)
     def _to_unix_ts(dt: Optional[datetime]) -> Optional[int]:
         if dt is None:
@@ -383,6 +385,13 @@ def search_parties(
 
     date_from_ts = _to_unix_ts(date_from)
     date_to_ts = _to_unix_ts(date_to)
+
+    city_filters = [
+        item.strip()
+        for raw in (city or [])
+        for item in raw.split(",")
+        if item.strip()
+    ]
 
     member_count_sq = (
         db.query(
@@ -403,6 +412,7 @@ def search_parties(
         )
         .join(User, EventParty.creator_id == User.id)
         .outerjoin(member_count_sq, EventParty.id == member_count_sq.c.party_id)
+        .outerjoin(KudaGoEvent, EventParty.event_id == sa_func.cast(KudaGoEvent.kudago_id, String))
         .filter(EventParty.is_hidden == False)  # noqa: E712 — исключаем скрытые модератором
     )
 
@@ -412,8 +422,8 @@ def search_parties(
             EventParty.title.ilike(pattern) | EventParty.description.ilike(pattern)
         )
 
-    if city and city.strip():
-        base_q = base_q.filter(EventParty.city.ilike(f"%{city.strip()}%"))
+    if city_filters:
+        base_q = base_q.filter(or_(*[KudaGoEvent.location == item for item in city_filters]))
 
     if date_from_ts is not None:
         base_q = base_q.filter(
@@ -436,12 +446,10 @@ def search_parties(
     if is_open is not None:
         base_q = base_q.filter(EventParty.is_open == is_open)
 
-    # Count на отдельном лёгком запросе — без JOIN'ов на User/member_count_sq.
-    # `base_q.count()` обёртывает всё в `SELECT count(*) FROM (... JOINs ...)` —
-    # у нас для count нужны только фильтры по EventParty.
     count_q = (
         db.query(sa_func.count(EventParty.id))
         .outerjoin(member_count_sq, EventParty.id == member_count_sq.c.party_id)
+        .outerjoin(KudaGoEvent, EventParty.event_id == sa_func.cast(KudaGoEvent.kudago_id, String))
         .filter(EventParty.is_hidden == False)  # noqa: E712
     )
     if q and q.strip():
@@ -449,8 +457,8 @@ def search_parties(
         count_q = count_q.filter(
             EventParty.title.ilike(pattern) | EventParty.description.ilike(pattern)
         )
-    if city and city.strip():
-        count_q = count_q.filter(EventParty.city.ilike(f"%{city.strip()}%"))
+    if city_filters:
+        count_q = count_q.filter(or_(*[KudaGoEvent.location == item for item in city_filters]))
     if date_from_ts is not None:
         count_q = count_q.filter(
             EventParty.event_date_ts.isnot(None),
@@ -508,6 +516,7 @@ def get_party_detail(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Получает детали_party по ID."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     return _build_party_out(party, db, viewer_id=current_user.id)
@@ -519,6 +528,7 @@ def get_party_detail_public(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Получает детали_party по ID."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     return _build_party_out(party, db, viewer_id=current_user.id)
@@ -529,7 +539,7 @@ def get_party_by_invite_token(
     invite_token: str,
     db: Session = Depends(get_db),
 ):
-    """Public preview — no auth. Lets unregistered users see the party before joining."""
+    """Получает preview party по invite token."""
     party = db.query(EventParty).filter(EventParty.invite_token == invite_token).first()
     if not party:
         raise HTTPException(status_code=404, detail="Приглашение не найдено")
@@ -558,7 +568,7 @@ async def join_party_by_invite_token(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
-    """Auth-required join via shareable link. Adds the user as accepted directly."""
+    """Присоединяется к party по invite token."""
     user = get_current_user_from_token(token, db)
     party = db.query(EventParty).filter(EventParty.invite_token == invite_token).first()
     if not party:
@@ -644,7 +654,6 @@ def get_parties(
     parties = db.query(EventParty).filter(EventParty.event_id == event_id).order_by(
         EventParty.created_at.desc()
     ).all()
-    # viewer_id нужен чтобы creator видел invite_token своих party
     return _build_parties_out_bulk(parties, db, viewer_id=current_user.id)
 
 
@@ -749,6 +758,7 @@ async def create_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Создает новую party."""
     user = get_current_user_from_token(token, db)
     from services.feature_flags import is_flag_enabled
     if not is_flag_enabled(db, "party_creation_enabled"):
@@ -799,6 +809,18 @@ async def create_party(
         except (asyncio.TimeoutError, Exception):
             pass
 
+    resolved_event_date_ts = body.event_date_ts if body.event_date_ts is not None else event_date_ts
+    if resolved_event_date_ts is not None:
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        if resolved_event_date_ts < (now_ts - PAST_EVENT_DATE_GRACE_SECONDS):
+            raise HTTPException(status_code=400, detail="Нельзя создать пати на прошедшую дату")
+        max_allowed_ts = now_ts + MAX_EVENT_DATE_FUTURE_DAYS * 24 * 3600
+        if resolved_event_date_ts > max_allowed_ts:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Нельзя создать пати слишком далеко в будущем (более {MAX_EVENT_DATE_FUTURE_DAYS} дней)",
+            )
+
     party = EventParty(
         event_id=event_id,
         title=body.title.strip(),
@@ -807,7 +829,7 @@ async def create_party(
         creator_id=user.id,
         is_open=True,
         event_title=event_title,
-        event_date_ts=event_date_ts,
+        event_date_ts=resolved_event_date_ts,
         event_image_url=event_image_url,
         invite_token=uuid.uuid4().hex,
     )
@@ -824,6 +846,7 @@ def update_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Обновляет party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "редактировать компанию")
@@ -856,6 +879,7 @@ async def delete_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Удаляет party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "удалить компанию")
@@ -917,6 +941,7 @@ async def join_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Присоединяется к party."""
     user = get_current_user_from_token(token, db)
     party = db.query(EventParty).filter(EventParty.id == party_id).with_for_update().first()
     if not party:
@@ -1028,6 +1053,7 @@ def leave_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Покидает party."""
     user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     if party.creator_id == user.id:
@@ -1052,6 +1078,7 @@ async def kick_member(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Исключает участника из party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "исключать участников")
@@ -1114,6 +1141,7 @@ async def accept_member(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Принимает участника в party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "принимать участников")
@@ -1159,6 +1187,7 @@ async def reject_member(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Отклоняет заявку участника в party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "отклонять заявки")
@@ -1199,6 +1228,7 @@ async def close_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Закрывает party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "закрыть компанию")
@@ -1253,6 +1283,7 @@ async def invite_to_party(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Приглашает пользователя в party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "приглашать")
@@ -1346,6 +1377,7 @@ async def accept_party_invite(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Принимает приглашение в party."""
     user = get_current_user_from_token(token, db)
     member = db.query(PartyMember).filter(
         PartyMember.id == invite_id,
@@ -1406,6 +1438,7 @@ async def decline_party_invite(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Отклоняет приглашение в party."""
     user = get_current_user_from_token(token, db)
     member = db.query(PartyMember).filter(
         PartyMember.id == invite_id,
@@ -1462,6 +1495,7 @@ async def cancel_party_invite(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Отменяет приглашение в party."""
     current_user = get_current_user_from_token(token, db)
     party = _get_party_or_404(db, party_id)
     _require_creator(party, current_user, "отменить приглашение")
@@ -1487,10 +1521,7 @@ async def cancel_party_invite(
 
 
 def expire_pending_invites(db: Session) -> list[int]:
-    """Mark invited rows as declined when the event is within 24h. Returns expired row IDs.
-
-    Caller commits. Used by the background expiry loop and tests.
-    """
+    """Отменяет приглашения в party, если событие через 24 часа."""
     import time as _time
     cutoff = int(_time.time()) + 24 * 3600
     rows = (

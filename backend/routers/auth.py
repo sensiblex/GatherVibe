@@ -12,11 +12,10 @@ from auth import hash_password, verify_password, authenticate_user, create_user_
 from models.user import User
 from models.token_revocation import RevokedToken
 from services.email import send_verification_email
+from utils.sanitize import sanitize_input
 
 router = APIRouter(tags=["auth"])
 
-# TTLCache с maxsize=10000 чтобы избежать unbounded роста словаря при публичном
-# трафике. TTL здесь больше cooldown'а (+30s) — просто чтобы не чистить вручную.
 try:
     from cachetools import TTLCache as _TTLCache
     _resend_rate = _TTLCache(maxsize=10_000, ttl=90)  # type: ignore[assignment]
@@ -62,6 +61,7 @@ def register_user(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    """Регистрирует нового пользователя."""
     _rate_limit_auth(request)
     from services.feature_flags import is_flag_enabled
     if not is_flag_enabled(db, "registration_enabled"):
@@ -69,18 +69,20 @@ def register_user(
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(status_code=400, detail="Email уже зарегистрирован")
     token = str(uuid.uuid4())
+    sanitized_username = sanitize_input(user.username)
+    sanitized_city = sanitize_input(user.city)
+    sanitized_interests = sanitize_input(user.interests)
     new_user = User(
-        email=user.email, username=user.username,
+        email=user.email, username=sanitized_username or user.username,
         hashed_password=hash_password(user.password),
-        city=user.city, interests=user.interests,
+        city=sanitized_city, interests=sanitized_interests,
         is_verified=False,
         verification_token=token,
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    # Email — best effort. При проблеме с провайдером юзер сможет вручную
-    # запросить повторную отправку через /auth/resend-verification.
+
     try:
         background.add_task(send_verification_email, new_user.email, new_user.username, token)
     except Exception:
@@ -96,6 +98,7 @@ def login(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    """Авторизует пользователя и возвращает токен."""
     _rate_limit_auth(request)
     user = authenticate_user(user_credentials.email, user_credentials.password, db)
     if not user:
@@ -107,13 +110,13 @@ def login(
         raise HTTPException(status_code=403, detail="email_not_verified")
     token_data = create_user_token(user)
     import os as _os
-    # COOKIE_SECURE=true в production (HTTPS). В docker-compose дев HTTP — false.
     _secure = _os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
+    _samesite = "none" if _secure else "lax"
     response.set_cookie(
         key="token",
         value=token_data["access_token"],
         httponly=True,
-        samesite="lax",
+        samesite=_samesite,
         secure=_secure,
         max_age=604800,
         path="/",
@@ -123,6 +126,7 @@ def login(
 
 @router.get("/auth/verify-email")
 def verify_email(token: str, db: Session = Depends(get_db)):
+    """Подтверждает email пользователя по токену."""
     user = db.query(User).filter(User.verification_token == token).first()
     if not user:
         raise HTTPException(status_code=400, detail="Неверный или устаревший токен")
@@ -138,6 +142,7 @@ def resend_verification(
     background: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
+    """Отправляет повторное письмо подтверждения email."""
     email = body.email.lower().strip()
     user = db.query(User).filter(User.email == email).first()
     if not user:
@@ -164,6 +169,7 @@ def logout(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Выход из системы и отзыв токена."""
     from jwt_handler import verify_token
     from datetime import datetime
     payload = verify_token(token)
@@ -178,14 +184,15 @@ def logout(
                 db.commit()
     import os as _os
     _secure = _os.getenv("COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
-    # delete_cookie должен матчить атрибуты set_cookie, иначе при Secure=True
-    # браузер не удалит cookie.
-    response.delete_cookie(key="token", path="/", httponly=True, samesite="lax", secure=_secure)
+    _samesite = "none" if _secure else "lax"
+
+    response.delete_cookie(key="token", path="/", httponly=True, samesite=_samesite, secure=_secure)
     return None
 
 
 @router.get("/users/me", response_model=UserResponse)
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+    """Возвращает информацию о текущем пользователе."""
     return get_current_user_from_token(token, db)
 
 
@@ -195,6 +202,7 @@ def update_profile(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Обновляет профиль пользователя."""
     user = get_current_user_from_token(token, db)
 
     if data.new_password is not None:
@@ -209,20 +217,18 @@ def update_profile(
         user.hashed_password = hash_password(data.new_password)
 
     if data.username is not None:
-        data.username = data.username.strip()
+        data.username = (sanitize_input(data.username) or "").strip()
         if not data.username:
             raise HTTPException(status_code=400, detail="Username не может быть пустым")
         user.username = data.username
     if data.city is not None:
-        user.city = data.city.strip() or None
+        user.city = (sanitize_input(data.city) or "").strip() or None
     if data.bio is not None:
-        user.bio = data.bio.strip()[:200] or None
+        user.bio = (sanitize_input(data.bio) or "").strip()[:200] or None
     if data.interests is not None:
-        user.interests = data.interests.strip() or None
+        user.interests = (sanitize_input(data.interests) or "").strip() or None
 
     if data.avatar_url is not None:
-        if data.avatar_url and not data.avatar_url.startswith("https://"):
-            raise HTTPException(status_code=400, detail="avatar_url должен начинаться с https://")
         user.avatar_url = data.avatar_url or None
 
     db.commit()
@@ -236,6 +242,7 @@ def update_privacy(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ):
+    """Обновляет настройки приватности пользователя."""
     user = get_current_user_from_token(token, db)
     if data.show_email     is not None: user.show_email     = data.show_email
     if data.show_city      is not None: user.show_city      = data.show_city

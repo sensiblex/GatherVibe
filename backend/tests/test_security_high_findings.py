@@ -5,6 +5,7 @@ on the current implementation until production code is fixed.
 """
 
 from datetime import datetime
+import time
 
 from models.attendee import EventAttendee
 from models.chat_message import ChatMessage
@@ -15,7 +16,7 @@ def _auth(token: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_event_chat_history_requires_event_attendance(client, db, user_a, user_b, token_a):
+def test_event_chat_history_requires_event_attendance(client, db, user_b, token_a):
     """A non-attendee must not be able to read another event chat history."""
     event_id = "42"
     room = f"event_{event_id}"
@@ -48,3 +49,39 @@ def test_upload_chat_rejects_mime_spoofed_image_payload(client, token_a):
         headers=_auth(token_a),
     )
     assert resp.status_code == 400
+
+
+def test_party_message_file_url_rejects_untrusted_https_domain():
+    import main
+
+    assert main.is_allowed_party_file_url("/uploads/chat/safe.png")
+    assert main.is_allowed_party_file_url("https://localhost/uploads/chat/safe.png")
+    assert not main.is_allowed_party_file_url("https://evil.com/uploads/malicious.js")
+
+
+def test_global_request_size_limit_rejects_too_large_body(client):
+    import main
+
+    original_limit = getattr(main.app.state, "max_request_size_bytes", None)
+    main.app.state.max_request_size_bytes = 16
+    try:
+        resp = client.post("/health", content=b"x" * 17)
+    finally:
+        if original_limit is None:
+            delattr(main.app.state, "max_request_size_bytes")
+        else:
+            main.app.state.max_request_size_bytes = original_limit
+
+    assert resp.status_code == 413
+
+
+def test_access_token_lifetime_is_not_longer_than_two_hours(user_a):
+    from auth import create_user_token
+    from jwt_handler import verify_token
+
+    token_payload = create_user_token(user_a)
+    claims = verify_token(token_payload["access_token"])
+    assert claims is not None
+
+    lifetime_seconds = int(claims["exp"] - time.time())
+    assert lifetime_seconds <= 2 * 60 * 60 + 10

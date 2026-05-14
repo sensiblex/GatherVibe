@@ -4,8 +4,9 @@ import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Navbar from '../components/Navbar';
+import { resolveApiBase } from '../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 type Status = 'loading' | 'success' | 'error';
 
@@ -164,3 +165,4 @@ export default function VerifyEmailPage() {
     </Suspense>
   );
 }
+

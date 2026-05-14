@@ -12,7 +12,6 @@ class EventAttendee(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     comment = Column(String, nullable=True)
     is_looking = Column(Boolean, default=True)
-    # server_default для БД + python default для in-memory объекта до refresh
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -20,9 +19,8 @@ class EventAttendee(Base):
         nullable=False,
     )
 
-    # Кешируем метаданные KudaGo-события при регистрации
     event_title     = Column(String, nullable=True)
-    event_date_ts   = Column(BigInteger, nullable=True)   # Unix-timestamp начала события
+    event_date_ts   = Column(BigInteger, nullable=True)   
     event_city      = Column(String, nullable=True)
     event_image_url = Column(String, nullable=True)
     event_category  = Column(String, nullable=True)

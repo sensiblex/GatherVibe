@@ -19,9 +19,18 @@ import { apiFetch } from '../../lib/apiFetch';
 import { extractApiErrorMessage } from '../../lib/apiErrors';
 import { getSocket } from '../../lib/socket';
 import { buildEventIdentityMeta } from '../../lib/event-identity';
+import { resolveApiBase } from '../../lib/apiBase';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 const POLL_INTERVAL = 5000;
+
+function toMediaUrl(path: string | null): string | null {
+  if (!path) return null;
+  if (path.startsWith('http://') || path.startsWith('https://')) return path;
+  // For uploads, don't add /api prefix since they're served directly
+  if (path.startsWith('/uploads/')) return path;
+  return `${API_BASE}${path}`;
+}
 
 interface PartyDeletedPayload {
   party_id: number;
@@ -34,6 +43,7 @@ interface PartyMember {
   id: number;
   user_id: number;
   username: string;
+  avatar_url?: string | null;
   city: string | null;
   interests: string | null;
   status: MemberStatus;
@@ -51,6 +61,7 @@ interface Party {
   max_members: number;
   creator_id: number;
   creator_username: string;
+  creator_avatar_url?: string | null;
   is_open: boolean;
   members: PartyMember[];
   event_title?: string | null;
@@ -538,7 +549,7 @@ export default function PartyDetailPage() {
     <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
       <Navbar />
       <div className="flex flex-col items-center justify-center py-32 gap-4">
-        <span className="text-5xl">😕</span>
+        <span className="text-5xl">⚠️</span>
         <p style={{ color: 'var(--text-muted)' }}>Не удалось загрузить компанию</p>
         <p className="text-sm" style={{ color: 'var(--error)' }}>{error}</p>
         <button onClick={() => router.back()} className="gv-btn-primary">
@@ -688,28 +699,6 @@ export default function PartyDetailPage() {
                 </div>
                 {isCreator && !eventEnded && (
                   <div className="shrink-0 flex flex-col gap-2">
-                    <button onClick={() => setShowEdit(true)}
-                      className="text-sm px-3 py-1.5 rounded-xl transition hover:opacity-80"
-                      style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
-                      ✏️ Редактировать
-                    </button>
-                    {party.invite_token && (
-                      <button
-                        onClick={async () => {
-                          const link = `${window.location.origin}/invite/${party.invite_token}`;
-                          try {
-                            await navigator.clipboard.writeText(link);
-                            toast('Ссылка скопирована — отправь её в любой мессенджер', 'success');
-                          } catch {
-                            window.prompt('Скопируйте ссылку вручную:', link);
-                          }
-                        }}
-                        className="text-sm px-3 py-1.5 rounded-xl transition hover:opacity-80"
-                        style={{ border: '1px solid var(--primary)', color: 'var(--primary)', background: 'var(--primary-hl)' }}
-                      >
-                        🔗 Скопировать ссылку
-                      </button>
-                    )}
                   </div>
                 )}
               </div>
@@ -759,9 +748,17 @@ export default function PartyDetailPage() {
                 {/* Creator row */}
                 <div className="flex items-center gap-3 p-3 rounded-xl"
                   style={isCreator ? myRowStyle : normalRowStyle}>
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
-                    {party.creator_username.slice(0, 2).toUpperCase()}
-                  </div>
+                  {party.creator_avatar_url ? (
+                    <img
+                      src={toMediaUrl(party.creator_avatar_url) || undefined}
+                      alt={party.creator_username}
+                      className="w-9 h-9 rounded-full object-cover shrink-0"
+                    />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                      {party.creator_username.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
                       {party.creator_username}
@@ -781,9 +778,17 @@ export default function PartyDetailPage() {
                   <div key={member.id ?? member.user_id} className="flex flex-col gap-2 p-3 rounded-xl"
                     style={member.user_id === myId ? myRowStyle : normalRowStyle}>
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
-                        {member.username.slice(0, 2).toUpperCase()}
-                      </div>
+                      {member.avatar_url ? (
+                        <img
+                          src={toMediaUrl(member.avatar_url) || undefined}
+                          alt={member.username}
+                          className="w-9 h-9 rounded-full object-cover shrink-0"
+                        />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                          {member.username.slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>
                           {member.username}
@@ -806,7 +811,7 @@ export default function PartyDetailPage() {
                         <button onClick={() => setKickTarget(member)} disabled={actionLoading}
                           className="ml-1 text-xs px-2 py-1 rounded-lg transition disabled:opacity-50 hover:opacity-80"
                           style={{ background: 'var(--error-hl)', color: 'var(--error)', border: '1px solid color-mix(in oklch, var(--error) 30%, transparent)' }}
-                          title="Исключить">🚫 Кик</button>
+                          title="�?сключить">🚫 Кик</button>
                       )}
                       {isCreator && !eventEnded && member.status === 'invited' && (
                         <button onClick={() => handleCancelInvite(member.id)} disabled={actionLoading}
@@ -917,7 +922,7 @@ export default function PartyDetailPage() {
 
           {/* RIGHT */}
           <div className="space-y-5">
-            {/* Summary */}
+            {/* Summary & Info */}
             <div
               className="rounded-2xl p-6 space-y-3"
               style={{
@@ -936,7 +941,13 @@ export default function PartyDetailPage() {
                 <span style={{ color: 'var(--text-muted)' }}>Участников</span>
                 <span className="font-semibold" style={{ color: 'var(--text)' }}>{acceptedCount + 1} / {party.max_members}</span>
               </div>
-              <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+              {!eventEnded && (
+                <div className="flex items-center justify-between text-sm" style={{ borderTop: '1px solid var(--divider)', paddingTop: '0.75rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Заявок</span>
+                  <span className="font-semibold" style={{ color: 'var(--warning)' }}>{pendingCount}</span>
+                </div>
+              )}
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--text-muted)', marginTop: '0.5rem' }}>
                 {nextStepHint}
               </p>
             </div>
@@ -964,6 +975,30 @@ export default function PartyDetailPage() {
                   🔒 Закрыть набор
                 </button>
               )}
+              {isCreator && !eventEnded && (
+                <button onClick={() => setShowEdit(true)}
+                  className="w-full text-sm py-2.5 rounded-xl transition hover:opacity-80"
+                  style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
+                  ✏️ Редактировать
+                </button>
+              )}
+              {isCreator && party.invite_token && !eventEnded && (
+                <button
+                  onClick={async () => {
+                    const link = `${window.location.origin}/invite/${party.invite_token}`;
+                    try {
+                      await navigator.clipboard.writeText(link);
+                      toast('Ссылка скопирована — отправь её в любой мессенджер', 'success');
+                    } catch {
+                      window.prompt('Скопируйте ссылку вручную:', link);
+                    }
+                  }}
+                  className="w-full text-sm py-2.5 rounded-xl transition hover:opacity-80"
+                  style={{ border: '1px solid var(--primary)', color: 'var(--primary)', background: 'var(--primary-hl)' }}
+                >
+                  🔗 Скопировать ссылку
+                </button>
+              )}
               {myMembership?.status === 'pending' && !eventEnded && (
                 <p className="text-xs text-center" style={{ color: 'var(--warning)' }}>⏳ Ваша заявка рассматривается</p>
               )}
@@ -981,34 +1016,6 @@ export default function PartyDetailPage() {
               )}
             </div>
 
-            {/* Info */}
-            <div className="rounded-2xl p-6 space-y-3" style={cardStyle}>
-              <h3 className="text-xs font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Информация</h3>
-              {!eventEnded && (
-                <div className="flex items-center justify-between text-sm">
-                  <span style={{ color: 'var(--text-muted)' }}>Статус набора</span>
-                  <span className="font-semibold" style={{ color: party.is_open ? 'var(--success)' : 'var(--text-faint)' }}>
-                    {party.is_open ? '🟢 Открыт' : '🔒 Закрыт'}
-                  </span>
-                </div>
-              )}
-              {eventEnded && (
-                <div className="flex items-center justify-between text-sm">
-                  <span style={{ color: 'var(--text-muted)' }}>Статус</span>
-                  <span className="font-semibold" style={{ color: 'var(--primary)' }}>🎬 Завершено</span>
-                </div>
-              )}
-              <div className="flex items-center justify-between text-sm" style={{ borderTop: '1px solid var(--divider)', paddingTop: '0.75rem' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Участников</span>
-                <span className="font-semibold" style={{ color: 'var(--text)' }}>{acceptedCount + 1} / {party.max_members}</span>
-              </div>
-              {!eventEnded && (
-                <div className="flex items-center justify-between text-sm" style={{ borderTop: '1px solid var(--divider)', paddingTop: '0.75rem' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Заявок</span>
-                  <span className="font-semibold" style={{ color: 'var(--warning)' }}>{pendingCount}</span>
-                </div>
-              )}
-            </div>
 
             {/* Back to event */}
             <Link
@@ -1049,3 +1056,4 @@ export default function PartyDetailPage() {
     </div>
   );
 }
+

@@ -1,10 +1,10 @@
-from sqlalchemy import CheckConstraint, Column, Float, Index, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Float, Index, Integer, BigInteger, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, text as sa_text
 from sqlalchemy.sql import func
 from database import Base
 
 
 class EventParty(Base):
-    """A 'company' / group that plans to attend an event together."""
+    """Компания/группа, планирующая посетить мероприятие вместе."""
     __tablename__ = "event_parties"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -13,19 +13,19 @@ class EventParty(Base):
     description = Column(Text, nullable=True)
     max_members = Column(Integer, default=4)
     creator_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    is_open = Column(Boolean, default=True)
+    is_open = Column(Boolean, default=True, nullable=False, server_default=sa_text('true'))
     city = Column(String(100), nullable=True, index=True)
     event_title = Column(String(200), nullable=True)
     event_date_ts = Column(BigInteger, nullable=True)
     event_image_url = Column(String(500), nullable=True)
     invite_token = Column(String(64), unique=True, nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    is_hidden = Column(Boolean, default=False, nullable=False, server_default="false")
+    is_hidden = Column(Boolean, default=False, nullable=False, server_default=sa_text('false'))
     hidden_reason = Column(String(200), nullable=True)
 
 
 class PartyMember(Base):
-    """Membership record for EventParty."""
+    """Запись о членстве в компании."""
     __tablename__ = "party_members"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -43,8 +43,7 @@ class PartyMember(Base):
             "status IN ('pending','accepted','rejected','left','invited','declined')",
             name="ck_party_member_status",
         ),
-        # Hot-path: 8 мест делают count() по (party_id, status) для проверки
-        # заполненности компании. Composite index закрывает все эти запросы.
+
         Index("ix_party_members_party_status", "party_id", "status"),
     )
 

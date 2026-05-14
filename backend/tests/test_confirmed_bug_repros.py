@@ -96,8 +96,10 @@ async def test_kudago_async_parse_event_detail_should_not_depend_on_process_time
     assert utc_out["all_dates"] == moscow_out["all_dates"]
 
 
-def _worker_chat_push_once(shared_calls):
+def _worker_chat_push_once(shared_calls, db_url):
     import chat_push
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
 
     chat_push.reset_state()
     party = SimpleNamespace(id=777, title="P")
@@ -114,31 +116,59 @@ def _worker_chat_push_once(shared_calls):
     chat_push._participant_user_ids = fake_participants
     chat_push.is_user_online_in_party = fake_online
     chat_push.push_helpers.send_push_to_user = fake_send
-    asyncio.run(
-        chat_push.notify_chat_message(
-            db=None,
-            party=party,
-            sender_id=1,
-            sender_username="u1",
-            message_text="hello",
-            now_ts=1000,
+
+    # Используем реальную БД для throttle с переданным URL
+    engine = create_engine(db_url)
+    SessionLocal = sessionmaker(bind=engine)
+    db = SessionLocal()
+    try:
+        asyncio.run(
+            chat_push.notify_chat_message(
+                db=db,
+                party=party,
+                sender_id=1,
+                sender_username="u1",
+                message_text="hello",
+                now_ts=1000,
+            )
         )
-    )
+    finally:
+        db.close()
+        engine.dispose()
 
 
 def test_chat_push_throttle_should_hold_across_workers():
     """Correct behavior for multi-worker: global throttle should prevent duplicate push."""
     try:
-        with Manager() as manager:
-            calls = manager.list()
-            p1 = Process(target=_worker_chat_push_once, args=(calls,))
-            p2 = Process(target=_worker_chat_push_once, args=(calls,))
-            p1.start()
-            p2.start()
-            p1.join()
-            p2.join()
-            # Expected with shared state: only one push.
-            assert len(list(calls)) == 1
+        import tempfile
+        import os
+        from database import Base
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        # Используем файловую БД для межпроцессного разделения состояния
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as f:
+            db_path = f.name
+
+        try:
+            db_url = f"sqlite:///{db_path}"
+            engine = create_engine(db_url)
+            Base.metadata.create_all(bind=engine)
+            engine.dispose()
+
+            with Manager() as manager:
+                calls = manager.list()
+                p1 = Process(target=_worker_chat_push_once, args=(calls, db_url))
+                p2 = Process(target=_worker_chat_push_once, args=(calls, db_url))
+                p1.start()
+                p2.start()
+                p1.join()
+                p2.join()
+                # Expected with shared state: only one push.
+                assert len(list(calls)) == 1
+        finally:
+            if os.path.exists(db_path):
+                os.unlink(db_path)
     except PermissionError:
         pytest.skip("multiprocessing manager is blocked in this environment")
 

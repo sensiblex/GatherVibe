@@ -26,10 +26,11 @@ import { groupPermanentScheduleRows, translateCategory } from '../utils';
 import { capitalizeFirstDisplayChar } from '../../lib/text';
 import { proxiedImageUrl } from '../../lib/imageProxy';
 import { markEventViewed } from '../viewed-events';
+import { resolveApiBase } from '../../lib/apiBase';
 
 const EventMap = dynamic(() => import('../../components/EventMap'), { ssr: false });
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = resolveApiBase();
 
 const CATEGORY_LABELS: Record<string, string> = {
   concert: '🎵 Концерт',
@@ -610,3 +611,4 @@ export default function EventDetailPage() {
     </div>
   );
 }
+

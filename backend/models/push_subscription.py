@@ -4,6 +4,7 @@ from database import Base
 
 
 class PushSubscription(Base):
+    """ Подписка на push-уведомления """
     __tablename__ = "push_subscriptions"
 
     id = Column(Integer, primary_key=True, index=True)
