@@ -15,7 +15,6 @@ function formatDate(dateStr: string | null, timeStr: string | null): string {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Don't show date for past events
   if (eventDate < today) {
     return '';
   }
@@ -29,7 +28,6 @@ interface AttendeeBasic {
   avatar_url?: string | null;
 }
 
-// ──────────────────────────────────────────────────────────────────────
 export default function EventCard({ event, attendees = [] }: { event: KudaGoEvent; attendees?: AttendeeBasic[] }) {
   const ageLabel = event.age_restriction ? (typeof event.age_restriction === 'string' && event.age_restriction.endsWith('+') ? event.age_restriction : `${event.age_restriction}+`) : null;
   const displayTitle = capitalizeFirstDisplayChar(event.title);
@@ -46,7 +44,6 @@ export default function EventCard({ event, attendees = [] }: { event: KudaGoEven
         border: '1px solid var(--border)',
       }}
     >
-      {/* IMAGE */}
       <div
         className="relative w-full h-48 overflow-hidden"
         style={{ background: 'var(--surface-2)' }}
@@ -95,7 +92,6 @@ export default function EventCard({ event, attendees = [] }: { event: KudaGoEven
         )}
       </div>
 
-      {/* BODY */}
       <div className="flex flex-col flex-1 p-4 gap-2">
         {event.categories?.length > 0 && (
           <div className="flex flex-wrap gap-1">
@@ -151,12 +147,10 @@ export default function EventCard({ event, attendees = [] }: { event: KudaGoEven
           </div>
         )}
 
-        {/* FOOTER */}
         <div
           className="mt-auto pt-3 flex items-center justify-between gap-2"
           style={{ borderTop: '1px solid var(--divider)' }}
         >
-          {/* Цена */}
           <div>
             {event.is_free ? (
               <span className="font-bold text-sm" style={{ color: 'var(--success)' }}>Бесплатно</span>
@@ -167,11 +161,9 @@ export default function EventCard({ event, attendees = [] }: { event: KudaGoEven
             )}
           </div>
 
-          {/* ── Мини-аватары + счётчик + ссылка ── */}
           <div className="flex items-center gap-3">
             {attendees.length > 0 && (
               <div className="flex items-center gap-1.5">
-                {/* Мини-аватары первых 3 участников */}
                 <div className="flex -space-x-2">
                   {attendees.slice(0, 3).map((a, i) => (
                     <div

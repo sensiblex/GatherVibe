@@ -47,8 +47,6 @@ function isVirtualAddress(addr: string): boolean {
   return VIRTUAL_KEYWORDS.some(k => addr.toLowerCase().includes(k));
 }
 
-// ── Inner map (SSR-unsafe, loaded only client-side) ───────────────────────────
-
 interface MapInnerProps {
   coords: LatLngTuple;
   title: string;
@@ -91,8 +89,6 @@ const MapInner = dynamic(
   { ssr: false }
 );
 
-// ── Public component ──────────────────────────────────────────────────────────
-
 export default function EventMap({
   address,
   title = '',
@@ -128,7 +124,7 @@ export default function EventMap({
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [address, hasCoords]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [address, hasCoords]);
 
   async function geocode() {
     setGeoState('loading');
@@ -143,7 +139,6 @@ export default function EventMap({
         return;
       }
     } catch {
-      // sessionStorage unavailable — proceed with network request
     }
 
     const apiKey = process.env.NEXT_PUBLIC_2GIS_KEY;
@@ -163,7 +158,6 @@ export default function EventMap({
       try {
         sessionStorage.setItem(cacheKey, JSON.stringify({ lat: point.lat, lon: point.lon }));
       } catch {
-        // ignore write errors
       }
 
       setCoords([point.lat, point.lon]);

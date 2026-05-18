@@ -246,7 +246,8 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
           )}
           {canLeave && (
             <button
-              onClick={handleLeave} disabled={loading}
+              onClick={handleLeave}
+              disabled={loading}
               className="text-sm px-4 py-2 rounded-xl transition disabled:opacity-60"
               style={{
                 color: '#ef4444',

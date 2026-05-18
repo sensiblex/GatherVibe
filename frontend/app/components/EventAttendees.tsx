@@ -14,7 +14,6 @@ const API_BASE = resolveApiBase();
 function toMediaUrl(path: string | null): string | null {
   if (!path) return null;
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
-  // For uploads, don't add /api prefix since they're served directly
   if (path.startsWith('/uploads/')) return path;
   return `${API_BASE}${path}`;
 }
@@ -44,8 +43,6 @@ interface MyStatus {
   comment?: string | null;
 }
 
-// ─── helpers ────────────────────────────────────────────────────────────────
-
 function splitInterests(raw: string | null | undefined): string[] {
   return (raw || '').split(',').map(s => s.trim()).filter(Boolean);
 }
@@ -55,8 +52,6 @@ function calcMatchScore(myTags: string[], attendee: Attendee, myUserId: number |
   const theirTags = splitInterests(attendee.interests);
   return myTags.filter(t => theirTags.includes(t)).length;
 }
-
-// ─── sub-components ─────────────────────────────────────────────────────────
 
 function InterestBadge({ interest, highlight }: { interest: string; highlight?: boolean }) {
   return (
@@ -151,7 +146,6 @@ function AttendeeCard({
         boxShadow,
       }}
     >
-      {/* Labels */}
       {isMe && (
         <span
           className="absolute top-3 right-3 text-xs font-bold px-2 py-0.5 rounded-full"
@@ -171,7 +165,6 @@ function AttendeeCard({
         </span>
       )}
 
-      {/* Avatar + name — имя кликабельно, ведёт на /users/[id] */}
       <div className="flex items-center gap-3">
         <Link
           href={`/users/${attendee.user_id}`}
@@ -210,12 +203,10 @@ function AttendeeCard({
         </div>
       </div>
 
-      {/* Compatibility bar */}
       {!isMe && commonInterests.length > 0 && (
         <CompatibilityBar score={commonInterests.length} />
       )}
 
-      {/* Interest tags */}
       {interests.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {interests.map(i => (
@@ -262,8 +253,6 @@ function AttendeeCard({
   );
 }
 
-// ─── main component ──────────────────────────────────────────────────────────
-
 interface EventMeta {
   title: string;
   date_ts: number | null;
@@ -299,12 +288,10 @@ export default function EventAttendees({
   const [filterInterest, setFilterInterest] = useState<string>('');
   const [invitingUserIds, setInvitingUserIds] = useState<Set<number>>(new Set());
   const [locallyInvitedUserIds, setLocallyInvitedUserIds] = useState<Set<number>>(new Set());
-  // `token` здесь только как маркер "залогинен ли". Реальный JWT в HttpOnly cookie.
   const [token, setToken] = useState<string | null>(null);
   const [myUserId, setMyUserId] = useState<number | null>(null);
 
   useEffect(() => {
-    // /users/me → и проверка сессии, и получение myUserId одним запросом.
     apiFetch('/users/me')
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -511,14 +498,13 @@ export default function EventAttendees({
 
   return (
     <div className="rounded-2xl shadow-sm overflow-hidden" style={cardStyle}>
-      {/* ── Header ── */}
       <div
         className="px-6 py-5 flex flex-wrap items-center justify-between gap-3"
         style={{ borderBottom: '1px solid var(--border)' }}
       >
         <div>
           <h2 className="font-bold text-base" style={{ color: 'var(--text)' }}>
-            🤝 Идут на событие
+            Идут на событие
             {attendees.length > 0 && (
               <span className="ml-2 text-sm font-normal" style={{ color: 'var(--text-muted)' }}>
                 {attendees.length} чел.
@@ -540,14 +526,14 @@ export default function EventAttendees({
               className="px-3 py-1.5 transition"
               style={sortBtnStyle(sortBy === 'match')}
             >
-              🎯 По совпадению
+              По совпадению
             </button>
             <button
               onClick={() => setSortBy('date')}
               className="px-3 py-1.5 transition"
               style={sortBtnStyle(sortBy === 'date')}
             >
-              🕐 По дате
+              По дате
             </button>
           </div>
 
@@ -577,13 +563,12 @@ export default function EventAttendees({
               className="text-sm font-bold px-4 py-1.5 rounded-full transition hover:opacity-80"
               style={{ border: '1px solid var(--accent, #4f46e5)', color: 'var(--accent, #4f46e5)' }}
             >
-              ✏️ Изменить
+              Изменить
             </button>
           )}
         </div>
       </div>
 
-      {/* ── Interest filter chips ── */}
       {allInterests.length > 0 && (
         <div
           className="px-6 py-3 flex gap-2 flex-wrap"
@@ -627,7 +612,6 @@ export default function EventAttendees({
         </div>
       )}
 
-      {/* ── Join / edit form ── */}
       {showForm && (
         <div
           className="px-6 py-4"
@@ -710,7 +694,6 @@ export default function EventAttendees({
         </div>
       )}
 
-      {/* ── List ── */}
       <div className="p-6">
         {loading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

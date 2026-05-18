@@ -53,8 +53,7 @@ async def _reminder_loop():
     from notification_helpers import create_notification
     from services.notification_dedup import has_party_notification
 
-    # Окно ±7 минут вокруг порогового момента (24 ч или 1 ч до события)
-    WINDOW = 420  # секунд
+    WINDOW = 420
 
     while True:
         await asyncio.sleep(REMINDER_LOOP_INTERVAL)
@@ -360,15 +359,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-        "http://127.0.0.1:53669",
-        "http://127.0.0.1:49907"
+        "http://localhost:8000"
     ],
-    allow_origin_regex=r"^http://(127\.0\.0\.1|localhost):\d+$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -430,13 +422,6 @@ def is_allowed_party_file_url(file_url: str) -> bool:
 
 
 def _extract_token_from_environ(environ: dict) -> str | None:
-    """Читаем JWT из cookie (HttpOnly или non-HttpOnly) в handshake headers.
-
-    Позволяет фронту не передавать токен в socket.emit явно — достаточно того,
-    что браузер сам отправил cookie при установке WS-соединения.
-    Делаем unquote: если кто-то percent-encodit токен (напр. `eyJ...%3D`),
-    без декодирования JWT потом не провалидируется.
-    """
     from urllib.parse import unquote as _unquote
     cookie_header = environ.get("HTTP_COOKIE", "") or ""
     for chunk in cookie_header.split(";"):
@@ -449,9 +434,6 @@ def _extract_token_from_environ(environ: dict) -> str | None:
 @sio.event
 async def connect(sid, environ):
     """Обработка подключения клиента к Socket.IO с аутентификацией по cookie."""
-    # Пытаемся аутентифицировать по cookie ещё на handshake и сохранить user_id
-    # в сессии sio. Если токена нет / невалиден — соединение остаётся анонимным
-    # (события типа join_event_chat потом отклонят такие sid).
     token = _extract_token_from_environ(environ)
     if token:
         db = SessionLocal()
@@ -478,9 +460,6 @@ async def _get_session_user(sid, db):
 
 
 async def _authenticate_sid(sid, data, db):
-    """Возвращает User для sid. Сначала пытается session (из cookie handshake),
-    затем падает на data.get('token') ради обратной совместимости с фронтом,
-    который ещё шлёт токен в emit. Raises ValueError если не удалось."""
     user = await _get_session_user(sid, db)
     if user is not None:
         return user

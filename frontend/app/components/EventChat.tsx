@@ -13,7 +13,6 @@ const API_BASE = resolveApiBase();
 function toMediaUrl(path: string | null): string | null {
   if (!path) return null;
   if (path.startsWith('http://') || path.startsWith('https://')) return path;
-  // For uploads, don't add /api prefix since they're served directly
   if (path.startsWith('/uploads/')) return path;
   return `${API_BASE}${path}`;
 }
@@ -47,8 +46,6 @@ export default function EventChat({
   const initialScrollDoneRef = useRef(false);
 
   useEffect(() => {
-    // Load history — через apiFetch (cookie auth). AbortController чтобы
-    // не писать stale state при быстрой навигации между событиями.
     const controller = new AbortController();
     apiFetch(`${API_BASE}/messages/event_${eventId}?limit=50`, { signal: controller.signal })
       .then(r => r.ok ? r.json() : { messages: [] })
@@ -65,7 +62,6 @@ export default function EventChat({
 
     const join = () => {
       setConnected(true);
-      // Auth — через cookie в WS-handshake.
       socket.emit('join_event_chat', { eventId });
     };
 
@@ -126,7 +122,6 @@ export default function EventChat({
   const sendMessage = () => {
     const text = input.trim();
     if (!socketRef.current || !text || !token) return;
-    // Auth — через cookie в WS-handshake.
     socketRef.current.emit('send_message', {
       eventId,
       message: text,
@@ -148,7 +143,6 @@ export default function EventChat({
 
   return (
     <div className="rounded-2xl shadow-sm overflow-hidden" style={cardStyle}>
-      {/* Header */}
       <div
         className="px-6 py-4"
         style={{ borderBottom: '1px solid var(--border)' }}
@@ -163,7 +157,6 @@ export default function EventChat({
         </div>
       </div>
 
-      {/* Messages */}
       <div
         ref={messagesContainerRef}
         className="px-4 py-4 h-72 overflow-y-auto flex flex-col gap-2"
@@ -182,8 +175,6 @@ export default function EventChat({
         ) : (
           messages.map((m, i) => {
             const isMe = String(m.userId) === String(currentUserId);
-            // Stable key: id от истории или (userId,timestamp) для realtime.
-            // Индекс массива даёт full re-render при каждом новом сообщении.
             const stableKey = (m as { id?: number | string }).id ?? `${m.userId}-${m.timestamp}-${i}`;
             return (
               <div
@@ -252,7 +243,6 @@ export default function EventChat({
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
       <div
         className="px-4 py-3 flex gap-2"
         style={{ borderTop: '1px solid var(--border)' }}
