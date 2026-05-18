@@ -26,8 +26,8 @@ except ImportError:  # pragma: no cover — cachetools в requirements_docker.tx
 
 _RESEND_COOLDOWN = 60
 
-# In-memory rate limit для /login и /register
-# Окно 60 сек, лимит 5 попыток. Процесс-локально; для multi-worker нужен Redis.
+# Лимит запросов для /login и /register
+# Окно 60 сек, лимит 5 попыток.
 _AUTH_WINDOW = 60
 _AUTH_LIMIT = 5
 

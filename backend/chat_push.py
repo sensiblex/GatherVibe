@@ -100,30 +100,25 @@ def _truncate(text: str, limit: int = 100) -> str:
 
 
 def _ensure_cross_worker_throttle(db: Session, user_id: int, party_id: int, now: int) -> bool:
-    """Разрешить push если throttling не exceeded и обновить маркер."""
     marker_key = f"party:{party_id}"
     now_dt = datetime.fromtimestamp(now, tz=timezone.utc)
 
-    # Сериализация проверок по (пользователь, вечеринка) в Postgres
     lock_file = None
     try:
         if db.bind is not None and db.bind.dialect.name == "postgresql":
             lock_key = (user_id << 32) + party_id
             db.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
         elif db.bind is not None and db.bind.dialect.name == "sqlite":
-            # Fallback на файловый lock для SQLite (поддержка мультипроцесса)
             lock_dir = tempfile.gettempdir()
             lock_path = os.path.join(lock_dir, f"chat_push_throttle_{user_id}_{party_id}.lock")
             lock_file = open(lock_path, "w")
-            # Кроссплатформенный файловый lock
-            if os.name == "nt":  # Windows
+            if os.name == "nt": 
                 import msvcrt
                 msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
-            else:  # Unix
+            else:  
                 import fcntl
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
     except Exception as exc:
-        # Fallback на best-effort если advisory lock недоступен.
         logger.warning("Advisory lock unavailable for user_id=%s party_id=%s: %s", user_id, party_id, exc)
         if lock_file:
             lock_file.close()
@@ -205,7 +200,6 @@ async def notify_chat_message(
             )
         except Exception as exc:
             logger.warning("chat_push send failed for user_id=%s: %s", uid, exc)
-            # Удаляем throttle marker чтобы push можно было повторить позже
             marker = (
                 db.query(Notification)
                 .filter(

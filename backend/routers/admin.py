@@ -548,13 +548,11 @@ def admin_delete_user(
 
 
 class BulkPayload(BaseModel):
-    # Ограничиваем батч 50 (раньше было 200) — снижаем blast radius
-    # скомпрометированного модер-аккаунта и phish-CSRF через social-engineering.
+
     user_ids: list[int] = Field(..., min_length=1, max_length=50)
     action: str = Field(..., pattern=r"^(warn|mute|ban)$")
     duration_hours: Optional[int] = None
     reason: Optional[str] = Field(default=None, max_length=500)
-    # Чтобы случайный POST без подтверждения не прошёл (phish/CSRF protection).
     confirm: bool = False
 
 
@@ -569,8 +567,7 @@ def bulk_user_action(
         raise HTTPException(status_code=400, detail="Недопустимое действие")
     if payload.action == "ban" and payload.duration_hours is None and me.role != "admin":
         raise HTTPException(status_code=403, detail="Permanent ban — только admin")
-    # Батчи >20 требуют admin: даже если модер действует с confirm, массовые
-    # действия всё равно нуждаются в повышенных правах.
+
     if len(payload.user_ids) > 20 and me.role != "admin":
         raise HTTPException(status_code=403, detail="Батчи >20 пользователей — только admin")
 
@@ -579,7 +576,6 @@ def bulk_user_action(
     skipped_reasons: list[dict] = []
     targets = db.query(User).filter(User.id.in_(payload.user_ids)).all()
     for t in targets:
-        # Правила санкций — admin не трогаем, moderator'а может только admin
         if t.role == "admin":
             skipped += 1
             skipped_reasons.append({"id": t.id, "reason": "admin"})
@@ -721,7 +717,6 @@ def set_user_role(
     if payload.role not in ("user", "moderator", "admin"):
         raise HTTPException(status_code=400, detail="Недопустимая роль")
     u = _get_user_or_404(db, user_id)
-    # Защита от self-demotion последнего admin
     if u.id == me.id and payload.role != "admin":
         admin_count = db.query(User).filter(User.role == "admin").count()
         if admin_count <= 1:
@@ -955,7 +950,7 @@ def broadcast_notification(
     db: Session = Depends(get_db),
     me: User = Depends(require_admin),
 ):
-    users = db.query(User).filter(User.is_active == True).all()  # noqa: E712
+    users = db.query(User).filter(User.is_active == True).all()
     sent = 0
     for u in users:
         db.add(Notification(
@@ -979,7 +974,7 @@ def metrics_timeseries(
     _: User = Depends(require_admin),
 ):
     from sqlalchemy import func
-    # Buckets: последние N дней, день = YYYY-MM-DD (UTC).
+    # Бакеты: последние N дней, день в формате YYYY-MM-DD (UTC).
     today = datetime.utcnow().date()
     buckets = [today - timedelta(days=(days - 1 - i)) for i in range(days)]
 
@@ -1034,10 +1029,10 @@ def metrics_overview(
 ):
     from sqlalchemy import func
     total_users = db.query(func.count(User.id)).scalar() or 0
-    banned_users = db.query(func.count(User.id)).filter(User.is_banned == True).scalar() or 0  # noqa: E712
+    banned_users = db.query(func.count(User.id)).filter(User.is_banned == True).scalar() or 0
     open_reports = db.query(func.count(Report.id)).filter(Report.status == "open").scalar() or 0
     total_parties = db.query(func.count(EventParty.id)).scalar() or 0
-    hidden_parties = db.query(func.count(EventParty.id)).filter(EventParty.is_hidden == True).scalar() or 0  # noqa: E712
+    hidden_parties = db.query(func.count(EventParty.id)).filter(EventParty.is_hidden == True).scalar() or 0
     audit_today = 0
     try:
         day_ago = datetime.utcnow() - timedelta(days=1)

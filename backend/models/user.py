@@ -3,7 +3,7 @@ from sqlalchemy.sql import func
 from database import Base
 
 class User(Base):
-    """ Пользователь """
+    """Пользователь."""
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)

@@ -10,7 +10,6 @@ from kudago_api_models import (
     Event, EventDetail, EventsResponse, SearchResponse, EventDetailResponse,
 )
 from kudago_api_cache import cached
-from kudago_api_monitor import monitor_async_request
 from kudago_common import safe_str as _safe_str
 
 logger = logging.getLogger("kudago_api_async")
@@ -21,9 +20,7 @@ KUDAGO_TIMEZONE = ZoneInfo("Europe/Moscow")
 
 
 def _format_kudago_timestamp(ts: int) -> tuple[str, str]:
-    """
-    Преобразовать timestamp в дату и время
-    """
+    """Преобразовать timestamp в дату и время."""
     import datetime
 
     dt = datetime.datetime.fromtimestamp(ts, tz=KUDAGO_TIMEZONE)
@@ -90,7 +87,6 @@ async def close_client():
 
 
 
-@monitor_async_request
 @cached(ttl=300, key_prefix="events")
 async def get_events(
     location: str = "kzn",
@@ -126,7 +122,6 @@ async def get_events(
     return await client._request("GET", "events", params=params)
 
 
-@monitor_async_request
 @cached(ttl=300, key_prefix="search")
 async def search(
     query: str,
@@ -162,7 +157,6 @@ async def search(
     return await client._request("GET", "search", params=params)
 
 
-@monitor_async_request
 @cached(ttl=600, key_prefix="event")
 async def get_event_by_id(event_id: int) -> Dict[str, Any]:
     """
@@ -177,7 +171,6 @@ async def get_event_by_id(event_id: int) -> Dict[str, Any]:
     return await client._request("GET", f"events/{event_id}", params=params)
 
 
-@monitor_async_request
 @cached(ttl=3600, key_prefix="events_today")
 async def get_events_today(location: str = "kzn") -> Dict[str, Any]:
     """
@@ -197,7 +190,6 @@ async def get_events_today(location: str = "kzn") -> Dict[str, Any]:
     )
 
 
-@monitor_async_request
 @cached(ttl=3600, key_prefix="categories")
 async def get_event_categories() -> List[Dict[str, Any]]:
     """
@@ -211,7 +203,6 @@ async def get_event_categories() -> List[Dict[str, Any]]:
     return data.get("results", data)
 
 
-@monitor_async_request
 @cached(ttl=86400, key_prefix="locations")
 async def get_locations() -> List[Dict[str, Any]]:
     """

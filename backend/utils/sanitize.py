@@ -16,15 +16,12 @@ _SQL_META_CHARS = ("'", '"', ";", "--", "/*", "*/")
 
 
 def sanitize_input(value: Optional[str], field_type: str = "text") -> Optional[str]:
-    """
-    Санитизирует входные данные от потенциальных уязвимостей
-    """
+    """Санитизирует входные данные."""
     if value is None:
         return None
 
     cleaned = str(value)
 
-    # Drop complete script blocks with their bodies before HTML stripping.
     cleaned = _SCRIPT_BLOCK_RE.sub(" ", cleaned)
     cleaned = bleach.clean(cleaned, tags=[], attributes={}, strip=True)
     cleaned = _INLINE_HANDLER_RE.sub("", cleaned)
@@ -39,7 +36,5 @@ def sanitize_input(value: Optional[str], field_type: str = "text") -> Optional[s
 
 
 def sanitize_text(value: Optional[str]) -> Optional[str]:
-    """
-    Санитизирует текстовые данные
-    """
+    """Санитизирует текстовые данные."""
     return sanitize_input(value)

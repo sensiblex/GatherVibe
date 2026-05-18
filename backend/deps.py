@@ -59,7 +59,6 @@ def _is_user_banned(user: User) -> bool:
     banned_until = user.banned_until
     if banned_until is None:
         return True
-    # temp ban: используем timezone-aware comparison
     now = datetime.now(timezone.utc)
     if banned_until.tzinfo is None:
         banned_until = banned_until.replace(tzinfo=timezone.utc)

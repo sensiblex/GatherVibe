@@ -1,6 +1,4 @@
-"""
-KudaGo events cache — периодически подгружает события из KudaGo в БД.
-"""
+"""Кэш событий из KudaGo."""
 import json
 import logging
 import time

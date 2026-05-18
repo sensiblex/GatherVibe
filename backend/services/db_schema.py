@@ -13,24 +13,24 @@ logger = logging.getLogger(__name__)
 
 def _load_model_modules() -> None:
     """Импортирует все ORM модели для заполнения Base.metadata."""
-    import models.user  # noqa: F401
-    import models.event  # noqa: F401
-    import models.attendee  # noqa: F401
-    import models.party  # noqa: F401
-    import models.chat_message  # noqa: F401
-    import models.review  # noqa: F401
-    import models.notification  # noqa: F401
-    import models.kudago_event  # noqa: F401
-    import models.party_coordination  # noqa: F401
-    import models.push_subscription  # noqa: F401
-    import models.message_reaction  # noqa: F401
-    import models.party_recap  # noqa: F401
-    import models.report  # noqa: F401
-    import models.audit_log  # noqa: F401
-    import models.feature_flag  # noqa: F401
-    import models.banned_word  # noqa: F401
-    import models.appeal  # noqa: F401
-    import models.token_revocation  # noqa: F401
+    import models.user
+    import models.event
+    import models.attendee
+    import models.party
+    import models.chat_message
+    import models.review
+    import models.notification
+    import models.kudago_event
+    import models.party_coordination
+    import models.push_subscription
+    import models.message_reaction
+    import models.party_recap
+    import models.report
+    import models.audit_log
+    import models.feature_flag
+    import models.banned_word
+    import models.appeal
+    import models.token_revocation
 
 
 def _required_schema() -> dict[str, set[str]]:

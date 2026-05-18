@@ -83,7 +83,7 @@ def create_report(
     if not _target_exists(db, payload.target_type, payload.target_id):
         raise HTTPException(status_code=404, detail="Target не найден")
 
-    # Rate limit: 5 reports / час для обычных юзеров
+    # Лимит: 5 жалоб в час для обычных пользователей
     if me.role not in ("moderator", "admin"):
         window_start = datetime.utcnow() - REPORT_RATE_LIMIT_WINDOW
         recent = db.query(Report).filter(

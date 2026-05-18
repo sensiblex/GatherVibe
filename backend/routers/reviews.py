@@ -40,8 +40,8 @@ def _recalc_trust_score(user_id: int, db: Session) -> None:
     try:
         rows = db.query(PartyReview).filter(
             PartyReview.reviewed_id == user_id,
-            PartyReview.is_hidden == False,  # noqa: E712
-            PartyReview.is_deleted == False,  # noqa: E712
+            PartyReview.is_hidden == False,
+            PartyReview.is_deleted == False,
         ).all()
         avg = round(sum(r.rating for r in rows) / len(rows), 2) if rows else None
         user = db.query(User).filter(User.id == user_id).first()
@@ -185,7 +185,7 @@ def get_my_review(
         PartyReview.reviewer_id == current_user.id,
         PartyReview.party_id == party_id,
         PartyReview.reviewed_id == reviewed_id,
-        PartyReview.is_deleted == False,  # noqa: E712
+        PartyReview.is_deleted == False,
     ).first()
     if not review:
         raise HTTPException(status_code=404, detail="Отзыв не найден")
@@ -287,8 +287,8 @@ def get_user_reviews(
 
     visible = (
         (PartyReview.reviewed_id == user_id)
-        & (PartyReview.is_hidden == False)  # noqa: E712
-        & (PartyReview.is_deleted == False)  # noqa: E712
+        & (PartyReview.is_hidden == False)
+        & (PartyReview.is_deleted == False)
     )
 
     agg = db.query(

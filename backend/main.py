@@ -242,12 +242,7 @@ async def _invite_expiry_loop():
 
 
 async def _db_cleanup_loop():
-    """Периодически чистит таблицы, которые растут неограниченно.
-
-    - revoked_tokens: удаляем записи с exp < NOW() (JWT уже истёк — blacklist-check не нужен).
-
-    Интервал: раз в час. Пропуск одного запуска допустим.
-    """
+    """Периодически чистит таблицы."""
     import logging as _lg
     logger = _lg.getLogger(__name__)
     from models.token_revocation import RevokedToken
@@ -665,7 +660,6 @@ ALLOWED_PARTY_MESSAGE_FILE_TYPES = {
     "image",
     "pdf",
     "file",
-    # Legacy/client-compatible values accepted by older socket payloads.
     "document",
     "video",
     "audio",
@@ -703,7 +697,6 @@ async def send_party_message(sid, data: dict):
         await sio.emit('error', {'message': 'partyId и message (или file_url) обязательны'}, room=sid)
         db.close()
         return
-    # Валидация file_url: принимаем только локальные /uploads/* и https://<allowed-host>/uploads/*.
     if file_url:
         if not isinstance(file_url, str) or len(file_url) > 500:
             await sio.emit('error', {'message': 'Некорректный file_url'}, room=sid)

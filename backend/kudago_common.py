@@ -2,9 +2,7 @@ from typing import Any
 
 
 def safe_str(val: Any) -> str:
-    """
-    Безопасное преобразование в строку
-    """
+    """Безопасное преобразование в строку."""
     if not val and val != 0:
         return ""
     if isinstance(val, str):

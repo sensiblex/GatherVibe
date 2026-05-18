@@ -83,7 +83,7 @@ def mark_all_as_read(db: Session, user_id: int) -> int:
         db.query(Notification)
         .filter(
             Notification.user_id == user_id,
-            Notification.is_read == False,  # noqa: E712
+            Notification.is_read == False,
             ~Notification.type.startswith(_INTERNAL_TYPE_PREFIX),
         )
         .all()
@@ -101,7 +101,7 @@ def get_unread_count(db: Session, user_id: int) -> int:
         db.query(Notification)
         .filter(
             Notification.user_id == user_id,
-            Notification.is_read == False,  # noqa: E712
+            Notification.is_read == False,
             ~Notification.type.startswith(_INTERNAL_TYPE_PREFIX),
         )
         .count()

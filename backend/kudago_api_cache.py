@@ -246,13 +246,8 @@ def cached(ttl: Optional[int] = None, key_prefix: str = ""):
             cached_value = cache.get(cache_key)
             
             if cached_value is not None:
-                from kudago_api_monitor import metrics_collector
-                metrics_collector.increment_cache_hits()
                 logger.info(f"Cache hit for {func.__name__}")
                 return cached_value
-            
-            from kudago_api_monitor import metrics_collector
-            metrics_collector.increment_cache_misses()
             
             # Вызов функции и кэширование результата
             result = func(*args, **kwargs)
@@ -272,13 +267,8 @@ def cached(ttl: Optional[int] = None, key_prefix: str = ""):
             cached_value = cache.get(cache_key)
             
             if cached_value is not None:
-                from kudago_api_monitor import metrics_collector
-                metrics_collector.increment_cache_hits()
                 logger.info(f"Cache hit for {func.__name__}")
                 return cached_value
-            
-            from kudago_api_monitor import metrics_collector
-            metrics_collector.increment_cache_misses()
             
             # Вызов функции и кэширование результата
             result = await func(*args, **kwargs)

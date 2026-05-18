@@ -4,7 +4,7 @@ from database import Base
 
 
 class EventParty(Base):
-    """Компания/группа, планирующая посетить мероприятие вместе."""
+    """Компания для посещения мероприятий."""
     __tablename__ = "event_parties"
 
     id = Column(Integer, primary_key=True, index=True)

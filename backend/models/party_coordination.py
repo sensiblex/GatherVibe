@@ -28,8 +28,6 @@ class PollOption(Base):
     id = Column(Integer, primary_key=True, index=True)
     poll_id = Column(Integer, ForeignKey("party_polls.id", ondelete="CASCADE"), nullable=False, index=True)
     text = Column(String(100), nullable=False)
-    # NOT NULL + server_default=0 чтобы raw SQL не смог вставить NULL и
-    # сломать `UPDATE ... SET vote_count = vote_count + 1` (NULL+1=NULL).
     vote_count = Column(Integer, nullable=False, default=0, server_default=sa_text("0"))
 
 

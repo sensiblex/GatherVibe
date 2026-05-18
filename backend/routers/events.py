@@ -269,18 +269,18 @@ def get_events(
 
     if is_free is True:
         query = query.filter(
-            (Event.price == None) | (Event.price == 0)  # noqa: E711
+            (Event.price == None) | (Event.price == 0)
         )
     elif is_free is False:
         query = query.filter(Event.price > 0)
     if max_price is not None:
         query = query.filter(
-            (Event.price == None) | (Event.price <= max_price)  # noqa: E711
+            (Event.price == None) | (Event.price <= max_price)
         )
 
     if has_spots is True:
         query = query.filter(
-            (Event.max_participants == None) |  # noqa: E711
+            (Event.max_participants == None) |
             (Event.current_participants < Event.max_participants)
         )
 
@@ -437,8 +437,7 @@ def kudago_get_events(
         }
     cache_has_location = kudago_cache.location_has_cache(db, location)
     search_trimmed = search.strip() if search else ""
-    # Разрешаем API-фоллбэк, если кэш локации есть, но plain-browsing выдача пуста.
-    # Это защищает от stale/полупустого кэша для конкретного города.
+
     plain_browsing = not any([
         categories,
         is_free is not None,
@@ -601,7 +600,6 @@ def kudago_get_events(
         )
         events = kudago_api.parse_events(raw)
 
-        # Если есть поиск — фильтруем по title на backend (KudaGo не умеет title-only search)
         if search:
             search_lower = search.lower()
             events = [e for e in events if search_lower in e.get("title", "").lower()]
@@ -674,7 +672,7 @@ def kudago_debug(
     found_dated = db.query(KE.kudago_id, KE.title).filter(
         KE.location == location,
         KE.title_lower.like(f"%{search_lower}%"),
-        (KE.is_permanent == True) | (KE.start_ts >= now_ts)  # noqa: E712
+        (KE.is_permanent == True) | (KE.start_ts >= now_ts)
     ).all()
 
     query_cache_result = kudago_cache.query_cache(db=db, location=location, search=search, page=1, page_size=10)
@@ -892,7 +890,7 @@ def get_matches(
         .filter(EventAttendee.event_id == event_id, EventAttendee.user_id != user.id)
     )
     if only_looking:
-        query = query.filter(EventAttendee.is_looking == True)  # noqa: E712
+        query = query.filter(EventAttendee.is_looking == True)
     rows = query.order_by(EventAttendee.created_at.desc()).limit(HARD_CAP).all()
 
     result = []
@@ -928,8 +926,7 @@ def get_attendees(
     )
     if only_looking:
         query = query.filter(EventAttendee.is_looking == True)
-    # Добавили пагинацию: для популярных событий с тысячами attendees
-    # полный `.all()` в Python — DoS-вектор по памяти.
+
     rows = query.order_by(EventAttendee.created_at.desc()).offset(offset).limit(limit).all()
     return [
         AttendeeOut(

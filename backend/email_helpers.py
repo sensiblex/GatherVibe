@@ -142,10 +142,7 @@ def send_event_reminder_email(
     members: list[str],
     hours_before: int,
 ) -> bool:
-    """Отправляет email-напоминание о событии через Resend.
-
-    Возвращает True при успехе, False при ошибке.
-    """
+    """Отправляет email-напоминание о событии."""
     if not EMAIL_REGEX.match(to_email):
         logger.warning("Некорректный email адрес: %s", to_email)
         return False

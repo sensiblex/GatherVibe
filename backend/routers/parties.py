@@ -198,11 +198,11 @@ def _build_parties_out_bulk(
 ) -> List[PartyOut]:
     if not parties:
         return []
-    # creators: один IN-запрос
+    # Создатели одним запросом
     creator_ids = {p.creator_id for p in parties}
     creators = {u.id: u for u in db.query(User).filter(User.id.in_(creator_ids)).all()}
 
-    # members всех party одним запросом
+    # Участники всех компаний одним запросом
     party_ids = [p.id for p in parties]
     member_rows = (
         db.query(PartyMember, User)
@@ -413,7 +413,7 @@ def search_parties(
         .join(User, EventParty.creator_id == User.id)
         .outerjoin(member_count_sq, EventParty.id == member_count_sq.c.party_id)
         .outerjoin(KudaGoEvent, EventParty.event_id == sa_func.cast(KudaGoEvent.kudago_id, String))
-        .filter(EventParty.is_hidden == False)  # noqa: E712 — исключаем скрытые модератором
+        .filter(EventParty.is_hidden == False)  # исключаем скрытые модератором
     )
 
     if q and q.strip():
@@ -450,7 +450,7 @@ def search_parties(
         db.query(sa_func.count(EventParty.id))
         .outerjoin(member_count_sq, EventParty.id == member_count_sq.c.party_id)
         .outerjoin(KudaGoEvent, EventParty.event_id == sa_func.cast(KudaGoEvent.kudago_id, String))
-        .filter(EventParty.is_hidden == False)  # noqa: E712
+        .filter(EventParty.is_hidden == False)
     )
     if q and q.strip():
         pattern = f"%{q.strip()}%"
