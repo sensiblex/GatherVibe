@@ -126,7 +126,6 @@ export default function EventCard({ event, attendees = [] }: { event: KudaGoEven
           >
             {eventTimeLabel && (
               <div className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--text-muted)' }}>
-                <span aria-hidden="true">🗓️</span>
                 <span className="line-clamp-1">{eventTimeLabel}</span>
               </div>
             )}

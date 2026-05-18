@@ -186,7 +186,7 @@ async def notify_chat_message(
     now = now_ts if now_ts is not None else int(time.time())
     pushed: set[int] = set()
 
-    body = _truncate(message_text) if message_text else "📎 Вложение"
+    body = _truncate(message_text) if message_text else "Вложение"
     title = f"{sender_username} в «{party.title}»"
     payload = {"party_id": party.id, "type": "chat_message"}
 

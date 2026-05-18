@@ -158,9 +158,9 @@ export default function InvitePage() {
             <p className="text-sm mb-4 leading-relaxed">{preview.description}</p>
           )}
           <div className="flex flex-wrap gap-3 text-sm mb-5" style={{ color: 'var(--text-secondary)' }}>
-            <span>👤 от {preview.creator_username}</span>
-            <span>🧑‍🤝‍🧑 {preview.member_count}/{preview.max_members}</span>
-            {dateLabel && <span>📅 {dateLabel}</span>}
+            <span>От {preview.creator_username}</span>
+            <span>{preview.member_count}/{preview.max_members}</span>
+            {dateLabel && <span>{dateLabel}</span>}
           </div>
 
           {!canJoin && (

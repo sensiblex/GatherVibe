@@ -133,7 +133,7 @@ async def update_party_plan(
         room=f"party_{party_id}",
         user_id=None,
         username="system",
-        message=f"📍 Точка встречи обновлена: {location_part}{landmark_part} в {time_part}",
+        message=f"Точка встречи обновлена: {location_part}{landmark_part} в {time_part}",
         is_system=True,
         event_type="plan_updated",
         timestamp=datetime.now(timezone.utc),

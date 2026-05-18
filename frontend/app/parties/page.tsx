@@ -109,14 +109,14 @@ function PartyCard({ party, index }: { party: PartyItem; index: number }) {
               color: isFull ? 'var(--error)' : party.is_open ? 'var(--primary)' : 'var(--text-faint)',
             }}
           >
-            {isFull ? '🔒 Заполнена' : party.is_open ? '✅ Открыта' : '⛔ Закрыта'}
+            {isFull ? 'Заполнена' : party.is_open ? 'Открыта' : 'Закрыта'}
           </span>
           {party.city && (
             <span
               className="inline-flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-full"
               style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
             >
-              📍 {party.city}
+              {party.city}
             </span>
           )}
         </div>
@@ -163,7 +163,7 @@ function PartyCard({ party, index }: { party: PartyItem; index: number }) {
         <div className="mt-3">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
-              👥 Участники
+              Участники
             </span>
             <span className="text-xs font-bold" style={{ color: isFull ? 'var(--error)' : 'var(--text)' }}>
               {filled} / {capacity}
@@ -535,13 +535,13 @@ export default function PartiesSearchPage() {
   const chips: { label: string; clear: () => void }[] = [];
   if (search)     chips.push({ label: `«${search}»`, clear: () => { setSearchInput(''); setSearch(''); } });
   selectedCities.forEach(cityCode => {
-    chips.push({ label: `📍 ${CITY_CODE_TO_NAME[cityCode]}`, clear: () => setSelectedCities(prev => prev.filter(c => c !== cityCode)) });
+    chips.push({ label: CITY_CODE_TO_NAME[cityCode], clear: () => setSelectedCities(prev => prev.filter(c => c !== cityCode)) });
   });
   if (dateFrom)   chips.push({ label: `с ${new Date(dateFrom).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`, clear: () => setDateFrom('') });
   if (dateTo)     chips.push({ label: `по ${new Date(dateTo).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}`, clear: () => setDateTo('') });
   if (minMembers) chips.push({ label: `мин. ${minMembers} чел.`, clear: () => setMinMembers('') });
   if (maxMembers) chips.push({ label: `макс. ${maxMembers} чел.`, clear: () => setMaxMembers('') });
-  if (onlyOpen)   chips.push({ label: '✅ Только открытые', clear: () => setOnlyOpen(false) });
+  if (onlyOpen)   chips.push({ label: 'Только открытые', clear: () => setOnlyOpen(false) });
 
   // Pre-auth guard: пока auth ещё грузится или уже редиректим — ничего не рендерим
   // (иначе skeleton мелькает перед router.replace('/login'))
@@ -660,7 +660,7 @@ export default function PartiesSearchPage() {
                 boxShadow: onlyOpen ? '0 2px 8px var(--primary-ring)' : 'none',
               }}
             >
-              ✅ Открытые
+              Открытые
             </button>
 
             {hasActive && (
@@ -874,7 +874,7 @@ export default function PartiesSearchPage() {
                         boxShadow: onlyOpen ? '0 2px 8px var(--primary-ring)' : 'none',
                       }}
                     >
-                      ✅ Только открытые
+                      Только открытые
                     </button>
                   </section>
                 </div>

@@ -221,7 +221,7 @@ export default function RegisterPage() {
                     onClick={handleSubmit}
                     disabled={loading}
                     className="gv-btn-primary flex-[2]">
-                    {loading ? 'Создаём...' : '🎉 Готово!'}
+                    {loading ? 'Создаём...' : 'Готово!'}
                   </button>
                 </div>
 

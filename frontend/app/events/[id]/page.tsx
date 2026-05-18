@@ -33,17 +33,17 @@ const EventMap = dynamic(() => import('../../components/EventMap'), { ssr: false
 const API_BASE = resolveApiBase();
 
 const CATEGORY_LABELS: Record<string, string> = {
-  concert: '🎵 Концерт',
-  theater: '🎭 Театр',
-  exhibition: '🎨 Выставка',
-  festival: '🎪 Фестиваль',
-  sport: '⚽ Спорт',
-  standup: '🎤 Стендап',
-  cinema: '🎬 Кино',
-  lecture: '📚 Лекция',
-  tour: '🗺️ Экскурсия',
-  party: '🎉 Вечеринка',
-  master_class: '🎓 Мастер-класс',
+  concert: 'Концерт',
+  theater: 'Театр',
+  exhibition: 'Выставка',
+  festival: 'Фестиваль',
+  sport: 'Спорт',
+  standup: 'Стендап',
+  cinema: 'Кино',
+  lecture: 'Лекция',
+  tour: 'Экскурсия',
+  party: 'Вечеринка',
+  master_class: 'Мастер-класс',
 };
 
 const WEEKDAY_SHORT: Record<number, string> = {
@@ -113,13 +113,10 @@ function PermanentSchedule({ schedules, usePlaceSchedule = false }: { schedules?
         border: '1px solid color-mix(in oklch, var(--primary) 20%, var(--border))',
       }}
     >
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-lg">🔁</span>
-        <div>
+        <div className="flex items-center gap-2 mb-4">
           <p className="font-bold text-sm" style={{ color: 'var(--text)' }}>Постоянное событие</p>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Работает круглый год по расписанию</p>
         </div>
-      </div>
 
       {hasSchedule ? (
         <div className="space-y-2">
@@ -150,13 +147,13 @@ function PermanentSchedule({ schedules, usePlaceSchedule = false }: { schedules?
               className="text-xs px-3 py-1 rounded-full font-semibold"
               style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}
             >
-              📅 Круглый год
+              Круглый год
             </span>
             <span
               className="text-xs px-3 py-1 rounded-full font-semibold"
               style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
             >
-              🔁 Повторяется регулярно
+              Повторяется регулярно
             </span>
           </div>
         </div>
@@ -390,7 +387,7 @@ export default function EventDetailPage() {
                   ))}
                   {event.is_permanent && (
                     <span className="text-xs px-3 py-1 rounded-full font-semibold bg-violet-100 text-violet-700">
-                      🔁 Круглый год
+                      Круглый год
                     </span>
                   )}
                   {event.city && (
@@ -398,12 +395,12 @@ export default function EventDetailPage() {
                       className="text-xs px-3 py-1 rounded-full font-semibold flex items-center gap-1"
                       style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
                     >
-                      📍 {event.city}
+                      {event.city}
                     </span>
                   )}
                   {event.source === 'kudago' && event.is_free && (
                     <span className="text-xs px-3 py-1 rounded-full font-semibold bg-emerald-100 text-emerald-700">
-                      🆓 Бесплатно
+                      Бесплатно
                     </span>
                   )}
                   {event.source === 'kudago' && !event.is_free && event.price && (
@@ -411,7 +408,7 @@ export default function EventDetailPage() {
                       className="text-xs px-3 py-1 rounded-full font-semibold"
                       style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
                     >
-                      💰 {event.price}
+                      {event.price}
                     </span>
                   )}
                   {event.source === 'kudago' && event.age_restriction && (
@@ -455,7 +452,6 @@ export default function EventDetailPage() {
 
                   {event.place_subway && (
                     <div className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--text-muted)' }}>
-                      <span>🚇</span>
                       <span>{event.place_subway}</span>
                     </div>
                   )}

@@ -108,7 +108,6 @@ export default function PushPermissionPrompt({
       style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
     >
       <div className="flex-1 text-sm" style={{ color: 'var(--text)' }}>
-        <span className="mr-2" aria-hidden>🔔</span>
         {message}
       </div>
       <div className="flex gap-2 shrink-0">

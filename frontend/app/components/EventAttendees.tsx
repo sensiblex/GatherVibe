@@ -156,12 +156,12 @@ function AttendeeCard({
       )}
       {!isMe && isTopMatch && (
         <span className="absolute top-3 right-3 text-xs font-bold bg-purple-100 text-purple-600 px-2 py-0.5 rounded-full">
-          ✨ Лучшее совпадение
+          Лучшее совпадение
         </span>
       )}
       {!isMe && !isTopMatch && commonInterests.length >= 2 && (
         <span className="absolute top-3 right-3 text-xs font-bold bg-purple-500/20 text-purple-500 px-2 py-0.5 rounded-full">
-          🔥 Совпадение
+          Совпадение
         </span>
       )}
 
@@ -197,7 +197,7 @@ function AttendeeCard({
           </Link>
           {attendee.city && (
             <p className="text-xs flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
-              <span>📍</span>{attendee.city}
+              {attendee.city}
             </p>
           )}
         </div>
@@ -217,7 +217,7 @@ function AttendeeCard({
 
       {!isMe && matchScore > 0 && (
         <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full font-semibold self-start">
-          🔥 {matchScore} общих интереса
+          {matchScore} общих интереса
         </span>
       )}
 
@@ -606,7 +606,7 @@ export default function EventAttendees({
                 border: `1px solid ${filterInterest === int ? 'var(--accent, #4f46e5)' : 'var(--border)'}`,
               }}
             >
-              {myInterests.includes(int) ? '⭐ ' : ''}{getInterestLabel(int)}
+              {getInterestLabel(int)}
             </button>
           ))}
         </div>
@@ -668,7 +668,7 @@ export default function EventAttendees({
                   className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white hover:opacity-90 transition disabled:opacity-60"
                   style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)' }}
                 >
-                  {joining ? 'Сохранение...' : '💾 Сохранить'}
+                  {joining ? 'Сохранение...' : 'Сохранить'}
                 </button>
                 <button
                   onClick={handleLeave}

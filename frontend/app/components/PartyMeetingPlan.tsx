@@ -248,7 +248,7 @@ export default function PartyMeetingPlan({ partyId, isCreator, socket }: PartyMe
       <div className="flex items-center justify-between px-5 py-4"
         style={{ borderBottom: '1px solid var(--border)' }}>
         <h3 className="text-sm font-bold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-          📅 План встречи
+          План встречи
         </h3>
         {isCreator && !editing && (
           <button
@@ -260,7 +260,7 @@ export default function PartyMeetingPlan({ partyId, isCreator, socket }: PartyMe
               background: 'var(--surface-2)',
             }}
           >
-            {plan ? '✏️ Изменить план' : '+ Задать план'}
+            {plan ? 'Изменить план' : '+ Задать план'}
           </button>
         )}
       </div>
@@ -277,7 +277,7 @@ export default function PartyMeetingPlan({ partyId, isCreator, socket }: PartyMe
         {plan && !editing && (
           <div className="flex flex-col gap-1.5">
             <div className="flex items-start gap-2 text-sm">
-              <span className="shrink-0">🕐</span>
+              <span className="shrink-0 font-semibold" style={{ color: 'var(--primary)' }}>Время:</span>
               <span style={{ color: 'var(--text-muted)' }}>
                 Время встречи:{' '}
                 <span className="font-semibold" style={{ color: 'var(--text)' }}>
@@ -286,7 +286,7 @@ export default function PartyMeetingPlan({ partyId, isCreator, socket }: PartyMe
               </span>
             </div>
             <div className="flex items-start gap-2 text-sm">
-              <span className="shrink-0">📍</span>
+              <span className="shrink-0 font-semibold" style={{ color: 'var(--primary)' }}>Место:</span>
               <span style={{ color: 'var(--text-muted)' }}>
                 Место встречи:{' '}
                 <span className="font-semibold" style={{ color: 'var(--text)' }}>
@@ -296,7 +296,7 @@ export default function PartyMeetingPlan({ partyId, isCreator, socket }: PartyMe
             </div>
             {plan.note && (
               <div className="flex items-start gap-2 text-sm">
-                <span className="shrink-0">💬</span>
+                <span className="shrink-0 font-semibold" style={{ color: 'var(--primary)' }}>Заметка:</span>
                 <span style={{ color: 'var(--text-muted)' }}>
                   Заметка:{' '}
                   <span style={{ color: 'var(--text)' }}>{plan.note}</span>
@@ -432,17 +432,17 @@ export default function PartyMeetingPlan({ partyId, isCreator, socket }: PartyMe
                     <div className="flex flex-wrap gap-x-3 gap-y-0.5">
                       {item.meet_time !== undefined && (
                         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          🕐 {formatDateTime(item.meet_time)}
+                          {formatDateTime(item.meet_time)}
                         </span>
                       )}
                       {item.meet_location !== undefined && item.meet_location && (
                         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          📍 {item.meet_location}
+                          {item.meet_location}
                         </span>
                       )}
                       {item.note && (
                         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          💬 {item.note}
+                          {item.note}
                         </span>
                       )}
                     </div>

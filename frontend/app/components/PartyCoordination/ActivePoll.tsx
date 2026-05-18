@@ -75,7 +75,7 @@ function PollBar({ option, total, isWinner, isVoted }: {
           className="text-sm font-medium truncate"
           style={{ color: isWinner ? 'var(--success)' : isVoted ? 'var(--primary)' : 'var(--text)' }}
         >
-          {isWinner && '🏆 '}{option.text}
+          {isWinner && 'Победитель: '}{option.text}
         </span>
         <span
           className="text-xs shrink-0 tabular-nums"
@@ -171,7 +171,7 @@ function PollCard({
           background: isClosed ? 'var(--surface-2)' : 'var(--surface)',
         }}
       >
-        <span className="text-base shrink-0">{isClosed ? '📊' : '📊'}</span>
+        <span className="text-base shrink-0 font-semibold" style={{ color: 'var(--primary)' }}>Опрос</span>
         <button
           className="flex-1 text-left text-sm font-semibold truncate"
           style={{ color: 'var(--text)' }}
@@ -406,7 +406,7 @@ export default function ActivePoll({ partyId, isCreator, currentUserId, socket }
       {/* Section header */}
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-          📊 Голосования
+          Голосования
         </span>
         {isCreator && !showCreate && (
           <button

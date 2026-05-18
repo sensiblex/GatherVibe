@@ -98,7 +98,7 @@ function JoinModal({
         body: JSON.stringify({ message: message.trim() || null }),
       });
       if (res.ok) {
-        toast('🙋 Заявка отправлена!', 'info');
+        toast('Заявка отправлена!', 'info');
         onJoined();
         onClose();
       } else {
@@ -117,7 +117,7 @@ function JoinModal({
       >
         <div className="px-6 py-4 flex items-center justify-between"
           style={{ background: 'linear-gradient(135deg,#9333ea,#ec4899)' }}>
-          <h3 className="text-white font-black text-base">🙋 Подать заявку</h3>
+          <h3 className="text-white font-black text-base">Подать заявку</h3>
           <button onClick={onClose} className="text-white/70 hover:text-white transition text-xl">✕</button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
@@ -149,7 +149,7 @@ function JoinModal({
             className="flex-1 py-2.5 text-sm text-white font-bold rounded-xl hover:opacity-90 transition disabled:opacity-60"
             style={{ background: 'linear-gradient(135deg,#9333ea,#ec4899)' }}
           >
-            {loading ? 'Отправка...' : '🙋 Отправить заявку'}
+            {loading ? 'Отправка...' : 'Отправить заявку'}
           </button>
           <button
             onClick={onClose}
@@ -183,7 +183,7 @@ function KickModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: reason.trim() || null }),
       });
-      if (res.ok) { toast(`🚫 ${member.username} исключён из компании`, 'info'); onKicked(); onClose(); }
+      if (res.ok) { toast(`${member.username} исключён из компании`, 'info'); onKicked(); onClose(); }
       else { const d = await res.json(); toast(extractApiErrorMessage(d.detail), 'error'); }
     } catch {}
     setLoading(false);
@@ -196,7 +196,7 @@ function KickModal({
         style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)' }}
       >
         <div className="px-6 py-4 bg-gradient-to-r from-red-500 to-pink-600 flex items-center justify-between">
-          <h3 className="text-white font-black text-base">🚫 Исключить участника</h3>
+          <h3 className="text-white font-black text-base">Исключить участника</h3>
           <button onClick={onClose} className="text-white/70 hover:text-white transition text-xl">✕</button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
@@ -221,7 +221,7 @@ function KickModal({
           <button
             onClick={handleKick} disabled={loading}
             className="flex-1 rounded-xl bg-gradient-to-r from-red-500 to-pink-600 py-2.5 text-sm text-white font-bold hover:opacity-90 transition disabled:opacity-50">
-            {loading ? 'Исключение...' : '🚫 Исключить'}
+            {loading ? 'Исключение...' : 'Исключить'}
           </button>
           <button
             onClick={onClose} disabled={loading}
@@ -279,7 +279,7 @@ function EditPartyModal({ party, onClose, onSaved }: { party: Party; onClose: ()
         style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)' }}
       >
         <div className="px-6 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 flex items-center justify-between">
-          <h3 className="text-white font-black text-base">✏️ Редактировать компанию</h3>
+          <h3 className="text-white font-black text-base">Редактировать компанию</h3>
           <button onClick={onClose} className="text-white/70 hover:text-white transition text-xl">✕</button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
@@ -322,7 +322,7 @@ function EditPartyModal({ party, onClose, onSaved }: { party: Party; onClose: ()
           <button onClick={handleDelete} disabled={saving || deleting}
             className="rounded-xl px-3 py-2.5 text-sm transition disabled:opacity-50 hover:opacity-80"
             style={{ border: '1px solid color-mix(in oklch, var(--error) 40%, transparent)', color: 'var(--error)', background: 'var(--error-hl)' }}>
-            {deleting ? '...' : '🗑️'}
+            {deleting ? '...' : 'Удалить'}
           </button>
         </div>
       </div>
@@ -368,7 +368,7 @@ export default function PartyDetailPage() {
           const oldMe = prevPartyRef.current.members.find(m => m.user_id === uid);
           const newMe = data.members.find(m => m.user_id === uid);
           if (oldMe?.status === 'pending' && newMe?.status === 'accepted') {
-            toast('🎉 Вас приняли в компанию!', 'success');
+            toast('Вас приняли в компанию!', 'success');
             setJustAccepted(true);
           }
           if (oldMe?.status === 'pending' && !newMe) toast('Ваша заявка отклонена', 'error');
@@ -459,7 +459,7 @@ export default function PartyDetailPage() {
     setActionLoading(true);
     try {
       const res = await apiFetch(`${API_BASE}/parties/${partyId}/close`, { method: 'POST' });
-      if (res.ok) { toast('🔒 Набор закрыт', 'info'); fetchParty(); }
+      if (res.ok) { toast('Набор закрыт', 'info'); fetchParty(); }
       else { const d = await res.json(); toast(extractApiErrorMessage(d.detail), 'error'); }
     } catch {}
     setActionLoading(false);
@@ -470,7 +470,7 @@ export default function PartyDetailPage() {
     setActionLoading(true);
     try {
       const res = await apiFetch(`${API_BASE}/parties/${partyId}/members/${userId}/${action}`, { method: 'POST' });
-      if (res.ok) { toast(action === 'accept' ? '✅ Принят' : '❌ Отклонён', action === 'accept' ? 'success' : 'error'); fetchParty(); }
+      if (res.ok) { toast(action === 'accept' ? 'Принят' : 'Отклонён', action === 'accept' ? 'success' : 'error'); fetchParty(); }
       else { const d = await res.json(); toast(extractApiErrorMessage(d.detail), 'error'); }
     } catch {}
     setActionLoading(false);
@@ -602,11 +602,11 @@ export default function PartyDetailPage() {
   }[status] ?? {});
 
   const statusLabel = (status: string) => ({
-    pending: '⏳ Ожидает',
-    accepted: '✅ Принят',
-    rejected: '❌ Отклонён',
-    invited: '📬 Приглашён',
-    declined: '🚪 Отказался',
+    pending: 'Ожидает',
+    accepted: 'Принят',
+    rejected: 'Отклонён',
+    invited: 'Приглашён',
+    declined: 'Отказался',
   }[status] ?? status);
 
   const cardStyle: React.CSSProperties = { background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' };
@@ -676,16 +676,16 @@ export default function PartyDetailPage() {
                     {eventEnded && (
                       <span className="text-sm px-3 py-1 rounded-full font-semibold"
                         style={{ background: 'var(--primary-hl)', color: 'var(--primary)', border: '1px solid color-mix(in oklch, var(--primary) 30%, transparent)' }}>
-                        🎬 Событие завершено
+                        Событие завершено
                       </span>
                     )}
                     {!eventEnded && !party.is_open && (
                       <span className="text-sm px-3 py-1 rounded-full"
-                        style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>🔒 Набор закрыт</span>
+                        style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}>Набор закрыт</span>
                     )}
                     {!eventEnded && isFull && party.is_open && (
                       <span className="text-sm px-3 py-1 rounded-full"
-                        style={{ background: 'var(--warning-hl)', color: 'var(--warning)' }}>👥 Заполнена</span>
+                        style={{ background: 'var(--warning-hl)', color: 'var(--warning)' }}>Заполнена</span>
                     )}
                   </div>
                   {party.description && (
@@ -722,7 +722,7 @@ export default function PartyDetailPage() {
                         opacity: reviewableLoading ? 0.6 : 1,
                       }}
                     >
-                      ⭐ Оценить участников
+                      Оценить участников
                     </button>
                   )}
 
@@ -731,13 +731,13 @@ export default function PartyDetailPage() {
                       {pendingCount > 0 && (
                         <span className="text-xs px-2 py-1 rounded-full font-semibold"
                           style={{ background: 'var(--warning-hl)', color: 'var(--warning)', border: '1px solid color-mix(in oklch, var(--warning) 30%, transparent)' }}>
-                          ⏳ {pendingCount} ожидают
+                          {pendingCount} ожидают
                         </span>
                       )}
                       {invitedCount > 0 && (
                         <span className="text-xs px-2 py-1 rounded-full font-semibold"
                           style={{ background: 'var(--primary-hl)', color: 'var(--primary)', border: '1px solid color-mix(in oklch, var(--primary) 30%, transparent)' }}>
-                          📬 {invitedCount} приглашено
+                          {invitedCount} приглашено
                         </span>
                       )}
                     </div>
@@ -767,7 +767,7 @@ export default function PartyDetailPage() {
                   </div>
                   <span className="text-xs font-semibold px-2 py-0.5 rounded-full"
                     style={{ background: 'var(--primary-hl)', color: 'var(--primary)', border: '1px solid color-mix(in oklch, var(--primary) 30%, transparent)' }}>
-                    👑 Создатель
+                    Создатель
                   </span>
                 </div>
 
@@ -794,7 +794,7 @@ export default function PartyDetailPage() {
                           {member.username}
                           {member.user_id === myId && <span className="ml-1 text-xs" style={{ color: 'var(--primary)' }}>(вы)</span>}
                         </p>
-                        {member.city && <p className="text-xs" style={{ color: 'var(--text-faint)' }}>📍 {member.city}</p>}
+                        {member.city && <p className="text-xs" style={{ color: 'var(--text-faint)' }}>{member.city}</p>}
                       </div>
                       <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={statusBadgeStyle(member.status)}>
                         {statusLabel(member.status)}
@@ -811,13 +811,13 @@ export default function PartyDetailPage() {
                         <button onClick={() => setKickTarget(member)} disabled={actionLoading}
                           className="ml-1 text-xs px-2 py-1 rounded-lg transition disabled:opacity-50 hover:opacity-80"
                           style={{ background: 'var(--error-hl)', color: 'var(--error)', border: '1px solid color-mix(in oklch, var(--error) 30%, transparent)' }}
-                          title="�?сключить">🚫 Кик</button>
+                          title="Исключить">Исключить</button>
                       )}
                       {isCreator && !eventEnded && member.status === 'invited' && (
                         <button onClick={() => handleCancelInvite(member.id)} disabled={actionLoading}
                           className="ml-1 text-xs px-2 py-1 rounded-lg transition disabled:opacity-50 hover:opacity-80"
                           style={{ background: 'var(--error-hl)', color: 'var(--error)', border: '1px solid color-mix(in oklch, var(--error) 30%, transparent)' }}
-                          title="Отозвать приглашение">↩ Отозвать</button>
+                          title="Отозвать приглашение">Отозвать</button>
                       )}
                     </div>
                     {/* Show join message if present and viewer is creator */}
@@ -826,7 +826,7 @@ export default function PartyDetailPage() {
                         className="ml-12 text-xs px-3 py-2 rounded-xl italic"
                         style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
                       >
-                        💬 «{member.message}»
+                        «{member.message}»
                       </div>
                     )}
                     {/* Show invite message if present and viewer is creator */}
@@ -835,7 +835,7 @@ export default function PartyDetailPage() {
                         className="ml-12 text-xs px-3 py-2 rounded-xl italic"
                         style={{ background: 'var(--surface-2)', color: 'var(--text-muted)', border: '1px solid var(--border)' }}
                       >
-                        📬 «{member.invite_message}»
+                        «{member.invite_message}»
                       </div>
                     )}
                   </div>
@@ -855,7 +855,7 @@ export default function PartyDetailPage() {
                   border: '1px solid color-mix(in oklch, var(--primary) 35%, transparent)',
                   boxShadow: 'var(--shadow-sm)',
                 }}>
-                <span className="text-3xl">🎬</span>
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl font-bold" style={{ background: 'var(--primary-hl)', color: 'var(--primary)' }}>✓</div>
                 <div className="flex-1 min-w-0">
                   <p className="font-bold" style={{ color: 'var(--primary)' }}>Событие завершено</p>
                   <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
@@ -905,7 +905,7 @@ export default function PartyDetailPage() {
                     background: chatOpen ? 'color-mix(in oklch, var(--primary) 8%, var(--surface))' : 'var(--surface)',
                     color: chatOpen ? 'var(--primary)' : 'var(--text)',
                   }}>
-                  <span>💬 Чат компании</span>
+                  <span>Чат компании</span>
                   <span style={{ color: 'var(--text-faint)' }}>{chatOpen ? '▲' : '▼'}</span>
                 </button>
                 {chatOpen && (
@@ -958,28 +958,28 @@ export default function PartyDetailPage() {
               {canJoin && (
                 <button onClick={() => setShowJoinModal(true)} disabled={actionLoading}
                   className="w-full gv-btn-primary text-sm py-2.5">
-                  {actionLoading ? 'Отправка...' : '🙋 Подать заявку'}
+                  {actionLoading ? 'Отправка...' : 'Подать заявку'}
                 </button>
               )}
               {canLeave && (
                 <button onClick={handleLeave} disabled={actionLoading}
                   className="w-full text-sm py-2.5 rounded-xl transition disabled:opacity-60 hover:opacity-80"
                   style={{ color: 'var(--error)', border: '1px solid color-mix(in oklch, var(--error) 40%, transparent)', background: 'var(--error-hl)' }}>
-                  {actionLoading ? '...' : '🚪 Покинуть компанию'}
+                  {actionLoading ? '...' : 'Покинуть компанию'}
                 </button>
               )}
               {isCreator && party.is_open && !eventEnded && (
                 <button onClick={handleClose} disabled={actionLoading}
                   className="w-full text-sm py-2.5 rounded-xl transition disabled:opacity-60 hover:opacity-80"
                   style={{ color: 'var(--text-muted)', border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
-                  🔒 Закрыть набор
+                  Закрыть набор
                 </button>
               )}
               {isCreator && !eventEnded && (
                 <button onClick={() => setShowEdit(true)}
                   className="w-full text-sm py-2.5 rounded-xl transition hover:opacity-80"
                   style={{ border: '1px solid var(--border)', color: 'var(--text-muted)', background: 'var(--surface-2)' }}>
-                  ✏️ Редактировать
+                  Редактировать
                 </button>
               )}
               {isCreator && party.invite_token && !eventEnded && (
@@ -996,15 +996,15 @@ export default function PartyDetailPage() {
                   className="w-full text-sm py-2.5 rounded-xl transition hover:opacity-80"
                   style={{ border: '1px solid var(--primary)', color: 'var(--primary)', background: 'var(--primary-hl)' }}
                 >
-                  🔗 Скопировать ссылку
+                  Скопировать ссылку
                 </button>
               )}
               {myMembership?.status === 'pending' && !eventEnded && (
-                <p className="text-xs text-center" style={{ color: 'var(--warning)' }}>⏳ Ваша заявка рассматривается</p>
+                <p className="text-xs text-center" style={{ color: 'var(--warning)' }}>Ваша заявка рассматривается</p>
               )}
               {eventEnded && (
                 <p className="text-xs text-center" style={{ color: 'var(--text-faint)' }}>
-                  🎬 Событие завершено — управление компанией закрыто
+                  Событие завершено — управление компанией закрыто
                 </p>
               )}
               {!token && (

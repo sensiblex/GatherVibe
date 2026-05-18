@@ -118,7 +118,7 @@ export default function PinnedBlock({ partyId, isCreator, socket }: PinnedBlockP
     >
       {/* Header row */}
       <div className="flex items-start gap-2.5 px-4 py-3">
-        <span className="text-base shrink-0 mt-0.5">📌</span>
+        <span className="text-base shrink-0 mt-0.5 font-semibold" style={{ color: 'var(--warning)' }}>Закреп:</span>
 
         <div className="flex-1 min-w-0">
           {editing ? (
@@ -186,7 +186,7 @@ export default function PinnedBlock({ partyId, isCreator, socket }: PinnedBlockP
             title="Редактировать закреп"
             aria-label="Редактировать закреп"
           >
-            ✏️
+            Редактировать
           </button>
         )}
       </div>

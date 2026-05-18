@@ -59,7 +59,7 @@ export default function TimeRangeSlider({ from, to, onChange }: Props) {
       aria-label="Диапазон времени начала"
     >
       <span style={{ fontSize: '.75rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-        🕒 {label}
+        {label}
       </span>
 
       <div

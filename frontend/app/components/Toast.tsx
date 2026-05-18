@@ -48,12 +48,6 @@ export function ToastContainer() {
     info:    'bg-indigo-600 text-white',
   };
 
-  const icons: Record<ToastType, string> = {
-    success: '✅',
-    error:   '❌',
-    info:    'ℹ️',
-  };
-
   return (
     <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2 items-end">
       {toasts.map(t => (
@@ -63,7 +57,6 @@ export function ToastContainer() {
             styles[t.type]
           }`}
         >
-          <span>{icons[t.type]}</span>
           <span className="flex-1">{t.message}</span>
           {t.action && (
             <button

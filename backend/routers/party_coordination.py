@@ -244,7 +244,7 @@ async def create_poll(
     )
     await _send_system_message(
         db, party_id, "poll_created",
-        f"📊 {user.username} создал голосование: «{poll.question}»",
+        f"{user.username} создал голосование: «{poll.question}»",
     )
     db.commit()
     return _build_poll_out(poll, db, user.id)
@@ -352,13 +352,13 @@ async def close_poll(
     if winner:
         await _send_system_message(
             db, poll.party_id, "poll_closed",
-            f"📊 Голосование «{poll.question}» завершено. "
+            f"Голосование «{poll.question}» завершено. "
             f"Победитель: «{winner.text}» ({winner.vote_count} гол.)",
         )
     else:
         await _send_system_message(
             db, poll.party_id, "poll_closed",
-            f"📊 Голосование «{poll.question}» завершено без голосов",
+            f"Голосование «{poll.question}» завершено без голосов",
         )
 
     db.commit()
@@ -423,7 +423,7 @@ async def upsert_pinned(
     )
     await _send_system_message(
         db, party_id, "pinned_updated",
-        f"📌 {user.username} обновил закреп",
+        f"{user.username} обновил закреп",
     )
     db.commit()
     return pinned
@@ -499,7 +499,7 @@ async def set_attendance(
     status_labels = {"going": "идёт", "late": "опоздает", "cant": "не придёт"}
     await _send_system_message(
         db, party_id, "attendance_changed",
-        f"👤 {user.username} — {status_labels[body.status]}",
+        f"{user.username} — {status_labels[body.status]}",
     )
 
     db.commit()

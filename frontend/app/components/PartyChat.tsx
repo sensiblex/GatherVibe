@@ -203,7 +203,7 @@ export default function PartyChat({
   if (!isAcceptedMember) {
     return (
       <div className="rounded-xl p-4 text-center" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-        <p className="text-sm" style={{ color: 'var(--text-faint)' }}>💬 Чат доступен только участникам компании</p>
+        <p className="text-sm" style={{ color: 'var(--text-faint)' }}>Чат доступен только участникам компании</p>
       </div>
     );
   }
@@ -326,7 +326,7 @@ export default function PartyChat({
                         className="flex items-center gap-2 text-xs underline mb-1"
                         style={{ color: 'inherit', opacity: 0.85 }}
                       >
-                        📎 {msg.fileName ?? 'файл'}
+                        {msg.fileName ?? 'файл'}
                       </a>
                     )}
                     {msg.message && <span>{msg.message}</span>}

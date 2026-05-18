@@ -31,7 +31,7 @@ def send_verification_email(to_email: str, username: str, token: str) -> None:
             "subject": subject,
             "html": f"""
                 <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;">
-                    <h2 style="color:#01696f">Добро пожаловать в GatherVibe! 👋</h2>
+                    <h2 style="color:#01696f">Добро пожаловать в GatherVibe!</h2>
                     {"<p style='background:#fef3c7;border-radius:8px;padding:10px;font-size:13px;'>"
                      f"<b>DEV:</b> оригинальный получатель — <code>{html.escape(to_email)}</code></p>"
                      if settings.DEV_EMAIL_OVERRIDE else ""}

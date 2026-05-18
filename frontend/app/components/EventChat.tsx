@@ -149,7 +149,7 @@ export default function EventChat({
       >
         <div>
           <h2 className="font-bold text-base" style={{ color: 'var(--text)' }}>
-            💬 Чат события
+            Чат события
           </h2>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
             Общайся с другими участниками

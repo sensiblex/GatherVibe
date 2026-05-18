@@ -46,9 +46,9 @@ const STATUS_LABELS: Record<AttendanceStatus, string> = {
 };
 
 const STATUS_ICONS: Record<AttendanceStatus, string> = {
-  going: '✅',
-  late: '⏰',
-  cant: '❌',
+  going: '',
+  late: '',
+  cant: '',
 };
 
 const STATUS_COLORS: Record<AttendanceStatus, { bg: string; border: string; text: string }> = {
@@ -239,10 +239,7 @@ export default function AttendanceBar({
         className="px-4 py-2.5 flex items-center gap-2"
         style={{ borderBottom: '1px solid var(--border)' }}
       >
-        <span className="text-base">👥</span>
-        <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-          Посещаемость
-        </span>
+        <span className="text-base font-semibold" style={{ color: 'var(--primary)' }}>Посещаемость</span>
         {hasAny && (
           <span className="text-xs ml-auto" style={{ color: 'var(--text-faint)' }}>
             {records.length} ответ{records.length === 1 ? '' : records.length < 5 ? 'а' : 'ов'}

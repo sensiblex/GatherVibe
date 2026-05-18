@@ -36,14 +36,14 @@ export default function SocialFilters({ hasParty, hasFreeSpots, minAttendees, on
         onClick={() => onChange({ hasParty: !hasParty })}
         style={chip(hasParty)}
       >
-        🎉 Есть пати
+        Есть пати
       </button>
       <button
         aria-pressed={hasFreeSpots}
         onClick={() => onChange({ hasFreeSpots: !hasFreeSpots })}
         style={chip(hasFreeSpots)}
       >
-        🪑 Есть места
+        Есть места
       </button>
       {ATTEND_THRESHOLDS.map(opt => {
         const on = minAttendees === opt.value;

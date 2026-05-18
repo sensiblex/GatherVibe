@@ -72,7 +72,7 @@ function JoinModal({
         body: JSON.stringify({ message: message.trim() || null }),
       });
       if (res.ok) {
-        toast('🙋 Заявка отправлена! Ожидайте подтверждения от создателя', 'info');
+        toast('Заявка отправлена! Ожидайте подтверждения от создателя', 'info');
         onJoined();
         onClose();
       } else {
@@ -91,7 +91,7 @@ function JoinModal({
       >
         <div className="px-6 py-4 flex items-center justify-between"
           style={{ background: 'linear-gradient(135deg,#9333ea,#ec4899)' }}>
-          <h3 className="text-white font-black text-base">🙋 Подать заявку</h3>
+          <h3 className="text-white font-black text-base">Подать заявку</h3>
           <button onClick={onClose} className="text-white/70 hover:text-white transition text-xl">✕</button>
         </div>
         <div className="px-6 py-5 flex flex-col gap-4">
@@ -123,7 +123,7 @@ function JoinModal({
             className="flex-1 py-2.5 text-sm text-white font-bold rounded-xl hover:opacity-90 transition disabled:opacity-60"
             style={{ background: 'linear-gradient(135deg,#9333ea,#ec4899)' }}
           >
-            {loading ? 'Отправка...' : '🙋 Отправить заявку'}
+            {loading ? 'Отправка...' : 'Отправить заявку'}
           </button>
           <button
             onClick={onClose}
@@ -191,31 +191,31 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
                   className="text-xs px-2 py-0.5 rounded-full font-semibold"
                   style={{ background: 'var(--badge-bg, #eef2ff)', color: 'var(--accent, #4f46e5)' }}
                 >
-                  👑 Вы создатель
+                  Вы создатель
                 </span>
               )}
               {myMembership?.status === 'accepted' && !isCreator && (
-                <span className="text-xs bg-emerald-500/20 text-emerald-500 px-2 py-0.5 rounded-full font-semibold">✅ Участник</span>
+                <span className="text-xs bg-emerald-500/20 text-emerald-500 px-2 py-0.5 rounded-full font-semibold">Участник</span>
               )}
               {myMembership?.status === 'pending' && (
-                <span className="text-xs bg-amber-500/20 text-amber-500 px-2 py-0.5 rounded-full font-semibold">⏳ Ожидает</span>
+                <span className="text-xs bg-amber-500/20 text-amber-500 px-2 py-0.5 rounded-full font-semibold">Ожидает</span>
               )}
               {!party.is_open && (
                 <span
                   className="text-xs px-2 py-0.5 rounded-full"
                   style={{ background: 'var(--surface-2)', color: 'var(--text-muted)' }}
                 >
-                  🔒 Закрыта
+                  Закрыта
                 </span>
               )}
               {isFull && party.is_open && (
-                <span className="text-xs bg-orange-500/15 text-orange-500 px-2 py-0.5 rounded-full">👥 Заполнена</span>
+                <span className="text-xs bg-orange-500/15 text-orange-500 px-2 py-0.5 rounded-full">Заполнена</span>
               )}
             </div>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
               {party.creator_username} · {acceptedCount + 1}/{party.max_members} участников
               {pendingCount > 0 && isCreator && (
-                <span className="ml-2 text-amber-500 font-semibold">⏳ {pendingCount} ожидают</span>
+                <span className="ml-2 text-amber-500 font-semibold">{pendingCount} ожидают</span>
               )}
             </p>
             {party.description && (
@@ -241,7 +241,7 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
               className="flex-1 text-white text-sm font-bold py-2 rounded-xl hover:opacity-90 transition disabled:opacity-60"
               style={{ background: 'linear-gradient(135deg,#9333ea,#ec4899)' }}
             >
-              {loading ? 'Отправка...' : '🙋 Подать заявку'}
+              {loading ? 'Отправка...' : 'Подать заявку'}
             </button>
           )}
           {canLeave && (
@@ -266,7 +266,7 @@ function PartyCard({ party, onUpdate }: { party: Party; onUpdate: () => void }) 
             <p className="text-xs py-2 text-orange-400">Компания уже заполнена</p>
           )}
           {myMembership?.status === 'pending' && (
-            <p className="text-xs py-2 text-amber-500">⏳ Ваша заявка рассматривается</p>
+            <p className="text-xs py-2 text-amber-500">Ваша заявка рассматривается</p>
           )}
         </div>
       </div>
@@ -349,7 +349,7 @@ export default function EventParty({
       >
         <div>
           <h2 className="font-bold text-base" style={{ color: 'var(--text)' }}>
-            🎉 Компании на событие
+            Компании на событие
             {parties.length > 0 && (
               <span className="ml-2 text-sm font-normal" style={{ color: 'var(--text-muted)' }}>
                 {parties.length} шт.

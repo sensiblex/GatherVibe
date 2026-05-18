@@ -178,7 +178,7 @@ def test_push(
     current_user = get_current_user_from_token(token, db)
     push_helpers.send_push_to_user(
         db, current_user.id,
-        "🔔 Тестовое уведомление",
+        "Тестовое уведомление",
         "Push-уведомления работают! GatherVibe подключён.",
         {"type": "test"},
     )

@@ -92,7 +92,7 @@ export default function MyEventsPage() {
       <main className="container mx-auto px-4 py-10 max-w-3xl">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-black" style={{ color: 'var(--text)' }}>🎭 Мои события</h1>
+          <h1 className="text-3xl font-black" style={{ color: 'var(--text)' }}>Мои события</h1>
           <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
             Все мероприятия, на которые вы зарегистрировались
           </p>
@@ -108,7 +108,7 @@ export default function MyEventsPage() {
                 color: activeTab === t ? 'var(--text-inverse)' : 'var(--text-muted)',
                 border: '1px solid var(--border)',
               }}>
-              {t === 'upcoming' ? '📅 Предстоящие' : '🕰 Прошедшие'}
+              {t === 'upcoming' ? 'Предстоящие' : 'Прошедшие'}
               {data && (
                 <span className="ml-1.5 opacity-70">
                   ({t === 'upcoming' ? data.upcoming.length : data.past.length})
@@ -185,14 +185,13 @@ export default function MyEventsPage() {
                         {displayTitle}
                       </p>
                       <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-                        📅{' '}
                         {ev.date_ts
                           ? new Date(ev.date_ts * 1000).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
                           : 'Дата не указана'}
                       </p>
                       {(ev.city || ev.location) && (
                         <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                          📍 {ev.city ?? ev.location}
+                          {ev.city ?? ev.location}
                         </p>
                       )}
                       <div className="flex flex-wrap gap-2 mt-2">
@@ -219,7 +218,7 @@ export default function MyEventsPage() {
                         className="w-full py-2 rounded-xl text-sm font-semibold transition hover:opacity-90"
                         style={{ background: 'linear-gradient(135deg,#4f46e5,#7c3aed)', color: '#fff' }}
                       >
-                        ⭐ Оценить участников ({reviewable.length})
+                        Оценить участников ({reviewable.length})
                       </button>
                     </div>
                   )}

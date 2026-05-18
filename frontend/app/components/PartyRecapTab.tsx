@@ -19,10 +19,10 @@ interface Props {
 }
 
 const lifecycleLabel: Record<LifecycleStatus, { label: string; tone: string }> = {
-  planned:  { label: '📅 Запланировано', tone: 'var(--text-muted)' },
-  active:   { label: '🔴 Идёт сейчас',    tone: 'var(--success)' },
-  ended:    { label: '✅ Завершено',       tone: 'var(--primary)' },
-  archived: { label: '📦 Архив',           tone: 'var(--text-faint)' },
+  planned:  { label: 'Запланировано', tone: 'var(--text-muted)' },
+  active:   { label: 'Идёт сейчас',    tone: 'var(--success)' },
+  ended:    { label: 'Завершено',       tone: 'var(--primary)' },
+  archived: { label: 'Архив',           tone: 'var(--text-faint)' },
 };
 
 function mediaUrl(path: string | null): string | null {
@@ -133,7 +133,7 @@ export default function PartyRecapTab({ partyId, isCreator, myUserId }: Props) {
           </div>
         )}
         <div className="p-5 flex items-center gap-3 flex-wrap">
-          <h2 className="font-bold text-lg" style={{ color: 'var(--text)' }}>📸 Воспоминания</h2>
+          <h2 className="font-bold text-lg" style={{ color: 'var(--text)' }}>Воспоминания</h2>
           <span className="text-xs font-semibold px-2 py-1 rounded-full"
             style={{ background: 'var(--surface-2)', color: lc.tone, border: '1px solid var(--border)' }}>
             {lc.label}
@@ -152,7 +152,7 @@ export default function PartyRecapTab({ partyId, isCreator, myUserId }: Props) {
       {highlights.length > 0 && (
         <div className="rounded-2xl p-5" style={card}>
           <h3 className="font-bold mb-3 text-sm uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-            ⭐ Лучшие моменты
+            Лучшие моменты
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {highlights.map(it => (
@@ -184,7 +184,7 @@ export default function PartyRecapTab({ partyId, isCreator, myUserId }: Props) {
               disabled={posting || !noteText.trim()}
               data-testid="recap-post-note"
               className="rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-4 py-2 text-sm text-white font-bold hover:opacity-90 transition disabled:opacity-50">
-              📝 Опубликовать
+              Опубликовать
             </button>
             <input
               ref={fileInputRef}
@@ -204,7 +204,7 @@ export default function PartyRecapTab({ partyId, isCreator, myUserId }: Props) {
               data-testid="recap-upload-photo"
               className="rounded-xl px-4 py-2 text-sm font-bold transition hover:opacity-80 disabled:opacity-50"
               style={{ border: '1px solid var(--border)', color: 'var(--text)', background: 'var(--surface-2)' }}>
-              📷 Загрузить фото
+              Загрузить фото
             </button>
           </div>
         </div>
@@ -251,7 +251,7 @@ export default function PartyRecapTab({ partyId, isCreator, myUserId }: Props) {
             style={{ background: 'var(--surface)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-lg)' }}
           >
             <div className="px-6 py-4 bg-gradient-to-r from-red-500 to-pink-600 flex items-center justify-between">
-              <h3 className="text-white font-black text-base">🗑️ Удалить пост?</h3>
+              <h3 className="text-white font-black text-base">Удалить пост?</h3>
               <button onClick={() => setDeleteTarget(null)} className="text-white/70 hover:text-white transition text-xl">✕</button>
             </div>
             <div className="px-6 py-5">
@@ -357,14 +357,14 @@ function RecapCard({
                   color: item.is_pinned_highlight ? 'var(--primary)' : 'var(--text-faint)',
                   background: item.is_pinned_highlight ? 'var(--primary-hl)' : 'transparent',
                 }}>
-                {item.is_pinned_highlight ? '📌 Закреплено' : '📌 Закрепить'}
+                {item.is_pinned_highlight ? 'Закреплено' : 'Закрепить'}
               </button>
             )}
             {isCreator && photo && (
               <button onClick={() => onSetCover(item.media_url!)}
                 className="text-sm px-3 py-1.5 rounded-md transition hover:opacity-80"
                 style={{ color: 'var(--text-faint)' }}>
-                🖼 Обложка
+                Обложка
               </button>
             )}
             {canDelete && (

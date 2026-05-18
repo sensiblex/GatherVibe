@@ -118,7 +118,7 @@ function EditProfileModal({
       <div className="w-full max-w-md rounded-3xl shadow-2xl overflow-y-auto max-h-[90vh]"
         style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
         <div className="px-6 pt-6 pb-2 flex items-center justify-between">
-          <h2 className="text-lg font-black" style={{ color: 'var(--text)' }}>✏️ Редактировать профиль</h2>
+          <h2 className="text-lg font-black" style={{ color: 'var(--text)' }}>Редактировать профиль</h2>
           <button onClick={onClose} className="text-xl hover:opacity-70 transition"
             style={{ color: 'var(--text-muted)' }}>✕</button>
         </div>
@@ -225,7 +225,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
       <div className="w-full max-w-sm rounded-3xl shadow-2xl"
         style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
         <div className="px-6 pt-6 pb-2 flex items-center justify-between">
-          <h2 className="text-lg font-black" style={{ color: 'var(--text)' }}>🔒 Сменить пароль</h2>
+          <h2 className="text-lg font-black" style={{ color: 'var(--text)' }}>Сменить пароль</h2>
           <button onClick={onClose} className="text-xl hover:opacity-70 transition"
             style={{ color: 'var(--text-muted)' }}>✕</button>
         </div>
@@ -332,7 +332,7 @@ function PrivacyModal({ onClose }: { onClose: () => void }) {
       <div className="w-full max-w-sm rounded-3xl shadow-2xl"
         style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
         <div className="px-6 pt-6 pb-2 flex items-center justify-between">
-          <h2 className="text-lg font-black" style={{ color: 'var(--text)' }}>🔐 Приватность</h2>
+          <h2 className="text-lg font-black" style={{ color: 'var(--text)' }}>Приватность</h2>
           <button onClick={onClose} className="text-xl hover:opacity-70 transition"
             style={{ color: 'var(--text-muted)' }}>✕</button>
         </div>
@@ -536,7 +536,7 @@ function MyEventsTab() {
               color: subTab === t ? 'var(--primary)' : 'var(--text-muted)',
               border: `1px solid ${subTab === t ? 'var(--primary)' : 'var(--border)'}`,
             }}>
-            {t === 'upcoming' ? '📅 Предстоящие' : '🕰 Прошедшие'}
+            {t === 'upcoming' ? 'Предстоящие' : 'Прошедшие'}
             {data && (
               <span className="ml-1.5 opacity-70">
                 ({t === 'upcoming' ? data.upcoming.length : data.past.length})

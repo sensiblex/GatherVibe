@@ -197,14 +197,14 @@ export default function UserProfilePage() {
                 }}
               >
                 <p className="text-sm font-semibold" style={{ color: 'var(--primary)' }}>
-                  👋 Это ваш публичный профиль
+                  Это ваш публичный профиль
                 </p>
                 <Link
                   href="/profile"
                   className="text-sm font-bold px-4 py-1.5 rounded-full transition hover:opacity-90"
                   style={{ background: 'var(--primary)', color: '#fff' }}
                 >
-                  ✏️ Редактировать
+                  Редактировать
                 </Link>
               </div>
             )}
@@ -266,7 +266,7 @@ export default function UserProfilePage() {
                           color: 'var(--text-muted)',
                         }}
                       >
-                        📍 {profile.city}
+                        {profile.city}
                       </span>
                     )}
                   </div>

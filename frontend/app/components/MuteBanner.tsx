@@ -52,7 +52,7 @@ export default function MuteBanner() {
         fontSize: 14,
       }}
     >
-      ⚠️ {text}
+      {text}
     </div>
   );
 }

@@ -47,12 +47,12 @@ export default function GeoFilter({ value, onChange }: Props) {
           className="btn btn-ghost btn-sm"
           aria-label="Показать события рядом"
         >
-          📍 {busy ? 'Определяю…' : 'Рядом со мной'}
+          {busy ? 'Определяю…' : 'Рядом со мной'}
         </button>
       ) : (
         <>
           <span className="badge badge-ink" style={{ gap: 6 }}>
-            📍 {(value!.radiusM / 1000).toFixed(1)} км
+            {(value!.radiusM / 1000).toFixed(1)} км
             <button
               onClick={clear}
               style={{ marginLeft: 4, background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, lineHeight: 1 }}

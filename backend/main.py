@@ -16,16 +16,22 @@ from services.db_schema import (
     ensure_db_schema_compatibility,
     get_current_schema_check_mode,
 )
-from sio_instance import sio  # noqa: E402
-from database import SessionLocal  # noqa: E402
-from models.chat_message import ChatMessage  # noqa: E402
-from models.message_reaction import MessageReaction  # noqa: E402
-from models.user import User  # noqa: E402
-from models.party import EventParty, PartyMember  # noqa: E402
-from routers.parties import MemberStatus  # noqa: E402
-import chat_push  # noqa: E402
+from sio_instance import sio
+from database import SessionLocal
+from models.chat_message import ChatMessage
+from models.message_reaction import MessageReaction
+from models.user import User
+from models.party import EventParty, PartyMember
+from routers.parties import MemberStatus
+import chat_push
 
-import kudago_cache  # noqa: E402
+import kudago_cache
+from routers import auth, users, events, parties, reviews, notifications, party_coordination, avatars
+from routers.party_plan import router as party_plan_router
+from routers.party_recap import router as party_recap_router
+from routers.admin import router as admin_router
+from routers.reports import router as reports_router
+from routers.appeals import router as appeals_router
 
 CACHE_SYNC_INTERVAL = 3600  # Интервал синхронизации кэша (1 час)
 REMINDER_LOOP_INTERVAL = 900  # Интервал цикла напоминаний (15 минут)
@@ -365,13 +371,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-from routers import auth, users, events, parties, reviews, notifications, party_coordination, avatars  # noqa: E402
-from routers.party_plan import router as party_plan_router  # noqa: E402
-from routers.party_recap import router as party_recap_router  # noqa: E402
-from routers.admin import router as admin_router  # noqa: E402
-from routers.reports import router as reports_router  # noqa: E402
-from routers.appeals import router as appeals_router  # noqa: E402
 
 app.include_router(auth.router)
 app.include_router(admin_router)

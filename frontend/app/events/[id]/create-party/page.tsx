@@ -281,7 +281,7 @@ export default function CreatePartyPage() {
               className="flex-1 text-white font-bold py-3 rounded-xl hover:opacity-90 transition disabled:opacity-60 bg-gradient-to-r from-purple-600 to-pink-600"
               style={{ boxShadow: 'var(--shadow-md)' }}
             >
-              {creating ? 'Создание...' : '🎉 Создать компанию'}
+              {creating ? 'Создание...' : 'Создать компанию'}
             </button>
             <Link
               href={`/events/${eventId}`}
